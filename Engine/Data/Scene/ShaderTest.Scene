@@ -1,6 +1,6 @@
 {
   "Actors" : {
-    "376" : {
+    "181" : {
       "Components" : [{
           "IsEditorOnly" : "false",
           "IsVisualizationComponent" : "false",
@@ -30,7 +30,7 @@
       "bCanEverTick" : "false",
       "bTickInEditor" : "false"
     },
-    "380" : {
+    "184" : {
       "Components" : [{
           "Intensity" : 3.000000,
           "IsEditorOnly" : "false",
@@ -39,7 +39,7 @@
           "Location" : [0.000000, 0.000000, 0.000000],
           "Name" : "UDirectionalLightComponent_1",
           "ParentName" : "",
-          "Rotation" : [0.000000, 0.000000, 0.000000],
+          "Rotation" : [28.000002, 0.000000, 0.000000],
           "Scale" : [1.000000, 1.000000, 1.000000],
           "Type" : "UDirectionalLightComponent",
           "bLightEnabled" : "true",
@@ -53,7 +53,7 @@
           "Location" : [0.000000, 0.000000, 0.000000],
           "Name" : "UBillBoardComponent_39",
           "ParentName" : "UDirectionalLightComponent_1",
-          "Rotation" : [-3.987207, 0.320567, 94.589226],
+          "Rotation" : [-10.093300, 28.388161, 92.342445],
           "Scale" : [2.000000, 2.000000, 2.000000],
           "Type" : "UBillBoardComponent",
           "bVisible" : "true"
@@ -67,12 +67,31 @@
           "Scale" : [1.000000, 1.000000, 1.000000],
           "Type" : "UUUIDTextComponent",
           "bVisible" : "true"
+        }, {
+          "GravityScale" : 0.000000,
+          "InitialSpeed" : 0.000000,
+          "IsEditorOnly" : "false",
+          "IsVisualizationComponent" : "false",
+          "MaxSpeed" : 0.000000,
+          "Name" : "UProjectileMovementComponent_0",
+          "Type" : "UProjectileMovementComponent",
+          "Velocity" : [0.000000, 0.000000, 0.000000],
+          "bRotationFollowsVelocity" : "false"
+        }, {
+          "IsEditorOnly" : "false",
+          "IsVisualizationComponent" : "false",
+          "Name" : "URotatingMovementComponent_0",
+          "PivotTranslation" : [0.000000, 21.000000, 0.000000],
+          "RotationRate" : [21.000000, 14.000000, 76.000000],
+          "Type" : "URotatingMovementComponent",
+          "Velocity" : [0.000000, 0.000000, 0.000000],
+          "bRotationInLocalSpace" : "false"
         }],
       "Location" : [0.000000, 0.000000, 0.000000],
-      "Rotation" : [0.000000, 0.000000, 0.000000],
+      "Rotation" : [28.000002, 0.000000, 0.000000],
       "Scale" : [1.000000, 1.000000, 1.000000],
       "Type" : "ADirectionalLight",
-      "bCanEverTick" : "false",
+      "bCanEverTick" : "true",
       "bTickInEditor" : "false"
     }
   },
@@ -87,11 +106,11 @@
           "CameraType" : 1,
           "FarZ" : 1000.000000,
           "FovY" : 90.000000,
-          "Location" : [5.621789, 4.218386, 14.403877],
-          "MoveSpeed" : 11.100000,
+          "Location" : [0.941257, 8.219130, 24.036190],
+          "MoveSpeed" : 6.400000,
           "NearZ" : 0.100000,
           "OrthoWidth" : 90.000000,
-          "Rotation" : [0.000000, 4.000052, -94.600388]
+          "Rotation" : [0.000000, -0.799867, -89.800743]
         },
         "Index" : 0,
         "ViewMode" : 2,

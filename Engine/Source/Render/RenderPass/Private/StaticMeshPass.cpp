@@ -7,8 +7,10 @@
 #include "Texture/Public/Texture.h"
 
 FStaticMeshPass::FStaticMeshPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferCamera, ID3D11Buffer* InConstantBufferModel,
+	ID3D11Buffer* InConstantBufferLightViewProj,
 	ID3D11VertexShader* InVS, ID3D11PixelShader* InPS, ID3D11InputLayout* InLayout, ID3D11DepthStencilState* InDS)
 	: FRenderPass(InPipeline, InConstantBufferCamera, InConstantBufferModel), VS(InVS), PS(InPS), InputLayout(InLayout), DS(InDS)
+	, ConstantBufferLightViewProj(InConstantBufferLightViewProj)
 {
 	ConstantBufferMaterial = FRenderResourceFactory::CreateConstantBuffer<FMaterialConstants>();
 }
@@ -46,22 +48,20 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 	{
 		UDirectionalLightComponent* DirLight = Context.DirectionalLights[0];
 
-		// Light View Projection 행렬 설정 (b2)
+		// Light View Projection 행렬 설정 (b6)
 		FLightViewProjConstants LightVP;
 		LightVP.LightView = DirLight->GetLightViewMatrix();
 		LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
 
-		ID3D11Buffer* LightVPBuffer = FRenderResourceFactory::CreateConstantBuffer<FLightViewProjConstants>();
-		FRenderResourceFactory::UpdateConstantBufferData(LightVPBuffer, LightVP);
-		Pipeline->SetConstantBuffer(6, EShaderType::VS, LightVPBuffer);  // UberLit.hlsl의 b6
+		// 기존 버퍼 재사용 (매 프레임 생성하지 않음)
+		FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);
+		Pipeline->SetConstantBuffer(6, EShaderType::VS, ConstantBufferLightViewProj);  // UberLit.hlsl의 b6
 
 		// Shadow Map 텍스처 바인딩 (t10)
 		Pipeline->SetShaderResourceView(10, EShaderType::PS, DeviceRes->GetShadowMapSRV());
 
 		// Shadow Sampler 바인딩 (s1)
 		Pipeline->SetSamplerState(1, EShaderType::PS, Renderer.GetDefaultSampler());
-
-		SafeRelease(LightVPBuffer);
 	}
 	
 	if (!(Context.ShowFlags & EEngineShowFlags::SF_StaticMesh)) { return; }

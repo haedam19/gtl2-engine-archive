@@ -76,6 +76,7 @@ void URenderer::Init(HWND InWindowHandle)
 	RenderPasses.push_back(LightPass);
 
 	FStaticMeshPass* StaticMeshPass = new FStaticMeshPass(Pipeline, ConstantBufferViewProj, ConstantBufferModels,
+		ConstantBufferLightViewProj,
 		UberLitVertexShader, UberLitPixelShader, UberLitInputLayout, DefaultDepthStencilState);
 	RenderPasses.push_back(StaticMeshPass);
 

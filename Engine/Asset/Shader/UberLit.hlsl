@@ -419,9 +419,12 @@ float CalculateShadow(float4 LightSpacePos)
 
     float currentDepth = projCoords.z;
 
-    // Simple shadow test (no PCF, no bias)
+    // Bias to prevent shadow acne and z-fighting
+    float bias = 0.0005f;
+
+    // Shadow test with bias
     float shadowMapDepth = ShadowMap.Sample(ShadowSampler, projCoords.xy).r;
-    float shadow = currentDepth > shadowMapDepth ? 0.0f : 1.0f;
+    float shadow = (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
 
     return shadow;
 }
