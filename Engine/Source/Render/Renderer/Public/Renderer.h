@@ -57,6 +57,7 @@ public:
 	void CreateStaticMeshShader();
 	void CreateGizmoShader();
 	void CreateClusteredRenderingGrid();
+	void CreateShadowDepthShader();
 
 	// HotReload
 	/** @brief 런타임 중 VS, PS 셰이더 파일이 변경되었는지 확인하고, 변경된 파일을 사용하는 Shader Usage들을 반환합니다.*/
@@ -133,6 +134,7 @@ private:
 	ID3D11Buffer* ConstantBufferModels = nullptr;
 	ID3D11Buffer* ConstantBufferViewProj = nullptr;
 	ID3D11Buffer* ConstantBufferColor = nullptr;
+	ID3D11Buffer* ConstantBufferLightViewProj = nullptr;
 	FLOAT ClearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
 	// Default Shaders
@@ -180,6 +182,12 @@ private:
 	ID3D11PixelShader* FogPixelShader = nullptr;
 	ID3D11InputLayout* FogInputLayout = nullptr;
 	ID3D11SamplerState* DefaultSampler = nullptr;
+
+	// Shadow Depth Shaders
+	ID3D11VertexShader* ShadowDepthVertexShader = nullptr;
+	ID3D11PixelShader* ShadowDepthPixelShader = nullptr;
+	ID3D11InputLayout* ShadowDepthInputLayout = nullptr;
+	ID3D11SamplerState* ShadowSampler = nullptr;
 	
 	uint32 Stride = 0;
 
@@ -193,6 +201,7 @@ private:
 	FFXAAPass* FXAAPass = nullptr;
 	FLightPass* LightPass = nullptr;
 	FClusteredRenderingGridPass* ClusteredRenderingGridPass = nullptr;
+	class FShadowMapPass* ShadowMapPass = nullptr;
 
 	// For Hot Reloading Shaders
 	TMap<std::wstring, TSet<ShaderUsage>> ShaderFileUsageMap;

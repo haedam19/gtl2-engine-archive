@@ -18,6 +18,10 @@ public:
 	void CreateDepthBuffer();
 	void ReleaseDepthBuffer();
 
+	// Shadow Map Texture, dsv, srv
+	void CreateShadowMap();
+	void ReleaseShadowMap();
+
 	// Scene Color Texture, rtv, srv
 	void CreateSceneColorTarget();
 	void ReleaseSceneColorTarget();
@@ -37,6 +41,8 @@ public:
 	ID3D11ShaderResourceView* GetNormalSRV() const { return NormalBufferSRV; }
 	ID3D11ShaderResourceView* GetDepthSRV() const { return DepthBufferSRV; }
 	ID3D11ShaderResourceView* GetDepthStencilSRV() const { return DepthStencilSRV; }
+	ID3D11ShaderResourceView* GetShadowMapSRV() const { return ShadowMapSRV; }
+	ID3D11DepthStencilView* GetShadowMapDSV() const { return ShadowMapDSV; }
 
 	ID3D11RenderTargetView* GetSceneColorRenderTargetView() const {return SceneColorTextureRTV; }
 	ID3D11ShaderResourceView* GetSceneColorShaderResourceView() const{return SceneColorTextureSRV; }
@@ -74,6 +80,10 @@ private:
 	ID3D11DepthStencilView* DepthStencilView = nullptr;
 	ID3D11ShaderResourceView* DepthBufferSRV = nullptr;
 	ID3D11ShaderResourceView* DepthStencilSRV = nullptr;
+
+	ID3D11Texture2D* ShadowMapTexture = nullptr;
+	ID3D11DepthStencilView* ShadowMapDSV = nullptr;
+	ID3D11ShaderResourceView* ShadowMapSRV = nullptr;
 
 	ID3D11Texture2D* SceneColorTexture = nullptr;
 	ID3D11RenderTargetView* SceneColorTextureRTV = nullptr;

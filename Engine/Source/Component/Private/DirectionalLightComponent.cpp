@@ -139,3 +139,33 @@ FDirectionalLightInfo UDirectionalLightComponent::GetDirectionalLightInfo() cons
 {
     return FDirectionalLightInfo{ FVector4(LightColor, 1), GetForwardVector(), Intensity };
 }
+
+FMatrix UDirectionalLightComponent::GetLightViewMatrix() const
+{
+    // Light의 위치 - 원점을 바라보도록 설정
+    FVector LightDirection = GetForwardVector();
+    FVector LightPosition = -LightDirection * (ShadowDistance * 0.5f);
+
+    // Look-At 행렬 생성
+    FVector Target = FVector::ZeroVector();
+    FVector Up = FVector::UpVector();
+
+    // Forward 벡터가 Up 벡터와 평행한 경우 처리
+    if (std::abs(LightDirection.Dot(Up)) > 0.99f)
+    {
+        Up = FVector::RightVector();
+    }
+
+    return FMatrix::LookAtLH(LightPosition, Target, Up);
+}
+
+FMatrix UDirectionalLightComponent::GetLightProjectionMatrix() const
+{
+    // Orthographic Projection (Directional Light는 평행광이므로)
+    // Shadow Map 범위를 ShadowDistance를 기준으로 설정
+    float halfSize = ShadowDistance * 0.5f;
+    float nearZ = 0.1f;
+    float farZ = ShadowDistance;
+
+    return FMatrix::OrthographicLH(halfSize * 2.0f, halfSize * 2.0f, nearZ, farZ);
+}

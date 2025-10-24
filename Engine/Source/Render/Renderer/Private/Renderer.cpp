@@ -26,6 +26,7 @@
 #include "Render/RenderPass/Public/LightPass.h"
 #include "Render/RenderPass/Public/StaticMeshPass.h"
 #include "Render/RenderPass/Public/TextPass.h"
+#include "Render/RenderPass/Public/ShadowMapPass.h"
 #include "Render/Renderer/Public/RenderResourceFactory.h"
 #include "Render/Renderer/Public/Renderer.h"
 #include "Render/RenderPass/Public/ClusteredRenderingGridPass.h"
@@ -62,8 +63,14 @@ void URenderer::Init(HWND InWindowHandle)
 	CreateStaticMeshShader();
 	CreateGizmoShader();
 	CreateClusteredRenderingGrid();
+	CreateShadowDepthShader();
 
 	//ViewportClient->InitializeLayout(DeviceResources->GetViewportInfo());
+
+	// Shadow Map Pass를 가장 먼저 추가 (다른 Pass보다 먼저 실행되어야 함)
+	ShadowMapPass = new FShadowMapPass(Pipeline, ConstantBufferLightViewProj, ConstantBufferModels,
+		ShadowDepthVertexShader, ShadowDepthPixelShader, ShadowDepthInputLayout, DefaultDepthStencilState);
+	RenderPasses.push_back(ShadowMapPass);
 
 	LightPass = new FLightPass(Pipeline, ConstantBufferViewProj, GizmoInputLayout, GizmoVS, GizmoPS, DefaultDepthStencilState);
 	RenderPasses.push_back(LightPass);
@@ -389,6 +396,42 @@ void URenderer::CreateClusteredRenderingGrid()
 	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &ClusteredRenderingGridPS);
 
 	RegisterShaderReloadCache(ShaderPath, ShaderUsage::CLUSTERED_RENDERING_GRID);
+}
+
+void URenderer::CreateShadowDepthShader()
+{
+	const std::wstring ShaderFilePathString = L"Asset/Shader/ShadowDepthShader.hlsl";
+	const std::filesystem::path ShaderPath(ShaderFilePathString);
+
+	// Shadow Depth Shader는 StaticMesh와 동일한 입력 레이아웃 사용
+	TArray<D3D11_INPUT_ELEMENT_DESC> LayoutDesc =
+	{
+		{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D11_INPUT_PER_VERTEX_DATA, 0}
+	};
+
+	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, LayoutDesc, &ShadowDepthVertexShader, &ShadowDepthInputLayout);
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &ShadowDepthPixelShader);
+
+	// Shadow Sampler 생성 (Comparison Sampler for PCF)
+	D3D11_SAMPLER_DESC shadowSamplerDesc = {};
+	shadowSamplerDesc.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR;
+	shadowSamplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
+	shadowSamplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
+	shadowSamplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+	shadowSamplerDesc.MipLODBias = 0.0f;
+	shadowSamplerDesc.MaxAnisotropy = 1;
+	shadowSamplerDesc.ComparisonFunc = D3D11_COMPARISON_LESS_EQUAL;
+	shadowSamplerDesc.BorderColor[0] = 1.0f;
+	shadowSamplerDesc.BorderColor[1] = 1.0f;
+	shadowSamplerDesc.BorderColor[2] = 1.0f;
+	shadowSamplerDesc.BorderColor[3] = 1.0f;
+	shadowSamplerDesc.MinLOD = 0;
+	shadowSamplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+
+	GetDevice()->CreateSamplerState(&shadowSamplerDesc, &ShadowSampler);
 }
 
 TSet<ShaderUsage> URenderer::GatherHotReloadTargets()
@@ -955,6 +998,7 @@ void URenderer::CreateConstantBuffers()
 	ConstantBufferModels = FRenderResourceFactory::CreateConstantBuffer<FMatrix>();
 	ConstantBufferColor = FRenderResourceFactory::CreateConstantBuffer<FVector4>();
 	ConstantBufferViewProj = FRenderResourceFactory::CreateConstantBuffer<FCameraConstants>();
+	ConstantBufferLightViewProj = FRenderResourceFactory::CreateConstantBuffer<FLightViewProjConstants>();
 }
 
 void URenderer::ReleaseConstantBuffers()
@@ -962,4 +1006,5 @@ void URenderer::ReleaseConstantBuffers()
 	SafeRelease(ConstantBufferModels);
 	SafeRelease(ConstantBufferColor);
 	SafeRelease(ConstantBufferViewProj);
+	SafeRelease(ConstantBufferLightViewProj);
 }

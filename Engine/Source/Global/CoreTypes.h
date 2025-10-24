@@ -23,9 +23,22 @@ struct FCameraConstants
 
 	FMatrix View;
 	FMatrix Projection;
-	FVector ViewWorldLocation;    
+	FVector ViewWorldLocation;
 	float NearClip;
 	float FarClip;
+};
+
+__declspec(align(16))
+struct FLightViewProjConstants
+{
+	FLightViewProjConstants()
+	{
+		LightView = FMatrix::Identity();
+		LightProjection = FMatrix::Identity();
+	}
+
+	FMatrix LightView;
+	FMatrix LightProjection;
 };
 
 #define HAS_DIFFUSE_MAP	 (1 << 0)

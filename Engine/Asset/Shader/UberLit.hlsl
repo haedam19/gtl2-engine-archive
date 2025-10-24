@@ -39,6 +39,12 @@ cbuffer Camera : register(b1)
     float FarClip;
 }
 
+cbuffer LightViewProj : register(b6)
+{
+    row_major float4x4 LightView;
+    row_major float4x4 LightProjection;
+};
+
 cbuffer GlobalLightConstant : register(b3)
 {
     FAmbientLightInfo Ambient;
@@ -66,6 +72,8 @@ StructuredBuffer<int> PointLightIndices : register(t6);
 StructuredBuffer<int> SpotLightIndices : register(t7);
 StructuredBuffer<FPointLightInfo> PointLightInfos : register(t8);
 StructuredBuffer<FSpotLightInfo> SpotLightInfos : register(t9);
+Texture2D ShadowMap : register(t10);			// Shadow Map
+SamplerState ShadowSampler : register(s1);
 
 
 uint GetDepthSliceIdx(float ViewZ)
@@ -178,6 +186,7 @@ struct PS_INPUT
     float3 WorldNormal : TEXCOORD1;
     float2 Tex : TEXCOORD2;
     float4 WorldTangent : TEXCOORD3;
+    float4 LightSpacePos : TEXCOORD4;		// Shadow Mapping용 Light Space Position
 #if LIGHTING_MODEL_GOURAUD
     float4 AmbientLight : COLOR0;
     float4 DiffuseLight : COLOR1;
@@ -390,18 +399,64 @@ float3 ComputeNormalMappedWorldNormal(float2 UV, float3 WorldNormal, float4 Worl
     return SafeNormalize3(mul(TangentSpaceNormal, TBN));
 
 }
+// Shadow Calculation with PCF (Percentage Closer Filtering)
+float CalculateShadow(float4 LightSpacePos)
+{
+    // Perspective divide
+    float3 projCoords = LightSpacePos.xyz / LightSpacePos.w;
+
+    // Transform to [0,1] range for texture sampling
+    projCoords.x = projCoords.x * 0.5f + 0.5f;
+    projCoords.y = -projCoords.y * 0.5f + 0.5f;  // Flip Y
+
+    // Check if position is outside shadow map
+    if (projCoords.x < 0.0f || projCoords.x > 1.0f ||
+        projCoords.y < 0.0f || projCoords.y > 1.0f ||
+        projCoords.z < 0.0f || projCoords.z > 1.0f)
+    {
+        return 1.0f;  // No shadow
+    }
+
+    float currentDepth = projCoords.z;
+
+    // Shadow bias to prevent shadow acne
+    float bias = 0.005f;
+
+    // PCF (Percentage Closer Filtering) for soft shadows
+    float shadow = 0.0f;
+    float2 texelSize = 1.0f / float2(2048.0f, 2048.0f);
+
+    for (int x = -1; x <= 1; ++x)
+    {
+        for (int y = -1; y <= 1; ++y)
+        {
+            float2 offset = float2(x, y) * texelSize;
+            float pcfDepth = ShadowMap.Sample(ShadowSampler, projCoords.xy + offset).r;
+            shadow += (currentDepth - bias) > pcfDepth ? 0.0f : 1.0f;
+        }
+    }
+    shadow /= 9.0f;
+
+    return shadow;
+}
+
 // Vertex Shader
 PS_INPUT Uber_VS(VS_INPUT Input)
 {
     PS_INPUT Output;
-    
     Output.WorldPosition = mul(float4(Input.Position, 1.0f), World).xyz;
     Output.Position = mul(mul(mul(float4(Input.Position, 1.0f), World), View), Projection);
+
     float3x3 World3x3 = (float3x3) World;
     Output.WorldNormal = SafeNormalize3(mul(Input.Normal, transpose(Inverse3x3(World3x3))));
     float3 WorldTangent = SafeNormalize3(mul(Input.Tangent.xyz, (float3x3) World));
     Output.WorldTangent = float4(WorldTangent, Input.Tangent.w);
     Output.Tex = Input.Tex;
+
+    // Shadow Mapping: Light Space Position 계산
+    float4 LightViewPos = mul(mul(float4(Input.Position, 1.0f), World),
+    LightView);
+    Output.LightSpacePos = mul(LightViewPos, LightProjection);
     
 #if LIGHTING_MODEL_GOURAUD
     // Calculate lighting in vertex shader (Gouraud)
@@ -479,7 +534,8 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     
 #if LIGHTING_MODEL_GOURAUD
     // Use pre-calculated vertex lighting; apply diffuse material/texture per-pixel
-    finalPixel.rgb = Input.AmbientLight.rgb * ambientColor.rgb + Input.DiffuseLight.rgb * diffuseColor.rgb + Input.SpecularLight.rgb * specularColor.rgb;
+    float shadowFactor = CalculateShadow(Input.LightSpacePos);
+    finalPixel.rgb = Input.AmbientLight.rgb * ambientColor.rgb + (Input.DiffuseLight.rgb * shadowFactor) * diffuseColor.rgb + (Input.SpecularLight.rgb * shadowFactor) * specularColor.rgb;
     
 #elif LIGHTING_MODEL_LAMBERT || LIGHTING_MODEL_BLINNPHONG
     // Calculate lighting in pixel shader
@@ -488,9 +544,13 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     
     // 1. Ambient Light
     Illumination.Ambient = CalculateAmbientLight(Ambient);
-    
-    // 2. Directional Light
-    ADD_ILLUM(Illumination, CalculateDirectionalLight(Directional, N, Input.WorldPosition, ViewWorldLocation));
+
+    // 2. Directional Light with Shadow
+    FIllumination DirLightIllum = CalculateDirectionalLight(Directional, N, Input.WorldPosition, ViewWorldLocation);
+    float shadowFactor = CalculateShadow(Input.LightSpacePos);
+    DirLightIllum.Diffuse *= shadowFactor;
+    DirLightIllum.Specular *= shadowFactor;
+    ADD_ILLUM(Illumination, DirLightIllum);
     
     // 3. Point Lights
     uint LightIndicesOffset = GetLightIndicesOffset(Input.WorldPosition);

@@ -52,10 +52,19 @@ public:
     void RenderLightDirectionGizmo(UCamera* InCamera);
     FDirectionalLightInfo GetDirectionalLightInfo() const;
 
+    // Shadow Mapping
+    FMatrix GetLightViewMatrix() const;
+    FMatrix GetLightProjectionMatrix() const;
+    void SetShadowDistance(float InDistance) { ShadowDistance = InDistance; }
+    float GetShadowDistance() const { return ShadowDistance; }
+
 private:
     void EnsureVisualizationBillboard()override;
 
 private:
     FEditorPrimitive LightDirectionArrow;
+
+    // Shadow parameters
+    float ShadowDistance = 1000.0f;  // Shadow 렌더링 거리
 };
 

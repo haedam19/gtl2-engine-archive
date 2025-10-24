@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "Render/RenderPass/Public/StaticMeshPass.h"
 #include "Component/Mesh/Public/StaticMeshComponent.h"
+#include "Component/Public/DirectionalLightComponent.h"
 #include "Render/Renderer/Public/Pipeline.h"
 #include "Render/Renderer/Public/RenderResourceFactory.h"
 #include "Texture/Public/Texture.h"
@@ -38,6 +39,30 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 	Pipeline->SetConstantBuffer(0, EShaderType::VS, ConstantBufferModel);
 	Pipeline->SetConstantBuffer(1, EShaderType::VS, ConstantBufferCamera);
 	Pipeline->SetConstantBuffer(1, EShaderType::PS, ConstantBufferCamera);
+
+	// Shadow Map과 LVP 설정
+	const auto& DeviceRes = Renderer.GetDeviceResources();
+	if (!Context.DirectionalLights.empty() && Context.DirectionalLights[0])
+	{
+		UDirectionalLightComponent* DirLight = Context.DirectionalLights[0];
+
+		// Light View Projection 행렬 설정 (b2)
+		FLightViewProjConstants LightVP;
+		LightVP.LightView = DirLight->GetLightViewMatrix();
+		LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
+
+		ID3D11Buffer* LightVPBuffer = FRenderResourceFactory::CreateConstantBuffer<FLightViewProjConstants>();
+		FRenderResourceFactory::UpdateConstantBufferData(LightVPBuffer, LightVP);
+		Pipeline->SetConstantBuffer(6, EShaderType::VS, LightVPBuffer);  // UberLit.hlsl의 b6
+
+		// Shadow Map 텍스처 바인딩 (t10)
+		Pipeline->SetShaderResourceView(10, EShaderType::PS, DeviceRes->GetShadowMapSRV());
+
+		// Shadow Sampler 바인딩 (s1)
+		Pipeline->SetSamplerState(1, EShaderType::PS, Renderer.GetDefaultSampler());
+
+		SafeRelease(LightVPBuffer);
+	}
 	
 	if (!(Context.ShowFlags & EEngineShowFlags::SF_StaticMesh)) { return; }
 	TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
@@ -162,7 +187,9 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 	}
 	Pipeline->SetConstantBuffer(2, EShaderType::PS, nullptr);
 
-	
+	// Shadow Map SRV unbind (다음 ShadowMapPass를 위해)
+	Pipeline->SetShaderResourceView(10, EShaderType::PS, nullptr);
+
 	// --- RTVs Reset ---
 	
 	/**
