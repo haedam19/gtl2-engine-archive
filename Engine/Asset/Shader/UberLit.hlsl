@@ -399,7 +399,7 @@ float3 ComputeNormalMappedWorldNormal(float2 UV, float3 WorldNormal, float4 Worl
     return SafeNormalize3(mul(TangentSpaceNormal, TBN));
 
 }
-// Shadow Calculation with PCF (Percentage Closer Filtering)
+// Shadow Calculation (Simple LVP-based shadow mapping)
 float CalculateShadow(float4 LightSpacePos)
 {
     // Perspective divide
@@ -419,23 +419,9 @@ float CalculateShadow(float4 LightSpacePos)
 
     float currentDepth = projCoords.z;
 
-    // Shadow bias to prevent shadow acne
-    float bias = 0.005f;
-
-    // PCF (Percentage Closer Filtering) for soft shadows
-    float shadow = 0.0f;
-    float2 texelSize = 1.0f / float2(2048.0f, 2048.0f);
-
-    for (int x = -1; x <= 1; ++x)
-    {
-        for (int y = -1; y <= 1; ++y)
-        {
-            float2 offset = float2(x, y) * texelSize;
-            float pcfDepth = ShadowMap.Sample(ShadowSampler, projCoords.xy + offset).r;
-            shadow += (currentDepth - bias) > pcfDepth ? 0.0f : 1.0f;
-        }
-    }
-    shadow /= 9.0f;
+    // Simple shadow test (no PCF, no bias)
+    float shadowMapDepth = ShadowMap.Sample(ShadowSampler, projCoords.xy).r;
+    float shadow = currentDepth > shadowMapDepth ? 0.0f : 1.0f;
 
     return shadow;
 }
