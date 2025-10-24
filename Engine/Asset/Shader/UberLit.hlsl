@@ -455,9 +455,9 @@ PS_INPUT Uber_VS(VS_INPUT Input)
     Output.Tex = Input.Tex;
 
     // Shadow Mapping: Light Space Position 계산
-    float4 LightViewPos = mul(mul(float4(Input.Position, 1.0f), World),
-    LightView);
-    Output.LightSpacePos = mul(LightViewPos, LightProjection);
+    float4 worldPos = mul(float4(Input.Position, 1.0f), World);
+    float4 lightViewPos = mul(worldPos, LightView);
+    Output.LightSpacePos = mul(lightViewPos, LightProjection);
     
 #if LIGHTING_MODEL_GOURAUD
     // Calculate lighting in vertex shader (Gouraud)

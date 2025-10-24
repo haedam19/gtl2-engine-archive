@@ -42,16 +42,26 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 	Pipeline->SetConstantBuffer(1, EShaderType::VS, ConstantBufferCamera);
 	Pipeline->SetConstantBuffer(1, EShaderType::PS, ConstantBufferCamera);
 
-	// Shadow Map과 LVP 설정
+	// Shadow Map과 LVP/PSM 설정
 	const auto& DeviceRes = Renderer.GetDeviceResources();
 	if (!Context.DirectionalLights.empty() && Context.DirectionalLights[0])
 	{
 		UDirectionalLightComponent* DirLight = Context.DirectionalLights[0];
 
-		// Light View Projection 행렬 설정 (b6)
+		// Light View Projection 행렬 설정 (Shadow Map 타입에 따라 다르게 처리)
 		FLightViewProjConstants LightVP;
-		LightVP.LightView = DirLight->GetLightViewMatrix();
-		LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
+		if (DirLight->GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
+		{
+			// PSM: Camera 정보를 사용한 Perspective Shadow Mapping
+			LightVP.LightView = DirLight->GetLightViewMatrix(Context.CurrentCamera);
+			LightVP.LightProjection = DirLight->GetLightProjectionMatrix(Context.CurrentCamera);
+		}
+		else
+		{
+			// LVP: 기본 Orthographic Shadow Mapping
+			LightVP.LightView = DirLight->GetLightViewMatrix();
+			LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
+		}
 
 		// 기존 버퍼 재사용 (매 프레임 생성하지 않음)
 		FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);

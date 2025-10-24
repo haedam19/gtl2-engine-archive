@@ -55,8 +55,14 @@ public:
     // Shadow Mapping
     FMatrix GetLightViewMatrix() const;
     FMatrix GetLightProjectionMatrix() const;
+    FMatrix GetLightViewMatrix(class UCamera* InCamera) const;
+    FMatrix GetLightProjectionMatrix(class UCamera* InCamera) const;
+
     void SetShadowDistance(float InDistance) { ShadowDistance = InDistance; }
     float GetShadowDistance() const { return ShadowDistance; }
+
+    void SetShadowMapType(EShadowMapType InType) { ShadowMapType = InType; }
+    EShadowMapType GetShadowMapType() const { return ShadowMapType; }
 
 private:
     void EnsureVisualizationBillboard()override;
@@ -66,5 +72,6 @@ private:
 
     // Shadow parameters
     float ShadowDistance = 1000.0f;  // Shadow 렌더링 거리
+    EShadowMapType ShadowMapType = EShadowMapType::LVP;  // Shadow Map 타입
 };
 

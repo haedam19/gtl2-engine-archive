@@ -6,6 +6,7 @@
 #include "Render/UI/Window/Public/UIWindow.h"
 #include "Level/Public/Level.h"
 #include "Render/Renderer/Public/Renderer.h"
+#include "Component/Public/DirectionalLightComponent.h"
 
 IMPLEMENT_CLASS(UMainBarWidget, UWidget)
 
@@ -478,6 +479,49 @@ void UMainBarWidget::RenderShowFlagsMenu()
 				UE_LOG("MainBarWidget: FXAA 활성화");
 			}
 			CurrentLevel->SetShowFlags(ShowFlags);
+		}
+
+		ImGui::Separator();
+
+		// Shadow Map 타입 선택
+		ImGui::Text("Shadow Map 타입");
+
+		// 현재 DirectionalLight 찾기
+		TArray<ULightComponent*> LightComponents = CurrentLevel->GetLightComponents();
+		UDirectionalLightComponent* DirLight = nullptr;
+
+		// DirectionalLight 찾기
+		for (ULightComponent* Light : LightComponents)
+		{
+			if (Light && Light->GetLightType() == ELightComponentType::LightType_Directional)
+			{
+				DirLight = static_cast<UDirectionalLightComponent*>(Light);
+				break;
+			}
+		}
+
+		if (DirLight)
+		{
+			EShadowMapType CurrentType = DirLight->GetShadowMapType();
+
+			bool bIsLVP = (CurrentType == EShadowMapType::LVP);
+			bool bIsPSM = (CurrentType == EShadowMapType::PSM);
+
+			if (ImGui::MenuItem("LVP (Light View Projection)", nullptr, bIsLVP))
+			{
+				DirLight->SetShadowMapType(EShadowMapType::LVP);
+				UE_LOG("MainBarWidget: Shadow Map 타입을 LVP로 변경");
+			}
+
+			if (ImGui::MenuItem("PSM (Perspective Shadow Maps)", nullptr, bIsPSM))
+			{
+				DirLight->SetShadowMapType(EShadowMapType::PSM);
+				UE_LOG("MainBarWidget: Shadow Map 타입을 PSM으로 변경");
+			}
+		}
+		else
+		{
+			ImGui::TextDisabled("DirectionalLight가 없습니다");
 		}
 
 		ImGui::EndMenu();

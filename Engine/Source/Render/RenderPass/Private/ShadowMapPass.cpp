@@ -67,10 +67,20 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
     FPipelineInfo PipelineInfo = { InputLayout, VS, RS, DS, PS, nullptr, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST };
     Pipeline->UpdatePipeline(PipelineInfo);
 
-    // Light View Projection 행렬 계산
+    // Light View Projection 행렬 계산 (Shadow Map 타입에 따라 다르게 처리)
     FLightViewProjConstants LightVP;
-    LightVP.LightView = DirLight->GetLightViewMatrix();
-    LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
+    if (DirLight->GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
+    {
+        // PSM: Camera 정보를 사용한 Perspective Shadow Mapping
+        LightVP.LightView = DirLight->GetLightViewMatrix(Context.CurrentCamera);
+        LightVP.LightProjection = DirLight->GetLightProjectionMatrix(Context.CurrentCamera);
+    }
+    else
+    {
+        // LVP: 기본 Orthographic Shadow Mapping
+        LightVP.LightView = DirLight->GetLightViewMatrix();
+        LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
+    }
 
     // Constant Buffer 업데이트
     FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);

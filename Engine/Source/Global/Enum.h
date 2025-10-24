@@ -199,3 +199,9 @@ enum class EViewType : uint8
 	OrthoFront,
 	OrthoBack
 };
+
+enum class EShadowMapType : uint8
+{
+	LVP,	// Light View Projection (Orthographic)
+	PSM		// Perspective Shadow Maps
+};

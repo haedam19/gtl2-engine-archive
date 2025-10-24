@@ -169,3 +169,83 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix() const
 
     return FMatrix::OrthographicLH(halfSize * 2.0f, halfSize * 2.0f, nearZ, farZ);
 }
+
+// PSM (Perspective Shadow Maps) Light View Matrix
+FMatrix UDirectionalLightComponent::GetLightViewMatrix(UCamera* InCamera) const
+{
+    if (!InCamera)
+    {
+        // 기본 LVP용 LightView 반환
+        return GetLightViewMatrix();
+    }
+
+    // PSM의 경우: LightView는 Identity로 설정
+    // 실제 변환은 GetLightProjectionMatrix()에서 처리됨
+    // (LightView * CameraProj * CameraView가 Projection에 포함됨)
+    return FMatrix::Identity();
+}
+
+
+FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera) const
+{
+    if (!InCamera)
+    {
+        // 기본 Orthographic or Directional용 LVP 반환
+        return GetLightProjectionMatrix();
+    }
+
+    // PSM: Perspective Shadow Mapping
+    // 목표 변환 순서: WorldPos → CameraView → CameraProj → LightView
+    //
+    // Row-major 시스템에서:
+    // Shader는 mul(WorldPos, LightView) → mul(result, LightProj) 형태
+    // 즉 WorldPos * LightView * LightProj
+    //
+    // LightView = Identity이므로
+    // WorldPos * Identity * LightProj = WorldPos * LightProj
+    //
+    // 따라서 LightProj에 전체 변환을 넣어야 함:
+    // LightProj = CameraView × CameraProj × LightView
+
+    // 1. PSM용 LightView: 카메라 위치를 따라가도록 설정
+    FVector LightDirection = GetForwardVector().GetNormalized();
+
+    // 카메라 위치를 중심으로 Shadow Map 생성
+    FVector CameraPos = InCamera->GetLocation();
+    FVector FocusPoint = CameraPos;  // 카메라 위치를 타겟으로
+    FVector LightPosition = FocusPoint - LightDirection * (ShadowDistance * 0.5f);
+
+    FVector Up = FVector::UpVector();
+    if (std::abs(LightDirection.Dot(Up)) > 0.99f)
+    {
+        Up = FVector::RightVector();
+    }
+
+    FMatrix LightView = FMatrix::LookAtLH(LightPosition, FocusPoint, Up);
+
+    // 2. 카메라 View/Projection 행렬
+    FMatrix CameraView = InCamera->GetViewMatrix();
+    FMatrix CameraProj = InCamera->GetProjectionMatrix();
+
+    // 3. PSM 행렬 계산
+    // Row-major에서 변환 순서: WorldPos * CameraView * CameraProj * LightView
+
+    // PSM의 올바른 구현:
+    // 목표: worldPos → LightView → CameraView → OrthoProj
+    // Row-major이므로 행렬 순서: LightView * CameraView * OrthoProj
+
+    float orthoSize = ShadowDistance;
+    FMatrix OrthoProj = FMatrix::OrthographicLH(orthoSize, orthoSize, 0.1f, ShadowDistance);
+
+    // 여러 순서 테스트:
+    // 옵션 1: LightView * CameraView * OrthoProj
+    //FMatrix PSM = LightView * CameraView * OrthoProj;
+
+    // 옵션 2: CameraView * LightView * OrthoProj (시도해볼 수 있음)
+     FMatrix PSM = CameraView  * CameraProj*GetLightViewMatrix();
+
+    // 옵션 3: LightView * OrthoProj (CameraView 제외, LVP와 유사)
+    // FMatrix PSM = LightView * OrthoProj;
+
+    return PSM;
+}

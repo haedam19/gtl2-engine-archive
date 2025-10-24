@@ -431,4 +431,34 @@ FMatrix FMatrix::OrthographicLH(float Width, float Height, float NearZ, float Fa
     return result;
 }
 
+FMatrix FMatrix::PerspectiveFovLH(float FovY, float AspectRatio, float NearZ, float FarZ)
+{
+    FMatrix result;
+
+    float yScale = 1.0f / std::tan(FovY * 0.5f);
+    float xScale = yScale / AspectRatio;
+
+    result.Data[0][0] = xScale;
+    result.Data[0][1] = 0.0f;
+    result.Data[0][2] = 0.0f;
+    result.Data[0][3] = 0.0f;
+
+    result.Data[1][0] = 0.0f;
+    result.Data[1][1] = yScale;
+    result.Data[1][2] = 0.0f;
+    result.Data[1][3] = 0.0f;
+
+    result.Data[2][0] = 0.0f;
+    result.Data[2][1] = 0.0f;
+    result.Data[2][2] = FarZ / (FarZ - NearZ);
+    result.Data[2][3] = 1.0f;
+
+    result.Data[3][0] = 0.0f;
+    result.Data[3][1] = 0.0f;
+    result.Data[3][2] = -NearZ * FarZ / (FarZ - NearZ);
+    result.Data[3][3] = 0.0f;
+
+    return result;
+}
+
 

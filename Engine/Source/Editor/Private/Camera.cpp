@@ -206,6 +206,55 @@ void UCamera::UpdateMatrixByOrth()
 	CameraConstants.FarClip = FarZ;
 }
 
+FMatrix UCamera::GetViewMatrix() const
+{
+	// View 행렬 계산
+	FMatrix T = FMatrix::TranslationMatrixInverse(RelativeLocation);
+	FMatrix R = FMatrix(Right, Up, Forward);
+	R = R.Transpose();
+	return T * R;
+}
+
+FMatrix UCamera::GetProjectionMatrix() const
+{
+	if (CameraType == ECameraType::ECT_Perspective)
+	{
+		// Perspective Projection
+		const float RadianFovY = FVector::GetDegreeToRadian(FovY);
+		const float F = 1.0f / std::tanf(RadianFovY * 0.5f);
+
+		FMatrix P = FMatrix::Identity();
+		P.Data[0][0] = F / Aspect;
+		P.Data[1][1] = F;
+		P.Data[2][2] = FarZ / (FarZ - NearZ);
+		P.Data[2][3] = 1.0f;
+		P.Data[3][2] = (-NearZ * FarZ) / (FarZ - NearZ);
+		P.Data[3][3] = 0.0f;
+
+		return P;
+	}
+	else // ECT_Orthographic
+	{
+		// Orthographic Projection
+		const float OrthoHeight = OrthoWidth / Aspect;
+		const float Left = -OrthoWidth * 0.5f;
+		const float Right = OrthoWidth * 0.5f;
+		const float Bottom = -OrthoHeight * 0.5f;
+		const float Top = OrthoHeight * 0.5f;
+
+		FMatrix P = FMatrix::Identity();
+		P.Data[0][0] = 2.0f / (Right - Left);
+		P.Data[1][1] = 2.0f / (Top - Bottom);
+		P.Data[2][2] = 1.0f / (FarZ - NearZ);
+		P.Data[3][0] = -(Right + Left) / (Right - Left);
+		P.Data[3][1] = -(Top + Bottom) / (Top - Bottom);
+		P.Data[3][2] = -NearZ / (FarZ - NearZ);
+		P.Data[3][3] = 1.0f;
+
+		return P;
+	}
+}
+
 const FCameraConstants UCamera::GetFViewProjConstantsInverse() const
 {
 	/*

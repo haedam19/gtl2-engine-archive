@@ -50,6 +50,9 @@ public:
 	const FCameraConstants& GetFViewProjConstants() const { return CameraConstants; }
 	const FCameraConstants GetFViewProjConstantsInverse() const;
 
+	FMatrix GetViewMatrix() const;
+	FMatrix GetProjectionMatrix() const;
+
 	FRay ConvertToWorldRay(float NdcX, float NdcY) const;
 
 	FVector CalculatePlaneNormal(const FVector4& Axis);
