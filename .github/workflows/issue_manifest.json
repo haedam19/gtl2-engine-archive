@@ -1,0 +1,114 @@
+{
+  "repo": "owner/repo", 
+  "projectV2Id": "", 
+  "defaultLabels": ["shadow", "engine", "dx11"],
+  "issues": [
+    {
+      "key": "iface",
+      "title": "Shadow System Interface Definition",
+      "body": "Define FShadowHandle, EvalShadow signature, ShowFlag/Stat keys.\n- Deliverables: headers, HLSL include skeleton.",
+      "assignees": [],
+      "labels": ["type:infra"],
+      "blocks": ["atlas", "light-mats", "editor-props", "showflag"]
+    },
+    {
+      "key": "atlas",
+      "title": "ShadowAtlas Core Implementation",
+      "body": "Implement FShadowAtlas, Allocate/Free, SRV/DSV/RTV, usage stats.",
+      "assignees": [],
+      "labels": ["component:shadow-atlas"],
+      "blocks": ["atlas-viz", "atlas-stat", "render-pass"]
+    },
+    {
+      "key": "light-mats",
+      "title": "Light Shadow Matrix Builder",
+      "body": "Directional/Spot/Point matrices, CSM split scaffolding.",
+      "assignees": [],
+      "labels": ["component:lighting"],
+      "blocks": ["render-pass", "pcf", "vsm"]
+    },
+    {
+      "key": "render-pass",
+      "title": "Shadow Render Pass Framework",
+      "body": "Per-light depth pass; Movable objects; state & viewport binding.",
+      "assignees": [],
+      "labels": ["component:lighting"],
+      "blocks": ["pcf", "vsm", "eval-shadow"]
+    },
+    {
+      "key": "editor-props",
+      "title": "Editor Light Property Integration",
+      "body": "bCastShadows, ShadowResolution, PSM Depth Map preview, Override camera.",
+      "assignees": [],
+      "labels": ["component:editor"],
+      "blocks": ["light-view-override"]
+    },
+    {
+      "key": "showflag",
+      "title": "ShowFlag / Stat System Setup",
+      "body": "HUD hooks, flags, counters for memory and counts.",
+      "assignees": [],
+      "labels": ["component:editor"],
+      "blocks": ["atlas-stat", "stat-overlay"]
+    },
+    {
+      "key": "atlas-viz",
+      "title": "Shadow Atlas Visualization & Debug Overlay",
+      "body": "Draw atlas rects, usage%; on-screen debug.",
+      "assignees": [],
+      "labels": ["component:shadow-atlas"]
+    },
+    {
+      "key": "pcf",
+      "title": "PCF Filtering Implementation",
+      "body": "Comparison sampler + Poisson taps; bias tuning hooks.",
+      "assignees": [],
+      "labels": ["component:filter"],
+      "blocks": ["eval-shadow"]
+    },
+    {
+      "key": "vsm",
+      "title": "VSM Pipeline Implementation",
+      "body": "Moments RT, separable Gaussian blur, Chebyshev sampling.",
+      "assignees": [],
+      "labels": ["component:filter"],
+      "blocks": ["eval-shadow"]
+    },
+    {
+      "key": "atlas-stat",
+      "title": "Shadow Atlas Memory/Allocation Stat",
+      "body": "Bytes = W*H*fmt; usage%; on HUD.",
+      "assignees": [],
+      "labels": ["component:editor", "component:shadow-atlas"]
+    },
+    {
+      "key": "eval-shadow",
+      "title": "Unified Shadow Evaluation (PCF/VSM/CSM toggle)",
+      "body": "HLSL EvalShadow glue; choose algo by flags; cascade selection.",
+      "assignees": [],
+      "labels": ["component:filter"],
+      "blocks": ["csm"]
+    },
+    {
+      "key": "light-view-override",
+      "title": "Light View Override & Depth Preview UI",
+      "body": "Switch camera to light; preview SRV; exit hotkey.",
+      "assignees": [],
+      "labels": ["component:editor"]
+    },
+    {
+      "key": "stat-overlay",
+      "title": "Stat Overlay Expansion",
+      "body": "Light counts, memory MB, shadow draws, atlas usage.",
+      "assignees": [],
+      "labels": ["component:editor"]
+    },
+    {
+      "key": "csm",
+      "title": "Cascade Shadow Map Implementation & Stabilization",
+      "body": "Split scheme, texel snapping, boundary blend, bias tuning.",
+      "assignees": [],
+      "labels": ["component:lighting", "component:filter"]
+    }
+  ]
+}

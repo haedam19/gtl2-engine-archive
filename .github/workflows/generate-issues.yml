@@ -1,0 +1,42 @@
+name: Generate Issues from Manifest
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_path:
+        description: "Path to issue_manifest.json"
+        default: "issue_manifest.json"
+        required: true
+      dry_run:
+        description: "Do not create issues, just print plan"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+  projects: write
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: |
+          npm install @octokit/rest @octokit/graphql
+
+      - name: Create Issues
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MANIFEST_PATH: ${{ github.event.inputs.manifest_path }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          node ./scripts/create_issues.js
