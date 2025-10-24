@@ -1,5 +1,4 @@
 {
-  "repo": "owner/repo", 
   "projectV2Id": "", 
   "defaultLabels": ["shadow", "engine", "dx11"],
   "issues": [
