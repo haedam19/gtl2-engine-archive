@@ -1,5 +1,7 @@
 #include "pch.h"
 #include "Render/Renderer/Public/ShadowAtlasManager.h"
+#include "Component/Public/DirectionalLightComponent.h"
+#include <algorithm>
 
 FShadowAtlasManager::FShadowAtlasManager()
 {
@@ -239,4 +241,76 @@ uint32 FShadowAtlasManager::GetDefaultAtlasSize(EShadowAtlasType Type) const
     default:
         return 2048;
     }
+}
+
+TArray<FLightAllocationPair> FShadowAtlasManager::AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights)
+{
+    TArray<FLightAllocationPair> Result;
+
+    // ===========================================================================
+    // 1단계: Light 수집 & Resolution 계산
+    // ===========================================================================
+    struct FSortEntry
+    {
+        UDirectionalLightComponent* Light = nullptr;
+        uint32 Resolution = 0;
+
+        bool operator<(const FSortEntry& Other) const
+        {
+            // First-Fit Decreasing: 큰 해상도부터
+            return Resolution > Other.Resolution;
+        }
+    };
+
+    TArray<FSortEntry> SortEntries;
+
+    for (UDirectionalLightComponent* Light : Lights)
+    {
+        if (!Light || !Light->GetLightEnabled())
+        {
+            continue;
+        }
+
+        FSortEntry Entry;
+        Entry.Light = Light;
+        Entry.Resolution = Light->GetShadowResolution();
+        SortEntries.push_back(Entry);
+    }
+
+    // ===========================================================================
+    // 2단계: Sorting (First-Fit Decreasing)
+    // ===========================================================================
+    std::sort(SortEntries.begin(), SortEntries.end());
+
+    // ===========================================================================
+    // 3단계: Atlas 할당
+    // ===========================================================================
+    ClearAllAllocations();  // 매 프레임 초기화
+
+    for (const FSortEntry& Entry : SortEntries)
+    {
+        FLightAllocationPair Pair;
+        Pair.Light = Entry.Light;
+        Pair.ShadowResolution = Entry.Resolution;
+
+        bool bSuccess = AllocateRegion(
+            EShadowAtlasType::DirectionalCSM,
+            Entry.Resolution,
+            Entry.Resolution,
+            Pair.Allocation
+        );
+
+        if (bSuccess)
+        {
+            Result.push_back(Pair);
+        }
+        else
+        {
+            UE_LOG_WARNING("ShadowAtlasManager: Directional Light Shadow Map 할당 실패 (Resolution: %d)", Entry.Resolution);
+        }
+    }
+
+    UE_LOG_INFO("ShadowAtlasManager: %d개의 Directional Light에 Shadow Map 할당 완료", Result.size());
+
+    return Result;
 }

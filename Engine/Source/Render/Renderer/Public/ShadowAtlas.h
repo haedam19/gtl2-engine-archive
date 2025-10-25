@@ -19,7 +19,7 @@ struct FShadowAtlasRegion
     bool IsValid() const { return Width > 0 && Height > 0; }
 };
 
-// 2D Bin Packing용 자유 사각형
+// MaxRects용 자유 사각형
 struct FFreeRectangle
 {
     uint32 X = 0;
@@ -30,9 +30,15 @@ struct FFreeRectangle
     FFreeRectangle() = default;
     FFreeRectangle(uint32 InX, uint32 InY, uint32 InW, uint32 InH)
         : X(InX), Y(InY), Width(InW), Height(InH) {}
+
+    // 주어진 크기가 이 사각형에 들어갈 수 있는지
+    bool CanContain(uint32 InWidth, uint32 InHeight) const
+    {
+        return Width >= InWidth && Height >= InHeight;
+    }
 };
 
-// Shadow Atlas 관리 클래스 (Guillotine Bin Packing)
+// Shadow Atlas 관리 클래스 (MaxRects Bin Packing)
 class FShadowAtlas
 {
 public:
@@ -48,14 +54,30 @@ public:
     // Atlas 크기
     uint32 GetAtlasSize() const { return AtlasSize; }
 
-private:
-    // Best Area Fit: 면적이 가장 작은 사각형 선택
-    int32 FindBestFit(uint32 Width, uint32 Height) const;
+    // 사용 통계
+    float GetUsagePercentage() const;
+    uint32 GetUsedArea() const { return UsedArea; }
 
-    // Guillotine Split: 사각형을 2개로 분할
-    void SplitFreeNode(int32 Index, uint32 Width, uint32 Height);
+private:
+    // MaxRects: Best Short Side Fit (BSSF)
+    // 가장 좁은 여유 공간(Short Side)이 최소인 Rect를 찾음
+    int32 FindBestShortSideFit(uint32 Width, uint32 Height, int32& OutBestShortSideFit, int32& OutBestLongSideFit) const;
+
+    // 사각형 배치 후 FreeRectangles 업데이트
+    void PlaceRectangle(const FFreeRectangle& UsedRect);
+
+    // 겹치는 영역 처리 (MaxRects의 핵심)
+    // UsedNode와 겹치는 FreeNode를 분할하여 새로운 Free Rect 생성
+    void SplitFreeNode(const FFreeRectangle& FreeNode, const FFreeRectangle& UsedNode, std::vector<FFreeRectangle>& NewNodes) const;
+
+    // 중복 제거: 다른 사각형에 완전히 포함되는 사각형 제거
+    void PruneFreeList();
+
+    // 두 사각형이 겹치는지 확인
+    bool IsIntersecting(const FFreeRectangle& A, const FFreeRectangle& B) const;
 
 private:
     uint32 AtlasSize;                           // Atlas 크기 (정사각형)
     std::vector<FFreeRectangle> FreeRectangles; // 사용 가능한 영역들
+    uint32 UsedArea = 0;                        // 사용된 영역 (통계용)
 };

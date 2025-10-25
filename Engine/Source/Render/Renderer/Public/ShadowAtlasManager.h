@@ -5,6 +5,7 @@
 #include <vector>
 
 class UDeviceResources;
+class UDirectionalLightComponent;
 
 // Shadow Atlas 타입
 enum class EShadowAtlasType
@@ -43,6 +44,16 @@ struct FShadowAtlasAllocation
     bool IsValid() const { return Region.IsValid() && DSV && SRV; }
 };
 
+// Light + Allocation 쌍 (Sorting 후 사용)
+struct FLightAllocationPair
+{
+    UDirectionalLightComponent* Light = nullptr;
+    FShadowAtlasAllocation Allocation;
+    uint32 ShadowResolution = 0;
+
+    bool IsValid() const { return Light && Allocation.IsValid(); }
+};
+
 // Shadow Atlas 통합 관리 클래스 (동적 확장 지원)
 class FShadowAtlasManager
 {
@@ -61,6 +72,10 @@ public:
 
     // 모든 Atlas 할당 초기화 (매 프레임 시작 시 호출)
     void ClearAllAllocations();
+
+    // Light Sorting + Allocation (핵심 함수)
+    // Directional Light들을 받아서 Sorting하고 Atlas에 할당
+    TArray<FLightAllocationPair> AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights);
 
     // Atlas 배열 접근
     const std::vector<FShadowAtlasInfo>& GetAtlases(EShadowAtlasType Type) const;

@@ -1,5 +1,6 @@
 #include "pch.h"
 #include <algorithm>
+#include "Render/Renderer/Public/ShadowAtlasManager.h"
 #include "Component/Mesh/Public/StaticMesh.h"
 #include "Component/Mesh/Public/StaticMeshComponent.h"
 #include "Component/Public/DecalComponent.h"
@@ -65,6 +66,10 @@ void URenderer::Init(HWND InWindowHandle)
 	CreateClusteredRenderingGrid();
 	CreateShadowDepthShader();
 
+	// Shadow Atlas Manager 초기화
+	ShadowAtlasManager = new FShadowAtlasManager();
+	ShadowAtlasManager->Initialize(GetDevice());
+
 	//ViewportClient->InitializeLayout(DeviceResources->GetViewportInfo());
 
 	// Shadow Map Pass를 가장 먼저 추가 (다른 Pass보다 먼저 실행되어야 함)
@@ -124,7 +129,13 @@ void URenderer::Release()
 	}
 	FXAAPass->Release();
 	SafeDelete(FXAAPass);
-	
+
+	if (ShadowAtlasManager)
+	{
+		ShadowAtlasManager->Release();
+		SafeDelete(ShadowAtlasManager);
+	}
+
 	SafeDelete(ViewportClient);
 	SafeDelete(Pipeline);
 	SafeDelete(DeviceResources);
