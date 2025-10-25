@@ -63,6 +63,7 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
     // Pipeline 설정
     FRenderState RenderState = UStaticMeshComponent::GetClassDefaultRenderState();
+    RenderState.SlopeScaledDepthBias = DirLight->GetShadowSlopeBias();
     ID3D11RasterizerState* RS = FRenderResourceFactory::GetRasterizerState(RenderState);
     FPipelineInfo PipelineInfo = { InputLayout, VS, RS, DS, PS, nullptr, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST };
     Pipeline->UpdatePipeline(PipelineInfo);
