@@ -60,14 +60,18 @@ public:
 
     // --- [UE Style] ---
 
-    // virtual FBox GetBoundingBox() const;
-
-    // virtual FSphere GetBoundingSphere() const;
-    
     /** @note Sets the light intensity and clamps it to the same range as Unreal Engine (0.0 - 20.0). */
-
     void SetIntensity(float InIntensity) override;
     void SetLightColor(FVector InLightColor) override;
+	void SetShadowResolutionScale(float InShadowResolutionScale) { ShadowResolutionScale = InShadowResolutionScale; }
+	void SetShadowBias(float InShadowBias) { ShadowBias = InShadowBias; }
+	void SetShadowSlopeBias(float InShadowSlopeBias) { ShadowSlopeBias = InShadowSlopeBias; }
+	void SetShadowSharpen(float InShadowSharpen) { ShadowSharpen = InShadowSharpen; }
+
+	float GetShadowResolutionScale() const { return ShadowResolutionScale; }
+	float GetShadowBias() const { return ShadowBias; }
+	float GetShadowSlopeBias() const { return ShadowSlopeBias; }
+	float GetShadowSharpen() const { return ShadowSharpen; }
 
     virtual void EnsureVisualizationBillboard(){};
 
@@ -88,6 +92,10 @@ protected:
     void UpdateVisualizationBillboardTint();
 
     UBillBoardComponent* VisualizationBillboard = nullptr;
+
 private:
-    
+	float ShadowResolutionScale = 1.0f;
+	float ShadowBias = 1e-3f; // NOTE: Rasterizer state에 입력되는 bias가 아닌 SampleCmp 연산시 추가되는 ref bias
+	float ShadowSlopeBias = 0.0f; // Scaling factor of slope-sclaed bias
+	float ShadowSharpen = 0.0f;
 };

@@ -132,10 +132,17 @@ private:
 	{
 		D3D11_FILL_MODE FillMode = {};
 		D3D11_CULL_MODE CullMode = {};
+		INT DepthBias = 0;
+		float SlopeScaledDepthBias = 0.0f;
+		float DepthBiasClamp = 0.0f;
 
 		bool operator==(const FRasterKey& InKey) const
 		{
-			return FillMode == InKey.FillMode && CullMode == InKey.CullMode;
+			return FillMode == InKey.FillMode
+				&& CullMode == InKey.CullMode
+				&& DepthBias == InKey.DepthBias
+				&& SlopeScaledDepthBias == InKey.SlopeScaledDepthBias
+				&& DepthBiasClamp == InKey.DepthBiasClamp;
 		}
 	};
 
@@ -151,8 +158,24 @@ private:
 			size_t H = 0;
 			Mix(H, (size_t)InKey.FillMode);
 			Mix(H, (size_t)InKey.CullMode);
+			Mix(H, (size_t)InKey.DepthBias);
+			Mix(H, FloatToHashable(InKey.SlopeScaledDepthBias));
+			Mix(H, FloatToHashable(InKey.DepthBiasClamp));
 
 			return H;
+		}
+
+	private:
+		static size_t FloatToHashable(float InValue)
+		{
+			// union을 이용해 같은 메모리 공간을 float와 uint32로 공유
+			// InValue를 float 멤버에 대입하면, 그 값의 비트 패턴이 그대로 uint32 멤버에 나타남.
+			union
+			{
+				float F;
+				uint32 U;
+			} Converter = { InValue };
+			return static_cast<size_t>(Converter.U);
 		}
 	};
 
