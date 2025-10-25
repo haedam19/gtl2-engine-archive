@@ -171,12 +171,12 @@ void UDirectionalLightComponentWidget::RenderWidget()
     }
     if (ImGui::IsItemHovered())
     {
-        ImGui::SetTooltip("픽셀 법선 기울기에 비례해 적용되는 bias입니다.\n값이 높을수록 빛과 평행한 면에서 아크니가 줄지만 Peter Panning이 커질 수 있습니다.");
+        ImGui::SetTooltip("빛 입장에서 면의 경사에 비례해 적용되는 bias입니다.");
     }
 
     ImGui::SetNextItemWidth(BoxWidth * 2.5f);
     float ShadowSharpen = DirectionalLightComponent->GetShadowSharpen();
-    if (ImGui::DragFloat("Shadow Sharpen", &ShadowSharpen, 0.01f, 0.0f, 4.0f, "%.2f"))
+    if (ImGui::DragFloat("Shadow Sharpen", &ShadowSharpen, 0.05f, 0.0f, 10.0f, "%.2f"))
     {
         DirectionalLightComponent->SetShadowSharpen(ShadowSharpen);
     }

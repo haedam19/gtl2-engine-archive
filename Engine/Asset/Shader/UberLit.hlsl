@@ -420,7 +420,7 @@ float CalculateShadow(float4 LightSpacePos)
     float currentDepth = projCoords.z;
 
     // Bias to prevent shadow acne and z-fighting
-    float bias = 0.0005f;
+    float bias = Directional.ShadowBias;
 
     // PCF (Percentage Closer Filtering) for soft shadows
     float shadow = 0.0f;
@@ -437,6 +437,10 @@ float CalculateShadow(float4 LightSpacePos)
         }
     }
     shadow /= 9.0f;  // Average of 9 samples
+    shadow = saturate(shadow);
+
+    float sharpen = max(0.0f, Directional.ShadowSharpen);
+    shadow = saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
 
     return shadow;
 }

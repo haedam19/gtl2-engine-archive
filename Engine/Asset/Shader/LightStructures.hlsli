@@ -13,6 +13,9 @@ struct FDirectionalLightInfo
     float4 Color;
     float3 Direction;
     float Intensity;
+    float ShadowBias;
+    float ShadowSharpen;
+    float2 Padding;
 };
 
 struct FPointLightInfo

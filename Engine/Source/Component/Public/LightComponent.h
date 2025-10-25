@@ -95,7 +95,7 @@ protected:
 
 private:
 	float ShadowResolutionScale = 1.0f;
-	float ShadowBias = 0.0f; // NOTE: Rasterizer state에 입력되는 bias가 아닌 SampleCmp 연산시 추가되는 ref bias
+	float ShadowBias = 1e-3f; // NOTE: Rasterizer state에 입력되는 bias가 아닌 SampleCmp 연산시 추가되는 ref bias
 	float ShadowSlopeBias = 0.0f; // Scaling factor of slope-sclaed bias
 	float ShadowSharpen = 0.0f;
 };

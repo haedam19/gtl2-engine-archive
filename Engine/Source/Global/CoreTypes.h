@@ -149,6 +149,9 @@ struct FDirectionalLightInfo
 	FVector4 Color;
 	FVector Direction;
 	float Intensity;
+	float ShadowBias;
+	float ShadowSharpen;
+	FVector2 Padding;
 };
 
 //StructuredBuffer padding 없어도됨
