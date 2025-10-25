@@ -4,6 +4,8 @@
 #include "Editor/Public/Editor.h"
 #include "Level/Public/Level.h"
 #include "Component/Public/ActorComponent.h"
+#include "Render/Renderer/Public/Renderer.h"
+#include "Render/Renderer/Public/DeviceResources.h"
 #include "ImGui/imgui.h"
 
 IMPLEMENT_CLASS(UDirectionalLightComponentWidget, UWidget)
@@ -109,6 +111,31 @@ void UDirectionalLightComponentWidget::RenderWidget()
     }
     
     ImGui::PopStyleColor(3);
+
+    ImGui::Separator();
+
+    // Shadow Map 미리보기
+    ImGui::Text("Shadow Depth Map Preview");
+
+    const auto& Renderer = URenderer::GetInstance();
+    const auto& DeviceResources = Renderer.GetDeviceResources();
+    ID3D11ShaderResourceView* ShadowMapSRV = DeviceResources->GetShadowMapSRV();
+
+    if (ShadowMapSRV)
+    {
+        // Shadow Map을 ImGui 이미지로 표시 (256x256 크기로 미리보기)
+        ImVec2 previewSize(256.0f, 256.0f);
+        ImGui::Image((void*)ShadowMapSRV, previewSize);
+
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("현재 라이트의 Shadow Depth Map\n흰색에 가까울수록 빛에 가깝고\n검은색에 가까울수록 빛에서 멀어요");
+        }
+    }
+    else
+    {
+        ImGui::TextDisabled("Shadow Map이 생성되지 않았습니다");
+    }
 
     ImGui::Separator();
 }
