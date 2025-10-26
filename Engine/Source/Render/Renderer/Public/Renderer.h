@@ -106,11 +106,16 @@ public:
 
 	void SetIsResizing(bool isResizing) { bIsResizing = isResizing; }
 
+	// Shadow Filter Mode
+	void SetShadowFilterMode(EShadowFilterMode InMode) { ShadowFilterMode = InMode; }
+	EShadowFilterMode GetShadowFilterMode() const { return ShadowFilterMode; }
+
 	ID3D11VertexShader* GetVertexShader(EViewModeIndex ViewModeIndex) const;
 	ID3D11PixelShader* GetPixelShader(EViewModeIndex ViewModeIndex) const;
 
 	FLightPass* GetLightPass() { return LightPass; }
 	FClusteredRenderingGridPass* GetClusteredRenderingGridPass() { return ClusteredRenderingGridPass; }
+	class FShadowMapPass* GetShadowMapPass() { return ShadowMapPass; }
 
 private:
 	/*
@@ -155,6 +160,11 @@ private:
 	ID3D11PixelShader* UberLitPixelShaderGouraud = nullptr;
 	ID3D11PixelShader* UberLitPixelShaderBlinnPhong = nullptr;
 	ID3D11PixelShader* UberLitPixelShaderWorldNormal = nullptr;
+	// VSM variants
+	ID3D11PixelShader* UberLitPixelShader_VSM = nullptr;
+	ID3D11PixelShader* UberLitPixelShaderGouraud_VSM = nullptr;
+	ID3D11PixelShader* UberLitPixelShaderBlinnPhong_VSM = nullptr;
+	ID3D11PixelShader* UberLitPixelShaderWorldNormal_VSM = nullptr;
 	ID3D11InputLayout* UberLitInputLayout = nullptr;
 	
 	//Gizmo Shaders
@@ -195,6 +205,9 @@ private:
 	
 	bool bIsResizing = false;
 	bool bFXAAEnabled = true;
+
+	// Shadow Filtering
+	EShadowFilterMode ShadowFilterMode = EShadowFilterMode::PCF;
 
 	TArray<class FRenderPass*> RenderPasses;
 
