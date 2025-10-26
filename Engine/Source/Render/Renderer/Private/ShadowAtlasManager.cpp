@@ -121,6 +121,9 @@ void FShadowAtlasManager::ClearAllAllocations()
             Atlas.Atlas->Clear();
         }
     }
+
+    // 현재 프레임의 Light 할당 정보 초기화
+    CurrentLightAllocations.clear();
 }
 
 const std::vector<FShadowAtlasInfo>& FShadowAtlasManager::GetAtlases(EShadowAtlasType Type) const
@@ -315,6 +318,8 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocateDirectionalLights(cons
         if (bSuccess)
         {
             Result.push_back(Pair);
+            // Light별 할당 정보 저장 (DetailWindow 시각화용)
+            CurrentLightAllocations[Entry.Light] = Pair.Allocation;
         }
         else
         {
@@ -464,6 +469,8 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(const 
             {
                 Result.push_back(Pair);
                 NewAllocations[Entry.Light] = Pair.Allocation;
+                // Light별 할당 정보 저장 (DetailWindow 시각화용)
+                CurrentLightAllocations[Entry.Light] = Pair.Allocation;
 
                 // 더티 플래그 클리어
                 Entry.Light->ClearShadowDirty();
@@ -483,4 +490,20 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(const 
     UE_LOG_INFO("ShadowAtlasManager: %d개의 Point/Spot Light에 Shadow Map 할당 완료", Result.size());
 
     return Result;
+}
+
+const FShadowAtlasAllocation* FShadowAtlasManager::GetLightAllocation(ULightComponentBase* Light) const
+{
+    if (!Light)
+    {
+        return nullptr;
+    }
+
+    auto It = CurrentLightAllocations.find(Light);
+    if (It != CurrentLightAllocations.end())
+    {
+        return &(It->second);
+    }
+
+    return nullptr;
 }

@@ -86,6 +86,9 @@ public:
     // 특정 Atlas 접근
     const FShadowAtlasInfo* GetAtlas(EShadowAtlasType Type, uint32 Index) const;
 
+    // Light별 할당 정보 조회 (DetailWindow에서 사용)
+    const FShadowAtlasAllocation* GetLightAllocation(ULightComponentBase* Light) const;
+
 private:
     // 새 Atlas 생성 및 추가
     bool CreateNewAtlas(EShadowAtlasType Type, uint32 AtlasSize);
@@ -108,6 +111,9 @@ private:
 
     // 이전 프레임의 Light별 할당 정보 (더티 플래그 최적화용)
     TMap<UPointLightComponent*, FShadowAtlasAllocation> PreviousPointSpotAllocations;
+
+    // 현재 프레임의 모든 Light별 할당 정보 (DetailWindow 시각화용)
+    TMap<ULightComponentBase*, FShadowAtlasAllocation> CurrentLightAllocations;
 
     // Release 중복 호출 방지
     bool bIsReleased = false;
