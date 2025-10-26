@@ -441,6 +441,8 @@ void URenderer::CreateShadowDepthShader()
 	shadowSamplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
 
 	GetDevice()->CreateSamplerState(&shadowSamplerDesc, &ShadowSampler);
+
+	RegisterShaderReloadCache(ShaderPath, ShaderUsage::SHADOW_DEPTH);
 }
 
 TSet<ShaderUsage> URenderer::GatherHotReloadTargets()
@@ -604,6 +606,19 @@ void URenderer::HotReloadShaders()
 					ClusteredRenderingGridPass->SetInputLayout(ClusteredRenderingGridInputLayout);
 				}
 				break;
+			case ShaderUsage::SHADOW_DEPTH:
+				SafeRelease(ShadowDepthInputLayout);
+				SafeRelease(ShadowDepthVertexShader);
+				SafeRelease(ShadowDepthPixelShader);
+				SafeRelease(ShadowSampler);
+				CreateShadowDepthShader();
+				if (ShadowMapPass)
+				{
+					ShadowMapPass->SetVertexShader(ShadowDepthVertexShader);
+					ShadowMapPass->SetPixelShader(ShadowDepthPixelShader);
+					ShadowMapPass->SetInputLayout(ShadowDepthInputLayout);
+				}
+				break;
 		}
 	}
 }
@@ -645,6 +660,11 @@ void URenderer::ReleaseDefaultShader()
 	SafeRelease(ClusteredRenderingGridInputLayout);
 	SafeRelease(ClusteredRenderingGridVS);
 	SafeRelease(ClusteredRenderingGridPS);
+
+	SafeRelease(ShadowDepthVertexShader);
+	SafeRelease(ShadowDepthPixelShader);
+	SafeRelease(ShadowDepthInputLayout);
+	SafeRelease(ShadowSampler);
 }
 
 void URenderer::ReleaseDepthStencilState()
