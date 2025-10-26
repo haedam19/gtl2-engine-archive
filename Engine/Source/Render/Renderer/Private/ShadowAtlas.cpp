@@ -14,10 +14,10 @@ FShadowAtlas::FShadowAtlas(uint32 InAtlasSize)
 bool FShadowAtlas::Allocate(uint32 Width, uint32 Height, FShadowAtlasRegion& OutRegion)
 {
     // MaxRects: Best Short Side Fit (BSSF) 사용
-    int32 BestShortSideFit = std::numeric_limits<int32>::max();
-    int32 BestLongSideFit = std::numeric_limits<int32>::max();
+    uint32 BestShortSideFit = std::numeric_limits<int32>::max();
+    uint32 BestLongSideFit = std::numeric_limits<int32>::max();
 
-    int32 BestIndex = FindBestShortSideFit(Width, Height, BestShortSideFit, BestLongSideFit);
+    uint32 BestIndex = FindBestShortSideFit(Width, Height, BestShortSideFit, BestLongSideFit);
 
     if (BestIndex == -1)
     {
@@ -64,7 +64,7 @@ float FShadowAtlas::GetUsagePercentage() const
     return (static_cast<float>(UsedArea) / TotalArea) * 100.0f;
 }
 
-int32 FShadowAtlas::FindBestShortSideFit(uint32 Width, uint32 Height, int32& OutBestShortSideFit, int32& OutBestLongSideFit) const
+int32 FShadowAtlas::FindBestShortSideFit(uint32 Width, uint32 Height, uint32& OutBestShortSideFit, uint32& OutBestLongSideFit) const
 {
     int32 BestIndex = -1;
     OutBestShortSideFit = std::numeric_limits<int32>::max();
@@ -86,9 +86,9 @@ int32 FShadowAtlas::FindBestShortSideFit(uint32 Width, uint32 Height, int32& Out
 
             // Best Short Side Fit: 가장 좁은 여유 공간이 최소인 것 선택
             if (ShortSideFit < OutBestShortSideFit ||
-                (ShortSideFit == OutBestShortSideFit && LongSideFit < OutBestLongSideFit))
+				(ShortSideFit == OutBestShortSideFit && LongSideFit < OutBestLongSideFit))//가장 작을때 , 최소값은 같으나 긴쪽이 더 작을때
             {
-                BestIndex = static_cast<int32>(i);
+                BestIndex = static_cast<int32>(i);//베스트 인덱스를 갱신해준다
                 OutBestShortSideFit = ShortSideFit;
                 OutBestLongSideFit = LongSideFit;
             }
@@ -100,7 +100,7 @@ int32 FShadowAtlas::FindBestShortSideFit(uint32 Width, uint32 Height, int32& Out
 
 void FShadowAtlas::PlaceRectangle(const FFreeRectangle& UsedRect)
 {
-    std::vector<FFreeRectangle> NewFreeRectangles;
+    TArray<FFreeRectangle> NewFreeRectangles;
 
     // 모든 Free Rectangle을 순회하며 겹치는 것 처리
     for (const FFreeRectangle& FreeRect : FreeRectangles)

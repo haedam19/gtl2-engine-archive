@@ -59,7 +59,7 @@ public:
     float GetOuterConeAngle() const { return OuterConeAngleRad; }
     float GetInnerConeAngle() const { return InnerConeAngleRad; }
     
-    void SetAngleFalloffExponent(float const InAngleFalloffExponent) { AngleFalloffExponent = std::clamp(InAngleFalloffExponent, 1.0f, 128.0f); }
+    void SetAngleFalloffExponent(float const InAngleFalloffExponent) { AngleFalloffExponent = std::clamp(InAngleFalloffExponent, 1.0f, 128.0f); MarkShadowDirty(); }
     void SetOuterAngle(float const InAttenuationAngleRad);
     void SetInnerAngle(float const InAttenuationAngleRad);
 

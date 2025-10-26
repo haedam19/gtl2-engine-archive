@@ -61,7 +61,7 @@ public:
 private:
     // MaxRects: Best Short Side Fit (BSSF)
     // 가장 좁은 여유 공간(Short Side)이 최소인 Rect를 찾음
-    int32 FindBestShortSideFit(uint32 Width, uint32 Height, int32& OutBestShortSideFit, int32& OutBestLongSideFit) const;
+    int32 FindBestShortSideFit(uint32 Width, uint32 Height, uint32& OutBestShortSideFit, uint32& OutBestLongSideFit) const;
 
     // 사각형 배치 후 FreeRectangles 업데이트
     void PlaceRectangle(const FFreeRectangle& UsedRect);

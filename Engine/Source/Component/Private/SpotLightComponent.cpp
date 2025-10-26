@@ -53,11 +53,13 @@ void USpotLightComponent::SetOuterAngle(float const InAttenuationAngleRad)
 {
     OuterConeAngleRad = std::clamp(InAttenuationAngleRad, 0.0f, PI/2.0f - MATH_EPSILON);
     InnerConeAngleRad = std::min(InnerConeAngleRad, OuterConeAngleRad);
+    MarkShadowDirty();
 }
 
 void USpotLightComponent::SetInnerAngle(float const InAttenuationAngleRad)
 {
     InnerConeAngleRad = std::clamp(InAttenuationAngleRad, 0.0f, OuterConeAngleRad);
+    MarkShadowDirty();
 }
 
 void USpotLightComponent::RenderLightDirectionGizmo(UCamera* InCamera)

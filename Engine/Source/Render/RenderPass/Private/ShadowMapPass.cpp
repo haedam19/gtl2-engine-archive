@@ -25,7 +25,7 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
     const auto& Renderer = URenderer::GetInstance();
     const auto& DeviceResources = Renderer.GetDeviceResources();
-    FShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
+    UShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
 
     if (!AtlasManager)
     {
@@ -105,7 +105,7 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
         // Slope Bias 설정
         RenderState.SlopeScaledDepthBias = DirLight->GetShadowSlopeBias();
         RS = FRenderResourceFactory::GetRasterizerState(RenderState);
-        PipelineInfo.RS = RS;
+        PipelineInfo.RasterizerState = RS;
         Pipeline->UpdatePipeline(PipelineInfo);
 
         // Constant Buffer 업데이트

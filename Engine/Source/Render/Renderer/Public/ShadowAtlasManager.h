@@ -1,6 +1,8 @@
 #pragma once
 
 #include "ShadowAtlas.h"
+#include "Component/Public/PointLightComponent.h"
+#include "Core/Public/Object.h"
 #include <d3d11.h>
 #include <vector>
 
@@ -55,11 +57,15 @@ struct FLightAllocationPair
 };
 
 // Shadow Atlas 통합 관리 클래스 (동적 확장 지원)
-class FShadowAtlasManager
+UCLASS()
+class UShadowAtlasManager : public UObject
 {
+    GENERATED_BODY()
+    DECLARE_CLASS(UShadowAtlasManager, UObject)
+
 public:
-    FShadowAtlasManager();
-    ~FShadowAtlasManager();
+    UShadowAtlasManager();
+    virtual ~UShadowAtlasManager();
 
     // 초기화 (DeviceResources 필요)
     void Initialize(ID3D11Device* InDevice);
@@ -77,8 +83,10 @@ public:
     // Directional Light들을 받아서 Sorting하고 Atlas에 할당
     TArray<FLightAllocationPair> AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights);
 
+    TArray<FLightAllocationPair> AllocatePointSpotLights(const TArray<UPointLightComponent*>& Lights);
+
     // Atlas 배열 접근
-    const std::vector<FShadowAtlasInfo>& GetAtlases(EShadowAtlasType Type) const;
+    const TArray<FShadowAtlasInfo>& GetAtlases(EShadowAtlasType Type) const;
 
     // 특정 Atlas 접근
     const FShadowAtlasInfo* GetAtlas(EShadowAtlasType Type, uint32 Index) const;
@@ -93,10 +101,16 @@ private:
     // 타입별 기본 Atlas 크기 반환
     uint32 GetDefaultAtlasSize(EShadowAtlasType Type) const;
 
+    // Point/Spot Light의 Shadow Map 해상도 계산
+    uint32 CalculatePointSpotLightResolution(UPointLightComponent* Light) const;
+
 private:
     ID3D11Device* Device = nullptr;
 
     // 각 타입별 Atlas 배열 (동적 확장)
-    std::vector<FShadowAtlasInfo> DirectionalCSMAtlases;   // Directional Light CSM용
-    std::vector<FShadowAtlasInfo> PointSpotAtlases;        // Point/Spot Light용
+    TArray<FShadowAtlasInfo> DirectionalCSMAtlases;   // Directional Light CSM용
+    TArray<FShadowAtlasInfo> PointSpotAtlases;        // Point/Spot Light용
+
+    // 이전 프레임의 Light별 할당 정보 (더티 플래그 최적화용)
+    TMap<UPointLightComponent*, FShadowAtlasAllocation> PreviousPointSpotAllocations;
 };

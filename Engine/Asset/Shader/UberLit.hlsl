@@ -403,13 +403,13 @@ float3 ComputeNormalMappedWorldNormal(float2 UV, float3 WorldNormal, float4 Worl
 float CalculateShadow(float4 LightSpacePos)
 {
     // Perspective divide
-    float3 projCoords = LightSpacePos.xyz / LightSpacePos.w;
+    float3 projCoords = LightSpacePos.xyz / LightSpacePos.w; //라이트 시점에서의 클립 공간 좌표를 NDC (-1~1) 로 변환
 
     // Transform to [0,1] range for texture sampling
     projCoords.x = projCoords.x * 0.5f + 0.5f;
     projCoords.y = -projCoords.y * 0.5f + 0.5f;  // Flip Y
 
-    // Check if position is outside shadow map
+    // Check if position is outside shadow map//uv 좌표로 변환 
     if (projCoords.x < 0.0f || projCoords.x > 1.0f ||
         projCoords.y < 0.0f || projCoords.y > 1.0f ||
         projCoords.z < 0.0f || projCoords.z > 1.0f)

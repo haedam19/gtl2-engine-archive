@@ -3,16 +3,18 @@
 #include "Component/Public/DirectionalLightComponent.h"
 #include <algorithm>
 
-FShadowAtlasManager::FShadowAtlasManager()
+IMPLEMENT_CLASS(UShadowAtlasManager,UObject)
+
+UShadowAtlasManager::UShadowAtlasManager()
 {
 }
 
-FShadowAtlasManager::~FShadowAtlasManager()
+UShadowAtlasManager::~UShadowAtlasManager()
 {
     Release();
 }
 
-void FShadowAtlasManager::Initialize(ID3D11Device* InDevice)
+void UShadowAtlasManager::Initialize(ID3D11Device* InDevice)
 {
     Device = InDevice;
 
@@ -21,7 +23,7 @@ void FShadowAtlasManager::Initialize(ID3D11Device* InDevice)
     CreateNewAtlas(EShadowAtlasType::PointSpotLight, GetDefaultAtlasSize(EShadowAtlasType::PointSpotLight));
 }
 
-void FShadowAtlasManager::Release()
+void UShadowAtlasManager::Release()
 {
     // 모든 Atlas 해제
     for (auto& Atlas : DirectionalCSMAtlases)
@@ -39,7 +41,7 @@ void FShadowAtlasManager::Release()
     Device = nullptr;
 }
 
-bool FShadowAtlasManager::AllocateRegion(EShadowAtlasType Type, uint32 Width, uint32 Height, FShadowAtlasAllocation& OutAllocation)
+bool UShadowAtlasManager::AllocateRegion(EShadowAtlasType Type, uint32 Width, uint32 Height, FShadowAtlasAllocation& OutAllocation)
 {
     // 해당 타입의 Atlas 배열 선택
     std::vector<FShadowAtlasInfo>* Atlases = nullptr;
@@ -91,7 +93,7 @@ bool FShadowAtlasManager::AllocateRegion(EShadowAtlasType Type, uint32 Width, ui
     return false;
 }
 
-void FShadowAtlasManager::ClearAllAllocations()
+void UShadowAtlasManager::ClearAllAllocations()
 {
     // 모든 Atlas의 할당 정보 초기화
     for (auto& Atlas : DirectionalCSMAtlases)
@@ -111,7 +113,7 @@ void FShadowAtlasManager::ClearAllAllocations()
     }
 }
 
-const std::vector<FShadowAtlasInfo>& FShadowAtlasManager::GetAtlases(EShadowAtlasType Type) const
+const std::vector<FShadowAtlasInfo>& UShadowAtlasManager::GetAtlases(EShadowAtlasType Type) const
 {
     switch (Type)
     {
@@ -125,7 +127,7 @@ const std::vector<FShadowAtlasInfo>& FShadowAtlasManager::GetAtlases(EShadowAtla
     }
 }
 
-const FShadowAtlasInfo* FShadowAtlasManager::GetAtlas(EShadowAtlasType Type, uint32 Index) const
+const FShadowAtlasInfo* UShadowAtlasManager::GetAtlas(EShadowAtlasType Type, uint32 Index) const
 {
     const std::vector<FShadowAtlasInfo>& Atlases = GetAtlases(Type);
     if (Index < Atlases.size())
@@ -135,7 +137,7 @@ const FShadowAtlasInfo* FShadowAtlasManager::GetAtlas(EShadowAtlasType Type, uin
     return nullptr;
 }
 
-bool FShadowAtlasManager::CreateNewAtlas(EShadowAtlasType Type, uint32 AtlasSize)
+bool UShadowAtlasManager::CreateNewAtlas(EShadowAtlasType Type, uint32 AtlasSize)
 {
     if (!Device)
     {
@@ -175,7 +177,7 @@ bool FShadowAtlasManager::CreateNewAtlas(EShadowAtlasType Type, uint32 AtlasSize
     return true;
 }
 
-bool FShadowAtlasManager::CreateAtlasTexture(FShadowAtlasInfo& Info, uint32 Size)
+bool UShadowAtlasManager::CreateAtlasTexture(FShadowAtlasInfo& Info, uint32 Size)
 {
     // Texture2D 생성
     D3D11_TEXTURE2D_DESC texDesc = {};
@@ -230,7 +232,7 @@ bool FShadowAtlasManager::CreateAtlasTexture(FShadowAtlasInfo& Info, uint32 Size
     return true;
 }
 
-uint32 FShadowAtlasManager::GetDefaultAtlasSize(EShadowAtlasType Type) const
+uint32 UShadowAtlasManager::GetDefaultAtlasSize(EShadowAtlasType Type) const
 {
     switch (Type)
     {
@@ -243,7 +245,7 @@ uint32 FShadowAtlasManager::GetDefaultAtlasSize(EShadowAtlasType Type) const
     }
 }
 
-TArray<FLightAllocationPair> FShadowAtlasManager::AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights)
+TArray<FLightAllocationPair> UShadowAtlasManager::AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights)
 {
     TArray<FLightAllocationPair> Result;
 
@@ -311,6 +313,164 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocateDirectionalLights(cons
     }
 
     UE_LOG_INFO("ShadowAtlasManager: %d개의 Directional Light에 Shadow Map 할당 완료", Result.size());
+
+    return Result;
+}
+
+uint32 UShadowAtlasManager::CalculatePointSpotLightResolution(UPointLightComponent* Light) const
+{
+    if (!Light)
+    {
+        return 512;  // 기본 해상도
+    }
+
+    // Shadow Resolution Scale에 따라 해상도 계산
+    // Base resolution: 512, 최대 2048
+    float Scale = Light->GetShadowResolutionScale();
+    uint32 BaseResolution = 512;
+    uint32 Resolution = static_cast<uint32>(BaseResolution * Scale);
+
+    // 2의 제곱수로 반올림 (256, 512, 1024, 2048)
+    if (Resolution <= 256) return 256;
+    else if (Resolution <= 512) return 512;
+    else if (Resolution <= 1024) return 1024;
+    else return 2048;
+}
+
+TArray<FLightAllocationPair> UShadowAtlasManager::AllocatePointSpotLights(const TArray<UPointLightComponent*>& Lights)
+{
+    TArray<FLightAllocationPair> Result;
+
+    // ===========================================================================
+    // 1단계: 더티 플래그를 확인하여 재할당이 필요한 라이트만 수집
+    // ===========================================================================
+    struct FSortEntry
+    {
+        UPointLightComponent* Light = nullptr;
+        uint32 Resolution = 0;
+        bool bIsDirty = false;
+
+        bool operator<(const FSortEntry& Other) const
+        {
+            // First-Fit Decreasing: 큰 해상도부터
+            return Resolution > Other.Resolution;
+        }
+    };
+
+    TArray<FSortEntry> SortEntries;
+    TMap<UPointLightComponent*, FShadowAtlasAllocation> NewAllocations;
+
+    for (UPointLightComponent* Light : Lights)
+    {
+        if (!Light || !Light->GetLightEnabled())
+        {
+            continue;
+        }
+
+        FSortEntry Entry;
+        Entry.Light = Light;
+        Entry.Resolution = CalculatePointSpotLightResolution(Light);
+        Entry.bIsDirty = Light->IsShadowDirty();
+
+        // 더티 라이트이거나 이전에 할당된 적이 없는 라이트만 재할당 필요
+        auto It = PreviousPointSpotAllocations.find(Light);
+        if (Entry.bIsDirty || It == PreviousPointSpotAllocations.end())
+        {
+            SortEntries.push_back(Entry);
+        }
+        else
+        {
+            // 더티하지 않으면 이전 할당 재사용
+            FShadowAtlasAllocation PrevAlloc = It->second;
+
+            FLightAllocationPair Pair;
+            Pair.Light = nullptr;  // Point Light는 직접 사용하지 않으므로 nullptr
+            Pair.Allocation = PrevAlloc;
+            Pair.ShadowResolution = Entry.Resolution;
+
+            Result.push_back(Pair);
+            NewAllocations[Light] = PrevAlloc;
+        }
+    }
+
+    // ===========================================================================
+    // 2단계: Sorting (First-Fit Decreasing)
+    // ===========================================================================
+    std::sort(SortEntries.begin(), SortEntries.end());
+
+    // ===========================================================================
+    // 3단계: 더티 라이트만 Atlas에 재할당
+    // ===========================================================================
+    if (!SortEntries.empty())
+    {
+        // 더티 라이트가 있으면 Atlas를 클리어하고 모든 라이트를 재할당
+        // (부분 재할당은 Fragmentation 문제로 복잡함)
+        for (auto& Atlas : PointSpotAtlases)
+        {
+            if (Atlas.Atlas)
+            {
+                Atlas.Atlas->Clear();
+            }
+        }
+
+        // 이전 할당 정보도 클리어
+        NewAllocations.clear();
+        Result.clear();
+
+        // 모든 활성화된 라이트를 다시 정렬하여 재할당
+        SortEntries.clear();
+        for (UPointLightComponent* Light : Lights)
+        {
+            if (!Light || !Light->GetLightEnabled())
+            {
+                continue;
+            }
+
+            FSortEntry Entry;
+            Entry.Light = Light;
+            Entry.Resolution = CalculatePointSpotLightResolution(Light);
+            SortEntries.push_back(Entry);
+        }
+
+        std::sort(SortEntries.begin(), SortEntries.end());
+
+        // 재할당 수행
+        for (const FSortEntry& Entry : SortEntries)
+        {
+            FLightAllocationPair Pair;
+            Pair.Light = nullptr;  // DirectionalLight용 필드이므로 nullptr
+            Pair.ShadowResolution = Entry.Resolution;
+
+            // Point Light는 6면 큐브맵이 필요하지만, 일단 단일 Shadow Map으로 구현
+            // TODO: 큐브맵 Shadow Map 지원
+            bool bSuccess = AllocateRegion(
+                EShadowAtlasType::PointSpotLight,
+                Entry.Resolution,
+                Entry.Resolution,
+                Pair.Allocation
+            );
+
+            if (bSuccess)
+            {
+                Result.push_back(Pair);
+                NewAllocations[Entry.Light] = Pair.Allocation;
+
+                // 더티 플래그 클리어
+                Entry.Light->ClearShadowDirty();
+            }
+            else
+            {
+                UE_LOG_WARNING("ShadowAtlasManager: Point/Spot Light Shadow Map 할당 실패 (Resolution: %d)", Entry.Resolution);
+            }
+        }
+    }
+
+    // ===========================================================================
+    // 4단계: 이전 할당 정보 업데이트
+    // ===========================================================================
+    PreviousPointSpotAllocations = NewAllocations;
+
+    UE_LOG_INFO("ShadowAtlasManager: %d개의 Point/Spot Light에 Shadow Map 할당 완료", Result.size());
 
     return Result;
 }
