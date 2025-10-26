@@ -3,18 +3,16 @@
 #include "Component/Public/DirectionalLightComponent.h"
 #include <algorithm>
 
-IMPLEMENT_CLASS(UShadowAtlasManager,UObject)
-
-UShadowAtlasManager::UShadowAtlasManager()
+FShadowAtlasManager::FShadowAtlasManager()
 {
 }
 
-UShadowAtlasManager::~UShadowAtlasManager()
+FShadowAtlasManager::~FShadowAtlasManager()
 {
     Release();
 }
 
-void UShadowAtlasManager::Initialize(ID3D11Device* InDevice)
+void FShadowAtlasManager::Initialize(ID3D11Device* InDevice)
 {
     Device = InDevice;
 
@@ -23,25 +21,37 @@ void UShadowAtlasManager::Initialize(ID3D11Device* InDevice)
     CreateNewAtlas(EShadowAtlasType::PointSpotLight, GetDefaultAtlasSize(EShadowAtlasType::PointSpotLight));
 }
 
-void UShadowAtlasManager::Release()
+void FShadowAtlasManager::Release()
 {
+    // 중복 호출 방지
+    if (bIsReleased)
+    {
+        return;
+    }
+
     // 모든 Atlas 해제
     for (auto& Atlas : DirectionalCSMAtlases)
     {
         Atlas.Release();
     }
     DirectionalCSMAtlases.clear();
+    DirectionalCSMAtlases.shrink_to_fit();
 
     for (auto& Atlas : PointSpotAtlases)
     {
         Atlas.Release();
     }
     PointSpotAtlases.clear();
+    PointSpotAtlases.shrink_to_fit();
+
+    // 이전 할당 정보 클리어
+    PreviousPointSpotAllocations.clear();
 
     Device = nullptr;
+    bIsReleased = true;
 }
 
-bool UShadowAtlasManager::AllocateRegion(EShadowAtlasType Type, uint32 Width, uint32 Height, FShadowAtlasAllocation& OutAllocation)
+bool FShadowAtlasManager::AllocateRegion(EShadowAtlasType Type, uint32 Width, uint32 Height, FShadowAtlasAllocation& OutAllocation)
 {
     // 해당 타입의 Atlas 배열 선택
     std::vector<FShadowAtlasInfo>* Atlases = nullptr;
@@ -93,7 +103,7 @@ bool UShadowAtlasManager::AllocateRegion(EShadowAtlasType Type, uint32 Width, ui
     return false;
 }
 
-void UShadowAtlasManager::ClearAllAllocations()
+void FShadowAtlasManager::ClearAllAllocations()
 {
     // 모든 Atlas의 할당 정보 초기화
     for (auto& Atlas : DirectionalCSMAtlases)
@@ -113,7 +123,7 @@ void UShadowAtlasManager::ClearAllAllocations()
     }
 }
 
-const std::vector<FShadowAtlasInfo>& UShadowAtlasManager::GetAtlases(EShadowAtlasType Type) const
+const std::vector<FShadowAtlasInfo>& FShadowAtlasManager::GetAtlases(EShadowAtlasType Type) const
 {
     switch (Type)
     {
@@ -127,7 +137,7 @@ const std::vector<FShadowAtlasInfo>& UShadowAtlasManager::GetAtlases(EShadowAtla
     }
 }
 
-const FShadowAtlasInfo* UShadowAtlasManager::GetAtlas(EShadowAtlasType Type, uint32 Index) const
+const FShadowAtlasInfo* FShadowAtlasManager::GetAtlas(EShadowAtlasType Type, uint32 Index) const
 {
     const std::vector<FShadowAtlasInfo>& Atlases = GetAtlases(Type);
     if (Index < Atlases.size())
@@ -137,7 +147,7 @@ const FShadowAtlasInfo* UShadowAtlasManager::GetAtlas(EShadowAtlasType Type, uin
     return nullptr;
 }
 
-bool UShadowAtlasManager::CreateNewAtlas(EShadowAtlasType Type, uint32 AtlasSize)
+bool FShadowAtlasManager::CreateNewAtlas(EShadowAtlasType Type, uint32 AtlasSize)
 {
     if (!Device)
     {
@@ -177,7 +187,7 @@ bool UShadowAtlasManager::CreateNewAtlas(EShadowAtlasType Type, uint32 AtlasSize
     return true;
 }
 
-bool UShadowAtlasManager::CreateAtlasTexture(FShadowAtlasInfo& Info, uint32 Size)
+bool FShadowAtlasManager::CreateAtlasTexture(FShadowAtlasInfo& Info, uint32 Size)
 {
     // Texture2D 생성
     D3D11_TEXTURE2D_DESC texDesc = {};
@@ -232,7 +242,7 @@ bool UShadowAtlasManager::CreateAtlasTexture(FShadowAtlasInfo& Info, uint32 Size
     return true;
 }
 
-uint32 UShadowAtlasManager::GetDefaultAtlasSize(EShadowAtlasType Type) const
+uint32 FShadowAtlasManager::GetDefaultAtlasSize(EShadowAtlasType Type) const
 {
     switch (Type)
     {
@@ -245,7 +255,7 @@ uint32 UShadowAtlasManager::GetDefaultAtlasSize(EShadowAtlasType Type) const
     }
 }
 
-TArray<FLightAllocationPair> UShadowAtlasManager::AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights)
+TArray<FLightAllocationPair> FShadowAtlasManager::AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights)
 {
     TArray<FLightAllocationPair> Result;
 
@@ -317,7 +327,7 @@ TArray<FLightAllocationPair> UShadowAtlasManager::AllocateDirectionalLights(cons
     return Result;
 }
 
-uint32 UShadowAtlasManager::CalculatePointSpotLightResolution(UPointLightComponent* Light) const
+uint32 FShadowAtlasManager::CalculatePointSpotLightResolution(UPointLightComponent* Light) const
 {
     if (!Light)
     {
@@ -337,7 +347,7 @@ uint32 UShadowAtlasManager::CalculatePointSpotLightResolution(UPointLightCompone
     else return 2048;
 }
 
-TArray<FLightAllocationPair> UShadowAtlasManager::AllocatePointSpotLights(const TArray<UPointLightComponent*>& Lights)
+TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(const TArray<UPointLightComponent*>& Lights)
 {
     TArray<FLightAllocationPair> Result;
 

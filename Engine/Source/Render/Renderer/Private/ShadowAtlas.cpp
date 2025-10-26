@@ -11,6 +11,13 @@ FShadowAtlas::FShadowAtlas(uint32 InAtlasSize)
     FreeRectangles.push_back(FFreeRectangle(0, 0, AtlasSize, AtlasSize));
 }
 
+FShadowAtlas::~FShadowAtlas()
+{
+    // std::vector 메모리 완전 해제
+    FreeRectangles.clear();
+    FreeRectangles.shrink_to_fit();
+}
+
 bool FShadowAtlas::Allocate(uint32 Width, uint32 Height, FShadowAtlasRegion& OutRegion)
 {
     // MaxRects: Best Short Side Fit (BSSF) 사용

@@ -25,7 +25,7 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
     const auto& Renderer = URenderer::GetInstance();
     const auto& DeviceResources = Renderer.GetDeviceResources();
-    UShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
+    FShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
 
     if (!AtlasManager)
     {

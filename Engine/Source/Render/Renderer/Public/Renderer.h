@@ -15,7 +15,7 @@ class FViewportClient;
 class FFXAAPass;
 class FLightPass;
 class FClusteredRenderingGridPass;
-class UShadowAtlasManager;
+class FShadowAtlasManager;
 
 // URenderer 내부에서 셰이더들은 용도에 따라 분류될 수 있음.
 // 용도별로 Create Shader 메소드가 존재함. (e.g. CreateStaticmeshShader)
@@ -112,7 +112,7 @@ public:
 
 	FLightPass* GetLightPass() { return LightPass; }
 	FClusteredRenderingGridPass* GetClusteredRenderingGridPass() { return ClusteredRenderingGridPass; }
-	UShadowAtlasManager* GetShadowAtlasManager() const { return ShadowAtlasManager; }
+	FShadowAtlasManager* GetShadowAtlasManager() const { return ShadowAtlasManager; }
 
 private:
 	/*
@@ -204,7 +204,7 @@ private:
 	FLightPass* LightPass = nullptr;
 	FClusteredRenderingGridPass* ClusteredRenderingGridPass = nullptr;
 	class FShadowMapPass* ShadowMapPass = nullptr;
-	UShadowAtlasManager* ShadowAtlasManager = nullptr;
+	FShadowAtlasManager* ShadowAtlasManager = nullptr;
 
 	// For Hot Reloading Shaders
 	TMap<std::wstring, TSet<ShaderUsage>> ShaderFileUsageMap;

@@ -2,7 +2,6 @@
 
 #include "ShadowAtlas.h"
 #include "Component/Public/PointLightComponent.h"
-#include "Core/Public/Object.h"
 #include <d3d11.h>
 #include <vector>
 
@@ -57,15 +56,11 @@ struct FLightAllocationPair
 };
 
 // Shadow Atlas 통합 관리 클래스 (동적 확장 지원)
-UCLASS()
-class UShadowAtlasManager : public UObject
+class FShadowAtlasManager
 {
-    GENERATED_BODY()
-    DECLARE_CLASS(UShadowAtlasManager, UObject)
-
 public:
-    UShadowAtlasManager();
-    virtual ~UShadowAtlasManager();
+    FShadowAtlasManager();
+    ~FShadowAtlasManager();
 
     // 초기화 (DeviceResources 필요)
     void Initialize(ID3D11Device* InDevice);
@@ -113,4 +108,7 @@ private:
 
     // 이전 프레임의 Light별 할당 정보 (더티 플래그 최적화용)
     TMap<UPointLightComponent*, FShadowAtlasAllocation> PreviousPointSpotAllocations;
+
+    // Release 중복 호출 방지
+    bool bIsReleased = false;
 };

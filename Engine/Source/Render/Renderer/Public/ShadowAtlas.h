@@ -43,7 +43,7 @@ class FShadowAtlas
 {
 public:
     FShadowAtlas(uint32 InAtlasSize = 4096);
-    ~FShadowAtlas() = default;
+    ~FShadowAtlas();
 
     // 영역 할당 (성공 시 true 반환, Region에 할당된 영역 정보 저장)
     bool Allocate(uint32 Width, uint32 Height, FShadowAtlasRegion& OutRegion);

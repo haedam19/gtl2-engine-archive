@@ -67,7 +67,7 @@ void URenderer::Init(HWND InWindowHandle)
 	CreateShadowDepthShader();
 
 	// Shadow Atlas Manager 초기화
-	ShadowAtlasManager = NewObject<UShadowAtlasManager>();
+	ShadowAtlasManager = new FShadowAtlasManager();
 	ShadowAtlasManager->Initialize(GetDevice());
 
 	//ViewportClient->InitializeLayout(DeviceResources->GetViewportInfo());
@@ -130,11 +130,8 @@ void URenderer::Release()
 	FXAAPass->Release();
 	SafeDelete(FXAAPass);
 
-	if (ShadowAtlasManager)
-	{
-		ShadowAtlasManager->Release();
-		ShadowAtlasManager = nullptr;
-	}
+	// ShadowAtlasManager 해제
+	SafeDelete(ShadowAtlasManager);
 
 	SafeDelete(ViewportClient);
 	SafeDelete(Pipeline);
