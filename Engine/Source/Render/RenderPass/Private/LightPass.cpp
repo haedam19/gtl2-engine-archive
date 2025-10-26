@@ -1,4 +1,5 @@
 #include "pch.h"
+#include <algorithm>
 #include "Render/RenderPass/Public/LightPass.h"
 #include "Render/Renderer/Public/RenderResourceFactory.h"
 #include "Component/Public/AmbientLightComponent.h"
@@ -160,13 +161,33 @@ void FLightPass::Execute(FRenderingContext& Context)
 		PointLightDatas.push_back(Light->GetPointlightInfo());
 	}
 	// 5. Spot Lights 배열 채우기 (최대 NUM_SPOT_LIGHT개)
+	constexpr uint32 MaxSpotLightSlots = 8;
 	int SpotLightComponentCount = Context.SpotLights.size();
 	SpotLightDatas.reserve(SpotLightComponentCount);
-	int CurSpotLightIdx = 0;
+	for (USpotLightComponent* Spot : Context.SpotLights)
+	{
+		if (Spot)
+		{
+			Spot->ResetShadowMapArrayIndex();
+		}
+	}
+
+	uint32 SpotShadowIndex = 0;
 	for (int32 i = 0; i < SpotLightComponentCount; ++i)
 	{
 		USpotLightComponent* Light = Context.SpotLights[i];
-		if (!Light || !Light->GetVisible() || !Light->GetLightEnabled()) continue;
+		if (!Light || !Light->GetVisible() || !Light->GetLightEnabled()) { continue; }
+
+		// 조명 데이터는 항상 업로드, 그림자 없음은 Invalid Index로 표시
+		if (SpotShadowIndex < MaxSpotLightSlots)
+		{
+			if (Light->GetShadowMapData().ShadowMapSRV)
+			{
+				Light->SetShadowMapArrayIndex(SpotShadowIndex);
+				++SpotShadowIndex;
+			}
+		}
+
 		SpotLightDatas.push_back(Light->GetSpotLightInfo());
 	}
 

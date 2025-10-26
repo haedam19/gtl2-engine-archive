@@ -1,7 +1,10 @@
 #include "pch.h"
+#include <algorithm>
+#include <cmath>
 #include "Render/RenderPass/Public/ShadowMapPass.h"
 #include "Component/Mesh/Public/StaticMeshComponent.h"
 #include "Component/Public/DirectionalLightComponent.h"
+#include "Component/Public/SpotLightComponent.h"
 #include "Render/Renderer/Public/Pipeline.h"
 #include "Render/Renderer/Public/RenderResourceFactory.h"
 #include "Render/Renderer/Public/Renderer.h"
@@ -36,137 +39,159 @@ FShadowMapPass::FShadowMapPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBu
 
 void FShadowMapPass::Execute(FRenderingContext& Context)
 {
-    // Directional Light가 없으면 Shadow Map을 생성하지 않음
-    if (Context.DirectionalLights.empty())
-    {
-        return;
-    }
-
-    // 첫 번째 Directional Light를 사용 (여러 개 있으면 첫 번째만 그림자 생성)
-    UDirectionalLightComponent* DirLight = Context.DirectionalLights[0];
-    if (!DirLight)
-    {
-        return;
-    }
-
-    const auto& Renderer = URenderer::GetInstance();
-    const auto& DeviceResources = Renderer.GetDeviceResources();
-
-    // Shadow Map 렌더 타겟 설정
-    ID3D11DepthStencilView* ShadowDSV = DeviceResources->GetShadowMapDSV();
-    if (!ShadowDSV)
-    {
-        return;
-    }
-
-    // 원래 Viewport 저장
-    D3D11_VIEWPORT originalViewport;
-    UINT numViewports = 1;
-    DeviceResources->GetDeviceContext()->RSGetViewports(&numViewports, &originalViewport);
-
-    // Shadow Map Clear
-    DeviceResources->GetDeviceContext()->ClearDepthStencilView(ShadowDSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
-
-    // Render Target을 Shadow Map으로 설정 (Color는 필요없음, Depth만)
-    ID3D11RenderTargetView* nullRTV = nullptr;
-    Pipeline->SetRenderTargets(1, &nullRTV, ShadowDSV);
-
-    // Shadow Map Viewport 설정 (2048x2048)
-    D3D11_VIEWPORT shadowViewport = {};
-    shadowViewport.TopLeftX = 0.0f;
-    shadowViewport.TopLeftY = 0.0f;
-    shadowViewport.Width = 2048.0f;
-    shadowViewport.Height = 2048.0f;
-    shadowViewport.MinDepth = 0.0f;
-    shadowViewport.MaxDepth = 1.0f;
-    DeviceResources->GetDeviceContext()->RSSetViewports(1, &shadowViewport);
-
-    // Pipeline 설정
-    FRenderState RenderState = UStaticMeshComponent::GetClassDefaultRenderState();
-    RenderState.SlopeScaledDepthBias = DirLight->GetShadowSlopeBias();
-    ID3D11RasterizerState* RS = FRenderResourceFactory::GetRasterizerState(RenderState);
-    FPipelineInfo PipelineInfo = { InputLayout, VS, RS, DS, PS, nullptr, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST };
-    Pipeline->UpdatePipeline(PipelineInfo);
-
-    // Light View Projection 행렬 계산 (Shadow Map 타입에 따라 다르게 처리)
-    FLightViewProjConstants LightVP;
-    if (DirLight->GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
-    {
-        // PSM: Camera 정보를 사용한 Perspective Shadow Mapping
-        LightVP.LightView = DirLight->GetLightViewMatrix(Context.CurrentCamera);
-        LightVP.LightProjection = DirLight->GetLightProjectionMatrix(Context.CurrentCamera);
-    }
-    else
-    {
-        // LVP: 기본 Orthographic Shadow Mapping
-        LightVP.LightView = DirLight->GetLightViewMatrix();
-        LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
-    }
-
-    // Constant Buffer 업데이트
-    FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);
-    Pipeline->SetConstantBuffer(1, EShaderType::VS, ConstantBufferLightViewProj);
-
-    // Static Mesh 렌더링
-    TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
-    FStaticMesh* CurrentMeshAsset = nullptr;
-
-    for (UStaticMeshComponent* MeshComp : MeshComponents)
-    {
-        if (!MeshComp->IsVisible()) { continue; }
-        if (!MeshComp->GetStaticMesh()) { continue; }
-        FStaticMesh* MeshAsset = MeshComp->GetStaticMesh()->GetStaticMeshAsset();
-        if (!MeshAsset) { continue; }
-
-        // Vertex/Index Buffer 설정
-        if (CurrentMeshAsset != MeshAsset)
-        {
-            Pipeline->SetVertexBuffer(MeshComp->GetVertexBuffer(), sizeof(FNormalVertex));
-            Pipeline->SetIndexBuffer(MeshComp->GetIndexBuffer(), 0);
-            CurrentMeshAsset = MeshAsset;
-        }
-
-        // Model Matrix 업데이트
-        FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferModel, MeshComp->GetWorldTransformMatrix());
-        Pipeline->SetConstantBuffer(0, EShaderType::VS, ConstantBufferModel);
-
-        // Draw
-        Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
-    }
-
-    // Shadow Map DSV를 unbind (SRV로 사용하기 전에 반드시 필요)
-    nullRTV = nullptr;
-    ID3D11DepthStencilView* nullDSV = nullptr;
-    Pipeline->SetRenderTargets(1, &nullRTV, nullDSV);
-
-    // Viewport를 원래대로 복원
-    DeviceResources->GetDeviceContext()->RSSetViewports(1, &originalViewport);
-
-	// VSM 모드일 때만 Compute Shader 실행
-	if (URenderer::GetInstance().GetShadowFilterMode() == EShadowFilterMode::VSM)
+	const auto& Renderer = URenderer::GetInstance();
+	const auto& DeviceResources = Renderer.GetDeviceResources();
+	ID3D11DeviceContext* DeviceContext = DeviceResources->GetDeviceContext();
+	if (!DeviceContext)
 	{
-		ExecuteVSMFilter();
+		return;
 	}
+
+	D3D11_VIEWPORT OriginalViewport = {};
+	UINT NumViewports = 1;
+	DeviceContext->RSGetViewports(&NumViewports, &OriginalViewport);
+
+	auto RenderShadowForLight = [&](const FMatrix& InLightView, const FMatrix& InLightProjection,
+	                                ID3D11DepthStencilView* InDSV, UINT InWidth, UINT InHeight, float InSlopeBias)
+	{
+		if (!InDSV)
+		{
+			return;
+		}
+
+		ID3D11RenderTargetView* NullRTV = nullptr;
+		Pipeline->SetRenderTargets(1, &NullRTV, InDSV);
+
+		D3D11_VIEWPORT ShadowViewport = {};
+		ShadowViewport.TopLeftX = 0.0f;
+		ShadowViewport.TopLeftY = 0.0f;
+		ShadowViewport.Width = static_cast<float>(InWidth);
+		ShadowViewport.Height = static_cast<float>(InHeight);
+		ShadowViewport.MinDepth = 0.0f;
+		ShadowViewport.MaxDepth = 1.0f;
+		DeviceContext->RSSetViewports(1, &ShadowViewport);
+		DeviceContext->ClearDepthStencilView(InDSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
+
+		FRenderState RenderState = UStaticMeshComponent::GetClassDefaultRenderState();
+		RenderState.SlopeScaledDepthBias = InSlopeBias;
+		ID3D11RasterizerState* RS = FRenderResourceFactory::GetRasterizerState(RenderState);
+		FPipelineInfo PipelineInfo = { InputLayout, VS, RS, DS, PS, nullptr, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST };
+		Pipeline->UpdatePipeline(PipelineInfo);
+
+		FLightViewProjConstants LightVP;
+		LightVP.LightView = InLightView;
+		LightVP.LightProjection = InLightProjection;
+		FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);
+		Pipeline->SetConstantBuffer(1, EShaderType::VS, ConstantBufferLightViewProj);
+
+		TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
+		FStaticMesh* CurrentMeshAsset = nullptr;
+
+		for (UStaticMeshComponent* MeshComp : MeshComponents)
+		{
+			if (!MeshComp || !MeshComp->IsVisible()) { continue; }
+			if (!MeshComp->GetStaticMesh()) { continue; }
+			FStaticMesh* MeshAsset = MeshComp->GetStaticMesh()->GetStaticMeshAsset();
+			if (!MeshAsset) { continue; }
+
+			if (CurrentMeshAsset != MeshAsset)
+			{
+				Pipeline->SetVertexBuffer(MeshComp->GetVertexBuffer(), sizeof(FNormalVertex));
+				Pipeline->SetIndexBuffer(MeshComp->GetIndexBuffer(), 0);
+				CurrentMeshAsset = MeshAsset;
+			}
+
+			FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferModel, MeshComp->GetWorldTransformMatrix());
+			Pipeline->SetConstantBuffer(0, EShaderType::VS, ConstantBufferModel);
+			Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
+		}
+
+		ID3D11RenderTargetView* NullRT = nullptr;
+		ID3D11DepthStencilView* NullDSV = nullptr;
+		Pipeline->SetRenderTargets(1, &NullRT, NullDSV);
+	};
+
+	// 1) Directional light shadow (supports VSM)
+	if (!Context.DirectionalLights.empty())
+	{
+		if (UDirectionalLightComponent* DirLight = Context.DirectionalLights[0])
+		{
+			FLightViewProjConstants LightVP;
+			if (DirLight->GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
+			{
+				LightVP.LightView = DirLight->GetLightViewMatrix(Context.CurrentCamera);
+				LightVP.LightProjection = DirLight->GetLightProjectionMatrix(Context.CurrentCamera);
+			}
+			else
+			{
+				LightVP.LightView = DirLight->GetLightViewMatrix();
+				LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
+			}
+
+			constexpr UINT DirectionalShadowSize = 2048;
+			RenderShadowForLight(LightVP.LightView, LightVP.LightProjection,
+			                     DeviceResources->GetShadowMapDSV(), DirectionalShadowSize, DirectionalShadowSize,
+			                     DirLight->GetShadowSlopeBias());
+
+			if (Renderer.GetShadowFilterMode() == EShadowFilterMode::VSM)
+			{
+				ExecuteVSMFilter();
+			}
+		}
+	}
+
+	// 2) Spot light shadows (per-light depth maps)
+	for (USpotLightComponent* SpotLight : Context.SpotLights)
+	{
+		if (!SpotLight || !SpotLight->GetLightEnabled()) { continue; }
+
+		FShadowMapData& ShadowData = SpotLight->GetShadowMapData();
+		if (!ShadowData.ShadowMapDSV || !ShadowData.ShadowMapTexture)
+		{
+			continue;
+		}
+
+		D3D11_TEXTURE2D_DESC ShadowDesc = {};
+		ShadowData.ShadowMapTexture->GetDesc(&ShadowDesc);
+
+		FVector LightPosition = SpotLight->GetWorldLocation();
+		FVector LightDirection = SpotLight->GetForwardVector().GetNormalized();
+		FVector UpVector = FVector::UpVector();
+		if (std::abs(LightDirection.Dot(UpVector)) > 0.99f)
+		{
+			UpVector = FVector::RightVector();
+		}
+
+		FMatrix LightView = FMatrix::LookAtLH(LightPosition, LightPosition + LightDirection, UpVector);
+		float OuterCone = std::max(SpotLight->GetOuterConeAngle(), 0.01f);
+		float FovY = std::clamp(OuterCone * 2.0f, 0.01f, PI - 0.01f);
+		constexpr float NearZ = 0.01f;
+		float FarZ = std::max(SpotLight->GetAttenuationRadius(), 0.5f);
+		FMatrix LightProjection = FMatrix::PerspectiveFovLH(FovY, 1.0f, NearZ, FarZ);
+
+		RenderShadowForLight(LightView, LightProjection, ShadowData.ShadowMapDSV,
+		                     ShadowDesc.Width, ShadowDesc.Height, SpotLight->GetShadowSlopeBias());
+
+		SpotLight->UpdateLVP(LightView, LightProjection);
+		SpotLight->UpdateShadowMapSize(ShadowDesc.Width, ShadowDesc.Height);
+	}
+
+	DeviceContext->RSSetViewports(1, &OriginalViewport);
 }
 
 void FShadowMapPass::Release()
 {
-    // ConstantBufferLightViewProj는 Renderer에서 관리하므로 여기서는 Release하지 않음
-    // 다른 리소스들도 Renderer에서 관리됨
-
-	// VSM 리소스 해제
 	ReleaseVSMResources();
-
-	if (CSDepthToMoment) CSDepthToMoment->Release();
-	if (CSBlurH) CSBlurH->Release();
-	if (CSBlurV) CSBlurV->Release();
 }
 
 bool FShadowMapPass::CreateVSMResources()
 {
 	auto* Device = URenderer::GetInstance().GetDevice();
+	if (!Device)
+	{
+		return false;
+	}
 
-	// Moment Map (R32G32_FLOAT, 2048x2048)
 	D3D11_TEXTURE2D_DESC desc = {};
 	desc.Width = 2048;
 	desc.Height = 2048;

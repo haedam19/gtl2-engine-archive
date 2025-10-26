@@ -41,6 +41,15 @@ struct FLightViewProjConstants
 	FMatrix LightProjection;
 };
 
+__declspec(align(16))
+struct FShadowPreviewParameters
+{
+	float NearPlane = 0.1f;
+	float FarPlane = 1000.0f;
+	float DepthGamma = 1.0f;
+	float Padding = 0.0f;
+};
+
 #define HAS_DIFFUSE_MAP	 (1 << 0)
 #define HAS_AMBIENT_MAP	 (1 << 1)
 #define HAS_SPECULAR_MAP (1 << 2)
@@ -166,12 +175,13 @@ struct FPointLightInfo
 };
 
 //StructuredBuffer padding 없어도됨
-struct FSpotLightInfo
+struct alignas(16) FSpotLightInfo
 {
 	// Point Light와 공유하는 속성 (필드 순서 맞춤)
 	FVector4 Color;
 	FVector Position;
 	float Intensity;
+	FVector4 Direction; // W unused
 	float Range;
 	float DistanceFalloffExponent;
 
@@ -179,7 +189,14 @@ struct FSpotLightInfo
 	float InnerConeAngle;
 	float OuterConeAngle;
 	float AngleFalloffExponent;
-	FVector Direction;
+	float ShadowBias;
+	float ShadowSharpen;
+	uint32 ShadowMapIndex;
+	FVector2 ShadowMapInvSize;
+	FVector2 Padding;
+
+	FMatrix LightViewMatrix;
+	FMatrix LightProjectionMatrix;
 };
 
 struct FGlobalLightConstant
