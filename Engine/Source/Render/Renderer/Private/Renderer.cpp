@@ -331,36 +331,75 @@ void URenderer::CreateStaticMeshShader()
 		{ "TANGENT",  0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(FNormalVertex, Tangent),  D3D11_INPUT_PER_VERTEX_DATA, 0 }
 	};
 	
-	// Compile Lambert variant (default)
-	TArray<D3D_SHADER_MACRO> LambertMacros = {
+	// === PCF Variants (기존) ===
+	// Compile Lambert + PCF variant
+	TArray<D3D_SHADER_MACRO> LambertPCF = {
 		{ "LIGHTING_MODEL_LAMBERT", "1" },
+		{ "SHADOW_FILTER_VSM", "0" },
 		{ nullptr, nullptr }
 	};
-	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, ShaderMeshLayout, &UberLitVertexShader, &UberLitInputLayout, "Uber_VS", LambertMacros.data());
-	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShader, "Uber_PS", LambertMacros.data());
-	
-	// Compile Gouraud variant
-	TArray<D3D_SHADER_MACRO> GouraudMacros = {
+	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, ShaderMeshLayout, &UberLitVertexShader, &UberLitInputLayout, "Uber_VS", LambertPCF.data());
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShader, "Uber_PS", LambertPCF.data());
+
+	// Compile Gouraud + PCF variant
+	TArray<D3D_SHADER_MACRO> GouraudPCF = {
 		{ "LIGHTING_MODEL_GOURAUD", "1" },
+		{ "SHADOW_FILTER_VSM", "0" },
 		{ nullptr, nullptr }
 	};
 	ID3D11InputLayout* GouraudInputLayout = nullptr;
-	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, ShaderMeshLayout, &UberLitVertexShaderGouraud, &GouraudInputLayout, "Uber_VS", GouraudMacros.data());
+	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, ShaderMeshLayout, &UberLitVertexShaderGouraud, &GouraudInputLayout, "Uber_VS", GouraudPCF.data());
 	SafeRelease(GouraudInputLayout);
-	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderGouraud, "Uber_PS", GouraudMacros.data());
-	
-	// Compile Phong (Blinn-Phong) variant
-	TArray<D3D_SHADER_MACRO> PhongMacros = {
-		{ "LIGHTING_MODEL_BLINNPHONG", "1" },
-		{ nullptr, nullptr }
-	};
-	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderBlinnPhong, "Uber_PS", PhongMacros.data());
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderGouraud, "Uber_PS", GouraudPCF.data());
 
-	TArray<D3D_SHADER_MACRO> WorldNormalViewMacros = {
-		{ "LIGHTING_MODEL_NORMAL", "1" },
+	// Compile Phong (Blinn-Phong) + PCF variant
+	TArray<D3D_SHADER_MACRO> PhongPCF = {
+		{ "LIGHTING_MODEL_BLINNPHONG", "1" },
+		{ "SHADOW_FILTER_VSM", "0" },
 		{ nullptr, nullptr }
 	};
-	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderWorldNormal, "Uber_PS", WorldNormalViewMacros.data());
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderBlinnPhong, "Uber_PS", PhongPCF.data());
+
+	// Compile WorldNormal + PCF variant
+	TArray<D3D_SHADER_MACRO> WorldNormalPCF = {
+		{ "LIGHTING_MODEL_NORMAL", "1" },
+		{ "SHADOW_FILTER_VSM", "0" },
+		{ nullptr, nullptr }
+	};
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderWorldNormal, "Uber_PS", WorldNormalPCF.data());
+
+	// === VSM Variants (새로 추가) ===
+	// Compile Lambert + VSM variant
+	TArray<D3D_SHADER_MACRO> LambertVSM = {
+		{ "LIGHTING_MODEL_LAMBERT", "1" },
+		{ "SHADOW_FILTER_VSM", "1" },
+		{ nullptr, nullptr }
+	};
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShader_VSM, "Uber_PS", LambertVSM.data());
+
+	// Compile Gouraud + VSM variant
+	TArray<D3D_SHADER_MACRO> GouraudVSM = {
+		{ "LIGHTING_MODEL_GOURAUD", "1" },
+		{ "SHADOW_FILTER_VSM", "1" },
+		{ nullptr, nullptr }
+	};
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderGouraud_VSM, "Uber_PS", GouraudVSM.data());
+
+	// Compile Phong (Blinn-Phong) + VSM variant
+	TArray<D3D_SHADER_MACRO> PhongVSM = {
+		{ "LIGHTING_MODEL_BLINNPHONG", "1" },
+		{ "SHADOW_FILTER_VSM", "1" },
+		{ nullptr, nullptr }
+	};
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderBlinnPhong_VSM, "Uber_PS", PhongVSM.data());
+
+	// Compile WorldNormal + VSM variant
+	TArray<D3D_SHADER_MACRO> WorldNormalVSM = {
+		{ "LIGHTING_MODEL_NORMAL", "1" },
+		{ "SHADOW_FILTER_VSM", "1" },
+		{ nullptr, nullptr }
+	};
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderWorldNormal_VSM, "Uber_PS", WorldNormalVSM.data());
 
 	RegisterShaderReloadCache(ShaderPath, ShaderUsage::STATICMESH);
 }
@@ -556,6 +595,10 @@ void URenderer::HotReloadShaders()
 				SafeRelease(UberLitPixelShaderGouraud);
 				SafeRelease(UberLitPixelShaderBlinnPhong);
 				SafeRelease(UberLitPixelShaderWorldNormal);
+				SafeRelease(UberLitPixelShader_VSM);
+				SafeRelease(UberLitPixelShaderGouraud_VSM);
+				SafeRelease(UberLitPixelShaderBlinnPhong_VSM);
+				SafeRelease(UberLitPixelShaderWorldNormal_VSM);
 				CreateStaticMeshShader();
 				for (FRenderPass* RenderPass : RenderPasses)
 				{
@@ -607,6 +650,10 @@ void URenderer::ReleaseDefaultShader()
 	SafeRelease(UberLitPixelShaderGouraud);
 	SafeRelease(UberLitPixelShaderBlinnPhong);
 	SafeRelease(UberLitPixelShaderWorldNormal);
+	SafeRelease(UberLitPixelShader_VSM);
+	SafeRelease(UberLitPixelShaderGouraud_VSM);
+	SafeRelease(UberLitPixelShaderBlinnPhong_VSM);
+	SafeRelease(UberLitPixelShaderWorldNormal_VSM);
 	SafeRelease(UberLitVertexShader);
 	SafeRelease(UberLitVertexShaderGouraud);
 	
@@ -972,17 +1019,20 @@ ID3D11VertexShader* URenderer::GetVertexShader(EViewModeIndex ViewModeIndex) con
 
 ID3D11PixelShader* URenderer::GetPixelShader(EViewModeIndex ViewModeIndex) const
 {
+	// VSM 모드 체크
+	bool useVSM = (ShadowFilterMode == EShadowFilterMode::VSM);
+
 	if (ViewModeIndex == EViewModeIndex::VMI_Gouraud)
 	{
-		return UberLitPixelShaderGouraud;
+		return useVSM ? UberLitPixelShaderGouraud_VSM : UberLitPixelShaderGouraud;
 	}
 	else if (ViewModeIndex == EViewModeIndex::VMI_Lambert)
 	{
-		return UberLitPixelShader;
+		return useVSM ? UberLitPixelShader_VSM : UberLitPixelShader;
 	}
 	else if (ViewModeIndex == EViewModeIndex::VMI_BlinnPhong)
 	{
-		return UberLitPixelShaderBlinnPhong;
+		return useVSM ? UberLitPixelShaderBlinnPhong_VSM : UberLitPixelShaderBlinnPhong;
 	}
 	else if (ViewModeIndex == EViewModeIndex::VMI_Unlit || ViewModeIndex == EViewModeIndex::VMI_SceneDepth)
 	{
@@ -990,7 +1040,7 @@ ID3D11PixelShader* URenderer::GetPixelShader(EViewModeIndex ViewModeIndex) const
 	}
 	else if (ViewModeIndex == EViewModeIndex::VMI_WorldNormal)
 	{
-		return UberLitPixelShaderWorldNormal;
+		return useVSM ? UberLitPixelShaderWorldNormal_VSM : UberLitPixelShaderWorldNormal;
 	}
 }
 

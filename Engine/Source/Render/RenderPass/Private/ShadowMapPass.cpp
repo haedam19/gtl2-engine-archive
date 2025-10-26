@@ -12,6 +12,26 @@ FShadowMapPass::FShadowMapPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBu
     , VS(InVS), PS(InPS), InputLayout(InLayout), DS(InDS)
     , ConstantBufferLightViewProj(InConstantBufferLightViewProj)
 {
+	// VSM 리소스 생성
+	bool resourcesCreated = CreateVSMResources();
+
+	// VSM Compute Shaders 컴파일 (전체 경로 지정)
+	FRenderResourceFactory::CreateComputeShader(L"Asset/Shader/VarianceShadowMappingCS.hlsl", &CSDepthToMoment, "DepthToMoment");
+	FRenderResourceFactory::CreateComputeShader(L"Asset/Shader/VarianceShadowMappingCS.hlsl", &CSBlurH, "BlurHorizontal");
+	FRenderResourceFactory::CreateComputeShader(L"Asset/Shader/VarianceShadowMappingCS.hlsl", &CSBlurV, "BlurVertical");
+
+	if (!resourcesCreated || !CSDepthToMoment || !CSBlurH || !CSBlurV)
+	{
+		UE_LOG_ERROR("[ShadowMapPass] VSM 리소스 또는 Compute Shader 생성 실패!");
+		UE_LOG_ERROR("  - Resources Created: %d", resourcesCreated);
+		UE_LOG_ERROR("  - CSDepthToMoment: %p", CSDepthToMoment);
+		UE_LOG_ERROR("  - CSBlurH: %p", CSBlurH);
+		UE_LOG_ERROR("  - CSBlurV: %p", CSBlurV);
+	}
+	else
+	{
+		UE_LOG("[ShadowMapPass] VSM 리소스 및 Compute Shaders 생성 성공");
+	}
 }
 
 void FShadowMapPass::Execute(FRenderingContext& Context)
@@ -121,10 +141,159 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
     // Viewport를 원래대로 복원
     DeviceResources->GetDeviceContext()->RSSetViewports(1, &originalViewport);
+
+	// VSM 모드일 때만 Compute Shader 실행
+	if (URenderer::GetInstance().GetShadowFilterMode() == EShadowFilterMode::VSM)
+	{
+		ExecuteVSMFilter();
+	}
 }
 
 void FShadowMapPass::Release()
 {
     // ConstantBufferLightViewProj는 Renderer에서 관리하므로 여기서는 Release하지 않음
     // 다른 리소스들도 Renderer에서 관리됨
+
+	// VSM 리소스 해제
+	ReleaseVSMResources();
+
+	if (CSDepthToMoment) CSDepthToMoment->Release();
+	if (CSBlurH) CSBlurH->Release();
+	if (CSBlurV) CSBlurV->Release();
+}
+
+bool FShadowMapPass::CreateVSMResources()
+{
+	auto* Device = URenderer::GetInstance().GetDevice();
+
+	// Moment Map (R32G32_FLOAT, 2048x2048)
+	D3D11_TEXTURE2D_DESC desc = {};
+	desc.Width = 2048;
+	desc.Height = 2048;
+	desc.MipLevels = 1;
+	desc.ArraySize = 1;
+	desc.Format = DXGI_FORMAT_R32G32_FLOAT;
+	desc.SampleDesc.Count = 1;
+	desc.Usage = D3D11_USAGE_DEFAULT;
+	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+
+	HRESULT hr = S_OK;
+
+	hr = Device->CreateTexture2D(&desc, nullptr, &VSMMomentMap);
+	if (FAILED(hr))
+	{
+		UE_LOG_ERROR("[VSM] Failed to create VSMMomentMap: 0x%08X", hr);
+		return false;
+	}
+
+	hr = Device->CreateTexture2D(&desc, nullptr, &VSMTempMap);
+	if (FAILED(hr))
+	{
+		UE_LOG_ERROR("[VSM] Failed to create VSMTempMap: 0x%08X", hr);
+		return false;
+	}
+
+	hr = Device->CreateShaderResourceView(VSMMomentMap, nullptr, &VSMMomentMapSRV);
+	if (FAILED(hr))
+	{
+		UE_LOG_ERROR("[VSM] Failed to create VSMMomentMapSRV: 0x%08X", hr);
+		return false;
+	}
+
+	hr = Device->CreateShaderResourceView(VSMTempMap, nullptr, &VSMTempMapSRV);
+	if (FAILED(hr))
+	{
+		UE_LOG_ERROR("[VSM] Failed to create VSMTempMapSRV: 0x%08X", hr);
+		return false;
+	}
+
+	hr = Device->CreateUnorderedAccessView(VSMMomentMap, nullptr, &VSMMomentMapUAV);
+	if (FAILED(hr))
+	{
+		UE_LOG_ERROR("[VSM] Failed to create VSMMomentMapUAV: 0x%08X", hr);
+		return false;
+	}
+
+	hr = Device->CreateUnorderedAccessView(VSMTempMap, nullptr, &VSMTempMapUAV);
+	if (FAILED(hr))
+	{
+		UE_LOG_ERROR("[VSM] Failed to create VSMTempMapUAV: 0x%08X", hr);
+		return false;
+	}
+
+	UE_LOG("[VSM] All resources created successfully");
+	return true;
+}
+
+void FShadowMapPass::ReleaseVSMResources()
+{
+	if (VSMMomentMapSRV) { VSMMomentMapSRV->Release(); VSMMomentMapSRV = nullptr; }
+	if (VSMMomentMapUAV) { VSMMomentMapUAV->Release(); VSMMomentMapUAV = nullptr; }
+	if (VSMTempMapSRV) { VSMTempMapSRV->Release(); VSMTempMapSRV = nullptr; }
+	if (VSMTempMapUAV) { VSMTempMapUAV->Release(); VSMTempMapUAV = nullptr; }
+	if (VSMMomentMap) { VSMMomentMap->Release(); VSMMomentMap = nullptr; }
+	if (VSMTempMap) { VSMTempMap->Release(); VSMTempMap = nullptr; }
+}
+
+void FShadowMapPass::ExecuteVSMFilter()
+{
+	// Validate all compute shaders and resources are available
+	if (!CSDepthToMoment || !CSBlurH || !CSBlurV)
+	{
+		UE_LOG_ERROR("[VSM] Compute Shaders not initialized! CS1=%p, CS2=%p, CS3=%p",
+			CSDepthToMoment, CSBlurH, CSBlurV);
+		return;
+	}
+
+	if (!VSMMomentMapUAV || !VSMTempMapUAV || !VSMMomentMapSRV || !VSMTempMapSRV)
+	{
+		UE_LOG_ERROR("[VSM] Resources not initialized!");
+		return;
+	}
+
+    auto& Renderer = URenderer::GetInstance();
+    auto* DeviceContext = Renderer.GetDeviceContext();
+	auto* DeviceResources = URenderer::GetInstance().GetDeviceResources();
+	auto* ShadowDepthSRV = DeviceResources->GetShadowMapSRV();
+
+	if (!ShadowDepthSRV)
+	{
+		UE_LOG_ERROR("[VSM] Shadow Depth SRV is null!");
+		return;
+	}
+
+	ID3D11ShaderResourceView* nullSRV = nullptr;
+	ID3D11UnorderedAccessView* nullUAV = nullptr;
+
+	// Pass 1: Depth → Moment
+	DeviceContext->CSSetShader(CSDepthToMoment, nullptr, 0);
+	DeviceContext->CSSetShaderResources(0, 1, &ShadowDepthSRV);
+	DeviceContext->CSSetUnorderedAccessViews(0, 1, &VSMMomentMapUAV, nullptr);
+	DeviceContext->Dispatch(128, 128, 1);  // 2048/16 = 128
+
+	// Unbind UAV before using as SRV
+	DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+
+	// Pass 2: Horizontal Blur
+	DeviceContext->CSSetShader(CSBlurH, nullptr, 0);
+	DeviceContext->CSSetShaderResources(0, 1, &VSMMomentMapSRV);
+	DeviceContext->CSSetUnorderedAccessViews(0, 1, &VSMTempMapUAV, nullptr);
+	DeviceContext->Dispatch(128, 128, 1);
+
+	// Unbind resources before next pass
+	DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
+	DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+
+	// Pass 3: Vertical Blur
+	DeviceContext->CSSetShader(CSBlurV, nullptr, 0);
+	DeviceContext->CSSetShaderResources(0, 1, &VSMTempMapSRV);
+	DeviceContext->CSSetUnorderedAccessViews(0, 1, &VSMMomentMapUAV, nullptr);
+	DeviceContext->Dispatch(128, 128, 1);
+
+	// Unbind all CS resources
+	DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
+	DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+	DeviceContext->CSSetShader(nullptr, nullptr, 0);  // Unbind compute shader
+
+	UE_LOG("[VSM] Filter executed successfully");
 }

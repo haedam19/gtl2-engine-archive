@@ -72,8 +72,15 @@ StructuredBuffer<int> PointLightIndices : register(t6);
 StructuredBuffer<int> SpotLightIndices : register(t7);
 StructuredBuffer<FPointLightInfo> PointLightInfos : register(t8);
 StructuredBuffer<FSpotLightInfo> SpotLightInfos : register(t9);
-Texture2D ShadowMap : register(t10);			// Shadow Map
-SamplerState ShadowSampler : register(s1);
+
+// Shadow texture - 매크로로 타입 변경
+#if SHADOW_FILTER_VSM
+    Texture2D<float2> ShadowMap : register(t10);   // VSM Moment Map (mean, mean²)
+    SamplerState ShadowSampler : register(s1);     // Linear sampler
+#else
+    Texture2D<float> ShadowMap : register(t10);    // PCF Depth Map
+    SamplerState ShadowSampler : register(s1);     // Linear sampler (manual PCF)
+#endif
 
 
 uint GetDepthSliceIdx(float ViewZ)
@@ -399,7 +406,7 @@ float3 ComputeNormalMappedWorldNormal(float2 UV, float3 WorldNormal, float4 Worl
     return SafeNormalize3(mul(TangentSpaceNormal, TBN));
 
 }
-// Shadow Calculation (LVP-based shadow mapping with PCF)
+// Shadow Calculation
 float CalculateShadow(float4 LightSpacePos)
 {
     // Perspective divide
@@ -417,14 +424,39 @@ float CalculateShadow(float4 LightSpacePos)
         return 1.0f;  // No shadow
     }
 
-    float currentDepth = projCoords.z;
+#if SHADOW_FILTER_VSM
+    // VSM: Chebyshev inequality
+    float2 moments = ShadowMap.Sample(ShadowSampler, projCoords.xy);
+    float mean = moments.x;
+    float variance = max(moments.y - mean * mean, 0.00001f);
 
-    // Bias to prevent shadow acne and z-fighting
+    // Apply bias (similar to PCF)
     float bias = Directional.ShadowBias;
+    float depth = projCoords.z - bias;
 
-    // PCF (Percentage Closer Filtering) for soft shadows
+    // If depth is less than or equal to mean, fully lit
+    if (depth <= mean)
+        return 1.0f;
+
+    // Chebyshev's inequality
+    float d = depth - mean;
+    float p_max = variance / (variance + d * d);
+
+    // Light bleeding reduction
+    const float LBR = 0.3f;
+    p_max = saturate((p_max - LBR) / (1.0f - LBR));
+
+    // Shadow sharpening (same as PCF)
+    float sharpen = max(0.0f, Directional.ShadowSharpen);
+    float shadow = saturate((p_max - 0.5f) * (sharpen + 1.0f) + 0.5f);
+
+    return shadow;
+#else
+    // PCF: Percentage Closer Filtering
+    float currentDepth = projCoords.z;
+    float bias = Directional.ShadowBias;
     float shadow = 0.0f;
-    float2 texelSize = 1.0f / float2(2048.0f, 2048.0f);  // Shadow map size
+    float2 texelSize = 1.0f / 2048.0f;
 
     // 3x3 PCF kernel
     for (int x = -1; x <= 1; ++x)
@@ -436,13 +468,15 @@ float CalculateShadow(float4 LightSpacePos)
             shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
         }
     }
-    shadow /= 9.0f;  // Average of 9 samples
+    shadow /= 9.0f;
     shadow = saturate(shadow);
 
+    // Shadow sharpening
     float sharpen = max(0.0f, Directional.ShadowSharpen);
     shadow = saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
 
     return shadow;
+#endif
 }
 
 // Vertex Shader

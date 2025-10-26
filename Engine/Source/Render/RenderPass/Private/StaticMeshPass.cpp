@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "Render/RenderPass/Public/StaticMeshPass.h"
+#include "Render/RenderPass/Public/ShadowMapPass.h"
 #include "Component/Mesh/Public/StaticMeshComponent.h"
 #include "Component/Public/DirectionalLightComponent.h"
 #include "Render/Renderer/Public/Pipeline.h"
@@ -18,7 +19,7 @@ FStaticMeshPass::FStaticMeshPass(UPipeline* InPipeline, ID3D11Buffer* InConstant
 void FStaticMeshPass::Execute(FRenderingContext& Context)
 {
 
-	const auto& Renderer = URenderer::GetInstance();
+	auto& Renderer = URenderer::GetInstance();
 	FRenderState RenderState = UStaticMeshComponent::GetClassDefaultRenderState();
 	if (Context.ViewMode == EViewModeIndex::VMI_Wireframe)
 	{
@@ -67,8 +68,45 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 		FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);
 		Pipeline->SetConstantBuffer(6, EShaderType::VS, ConstantBufferLightViewProj);  // UberLit.hlsl의 b6
 
-		// Shadow Map 텍스처 바인딩 (t10)
-		Pipeline->SetShaderResourceView(10, EShaderType::PS, DeviceRes->GetShadowMapSRV());
+		// Shadow Map 텍스처 바인딩 (t10) - 모드에 따라 다른 텍스처 바인딩
+		ID3D11ShaderResourceView* shadowSRV = nullptr;
+		if (Renderer.GetShadowFilterMode() == EShadowFilterMode::VSM)
+		{
+			// VSM 모드: Moment Map 사용
+			auto* ShadowMapPass = Renderer.GetShadowMapPass();
+			if (ShadowMapPass)
+			{
+				shadowSRV = ShadowMapPass->GetVSMMomentMapSRV();
+				if (shadowSRV)
+				{
+					UE_LOG("[StaticMeshPass] Using VSM Moment Map SRV: %p", shadowSRV);
+				}
+				else
+				{
+					UE_LOG_WARNING("[StaticMeshPass] VSM Moment Map SRV is null, falling back to PCF");
+				}
+			}
+
+			// Fallback: VSM이 실패하면 PCF depth map 사용
+			if (!shadowSRV)
+			{
+				shadowSRV = DeviceRes->GetShadowMapSRV();
+			}
+		}
+		else
+		{
+			// PCF 모드: 기존 Depth Map 사용
+			shadowSRV = DeviceRes->GetShadowMapSRV();
+		}
+
+		if (shadowSRV)
+		{
+			Pipeline->SetShaderResourceView(10, EShaderType::PS, shadowSRV);
+		}
+		else
+		{
+			UE_LOG_ERROR("[StaticMeshPass] No shadow SRV available!");
+		}
 
 		// Shadow Sampler 바인딩 (s1)
 		Pipeline->SetSamplerState(1, EShaderType::PS, Renderer.GetDefaultSampler());
