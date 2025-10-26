@@ -82,6 +82,8 @@ StructuredBuffer<FSpotLightInfo> SpotLightInfos : register(t9);
     SamplerState ShadowSampler : register(s1);     // Linear sampler (manual PCF)
 #endif
 
+Texture2D<float> ShadowMapSpot[NUM_SPOT_LIGHT] : register(t11);
+
 
 uint GetDepthSliceIdx(float ViewZ)
 {
@@ -340,7 +342,7 @@ FIllumination CalculateSpotLight(FSpotLightInfo Info, float3 WorldNormal, float3
         return Result;
     
     LightDir = SafeNormalize3(LightDir);
-    float3 SpotDir = SafeNormalize3(Info.Direction); // SpotDIr이 영벡터면 (CosAngle < CosOuter)에 걸려 0벡터 반환
+    float3 SpotDir = SafeNormalize3(Info.Direction.xyz); // SpotDir이 영벡터면 (CosAngle < CosOuter)에 걸려 0벡터 반환
     
     float CosAngle = dot(-LightDir, SpotDir);
     float CosOuter = cos(Info.OuterConeAngle);
@@ -479,6 +481,77 @@ float CalculateShadow(float4 LightSpacePos)
 #endif
 }
 
+float SampleSpotDepth(uint idx, float2 uv, float lod)
+{
+    [branch]
+    switch (idx)
+    {
+        case 0: return ShadowMapSpot[0].SampleLevel(ShadowSampler, uv, lod).r;
+        case 1: return ShadowMapSpot[1].SampleLevel(ShadowSampler, uv, lod).r;
+        case 2: return ShadowMapSpot[2].SampleLevel(ShadowSampler, uv, lod).r;
+        case 3: return ShadowMapSpot[3].SampleLevel(ShadowSampler, uv, lod).r;
+        case 4: return ShadowMapSpot[4].SampleLevel(ShadowSampler, uv, lod).r;
+        case 5: return ShadowMapSpot[5].SampleLevel(ShadowSampler, uv, lod).r;
+        case 6: return ShadowMapSpot[6].SampleLevel(ShadowSampler, uv, lod).r;
+        case 7: return ShadowMapSpot[7].SampleLevel(ShadowSampler, uv, lod).r;
+        default: return 1.0f;
+    }
+}
+
+float CalculateSpotShadow(FSpotLightInfo Info, float3 WorldPos)
+{
+    if (Info.ShadowMapIndex >= NUM_SPOT_LIGHT)
+    {
+        return 1.0f;
+    }
+
+    float4 lightViewPos = mul(float4(WorldPos, 1.0f), Info.LightViewMatrix);
+    float4 lightClipPos = mul(lightViewPos, Info.LightProjectionMatrix);
+
+    float3 projCoords = lightClipPos.xyz / lightClipPos.w;
+    projCoords.x = projCoords.x * 0.5f + 0.5f;
+    projCoords.y = -projCoords.y * 0.5f + 0.5f;
+
+    if (projCoords.x < 0.0f || projCoords.x > 1.0f ||
+        projCoords.y < 0.0f || projCoords.y > 1.0f ||
+        projCoords.z < 0.0f || projCoords.z > 1.0f)
+    {
+        return 1.0f;
+    }
+
+    float currentDepth = projCoords.z;
+    float bias = Info.ShadowBias;
+
+    float2 texelSize = Info.ShadowMapInvSize;
+    if (texelSize.x <= 0.0f || texelSize.y <= 0.0f)
+    {
+        texelSize = float2(1.0f / 2048.0f, 1.0f / 2048.0f);
+    }
+
+    uint index = Info.ShadowMapIndex;
+    float shadow = 0.0f;
+
+    [unroll]
+    for (int x = -1; x <= 1; ++x)
+    {
+        [unroll]
+        for (int y = -1; y <= 1; ++y)
+        {
+            float2 offset = float2(x, y) * texelSize;
+            float shadowMapDepth = SampleSpotDepth(index, projCoords.xy + offset, 0.0f);
+            shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
+        }
+    }
+
+    shadow /= 9.0f;
+    shadow = saturate(shadow);
+
+    float sharpen = max(0.0f, Info.ShadowSharpen);
+    shadow = saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
+
+    return shadow;
+}
+
 // Vertex Shader
 PS_INPUT Uber_VS(VS_INPUT Input)
 {
@@ -519,10 +592,14 @@ PS_INPUT Uber_VS(VS_INPUT Input)
 
     // 4.Spot Lights 
     uint SpotLightCount = GetSpotLightCount(LightIndicesOffset);
-     for (uint j = 0; j < SpotLightCount; j++)
+    for (uint j = 0; j < SpotLightCount; j++)
     {        
         FSpotLightInfo SpotLight = GetSpotLight(LightIndicesOffset + j);
-        ADD_ILLUM(Illumination, CalculateSpotLight(SpotLight, Output.WorldNormal, Output.WorldPosition, ViewWorldLocation));
+        FIllumination SpotIllum = CalculateSpotLight(SpotLight, Output.WorldNormal, Output.WorldPosition, ViewWorldLocation);
+        float spotShadow = CalculateSpotShadow(SpotLight, Output.WorldPosition);
+        SpotIllum.Diffuse *= spotShadow;
+        SpotIllum.Specular *= spotShadow;
+        ADD_ILLUM(Illumination, SpotIllum);
     }
     
     // Assign to output
@@ -602,10 +679,14 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     
     // 4. Spot Lights
     uint SpotLightCount = GetSpotLightCount(LightIndicesOffset);
-     for (uint j = 0; j < SpotLightCount ; j++)
+    for (uint j = 0; j < SpotLightCount ; j++)
     {
         FSpotLightInfo SpotLight = GetSpotLight(LightIndicesOffset + j);
-        ADD_ILLUM(Illumination, CalculateSpotLight(SpotLight, N, Input.WorldPosition, ViewWorldLocation));
+        FIllumination SpotIllum = CalculateSpotLight(SpotLight, N, Input.WorldPosition, ViewWorldLocation);
+        float spotShadow = CalculateSpotShadow(SpotLight, Input.WorldPosition);
+        SpotIllum.Diffuse *= spotShadow;
+        SpotIllum.Specular *= spotShadow;
+        ADD_ILLUM(Illumination, SpotIllum);
     }
     
     finalPixel.rgb = Illumination.Ambient.rgb * ambientColor.rgb + Illumination.Diffuse.rgb * diffuseColor.rgb + Illumination.Specular.rgb * specularColor.rgb;

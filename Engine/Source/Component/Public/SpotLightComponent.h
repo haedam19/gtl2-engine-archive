@@ -1,7 +1,11 @@
 #pragma once
 #include "Global/Constant.h"
+#include "Global/Matrix.h"
+#include "Global/Vector.h"
 #include "Component/Public/PointLightComponent.h"
 #include "Editor/Public/EditorPrimitive.h"
+#include "Render/Renderer/Public/ShadowMapData.h"
+#include <limits>
 
 struct FEditorPrimitive;
 class UCamera;
@@ -14,9 +18,9 @@ class USpotLightComponent : public UPointLightComponent
     DECLARE_CLASS(USpotLightComponent, UPointLightComponent)
 
 public:
-    USpotLightComponent() = default;
+    USpotLightComponent();
 
-    virtual ~USpotLightComponent() = default;
+    ~USpotLightComponent() override;
     
     /*-----------------------------------------------------------------------------
         UObject Features
@@ -54,10 +58,25 @@ public:
 
     // 월드 좌표계에서의 forward vector를 반환합니다.
     FVector GetForwardVector() const;
+
+    void CreateShadowMapResources();
+    void ReleaseShadowMapResources();
+    FShadowMapData& GetShadowMapData() { return ShadowMapData; }
     
     float GetAngleFalloffExponent() const { return AngleFalloffExponent; }
     float GetOuterConeAngle() const { return OuterConeAngleRad; }
     float GetInnerConeAngle() const { return InnerConeAngleRad; }
+    const FMatrix& GetLightViewMatrix() const { return LightViewMatrix; }
+    const FMatrix& GetLightProjectionMatrix() const { return LightProjectionMatrix; }
+    const FVector2& GetShadowMapSize() const { return ShadowMapSize; }
+    const FVector2& GetShadowMapInvSize() const { return ShadowMapInvSize; }
+    uint32 GetShadowMapArrayIndex() const { return ShadowMapArrayIndex; }
+    bool HasValidShadowMapIndex() const { return ShadowMapArrayIndex != InvalidShadowMapIndex; }
+
+    void UpdateLVP(const FMatrix& InLightView, const FMatrix& InLightProjection);
+    void UpdateShadowMapSize(uint32 InWidth, uint32 InHeight);
+    void SetShadowMapArrayIndex(uint32 InIndex) { ShadowMapArrayIndex = InIndex; }
+    void ResetShadowMapArrayIndex() { ShadowMapArrayIndex = InvalidShadowMapIndex; }
     
     void SetAngleFalloffExponent(float const InAngleFalloffExponent) { AngleFalloffExponent = std::clamp(InAngleFalloffExponent, 1.0f, 128.0f); }
     void SetOuterAngle(float const InAttenuationAngleRad);
@@ -80,4 +99,13 @@ private:
     /** Angle of light source shape. */
     float OuterConeAngleRad = PI / 4.0f;
     float InnerConeAngleRad = 0.0f;
+
+    FShadowMapData ShadowMapData;
+
+    FMatrix LightViewMatrix = FMatrix::Identity();
+    FMatrix LightProjectionMatrix = FMatrix::Identity();
+    FVector2 ShadowMapSize;
+    FVector2 ShadowMapInvSize;
+    static constexpr uint32 InvalidShadowMapIndex = std::numeric_limits<uint32>::max();
+    uint32 ShadowMapArrayIndex = InvalidShadowMapIndex;
 };

@@ -30,6 +30,7 @@
 #include "Render/Renderer/Public/RenderResourceFactory.h"
 #include "Render/Renderer/Public/Renderer.h"
 #include "Render/RenderPass/Public/ClusteredRenderingGridPass.h"
+#include "Global/CoreTypes.h"
 
 #include "Render/RenderPass/Public/SceneDepthPass.h"
 #include "Render/UI/Overlay/Public/StatOverlay.h"
@@ -64,6 +65,7 @@ void URenderer::Init(HWND InWindowHandle)
 	CreateGizmoShader();
 	CreateClusteredRenderingGrid();
 	CreateShadowDepthShader();
+	CreateShadowPreviewShader();
 
 	//ViewportClient->InitializeLayout(DeviceResources->GetViewportInfo());
 
@@ -472,6 +474,99 @@ void URenderer::CreateShadowDepthShader()
 	shadowSamplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
 
 	GetDevice()->CreateSamplerState(&shadowSamplerDesc, &ShadowSampler);
+
+}
+
+void URenderer::CreateShadowPreviewShader()
+{
+	const std::wstring ShaderFilePathString = L"Asset/Shader/ShadowPreviewShader.hlsl";
+	const std::filesystem::path ShaderPath(ShaderFilePathString);
+
+	ID3D11InputLayout* DummyLayout = nullptr;
+	TArray<D3D11_INPUT_ELEMENT_DESC> EmptyLayout;
+	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, EmptyLayout, &ShadowMapPreviewVertexShader, &DummyLayout, "mainVS");
+	SafeRelease(DummyLayout);
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &ShadowMapPreviewPixelShader, "mainPS");
+
+	RegisterShaderReloadCache(ShaderPath, ShaderUsage::SHADOW_PREVIEW);
+}
+
+ID3D11ShaderResourceView* URenderer::RenderShadowPreview(ID3D11ShaderResourceView* ShadowMapSRV,
+	ID3D11RenderTargetView* PreviewRTV,
+	ID3D11ShaderResourceView* PreviewSRV,
+	ID3D11Texture2D* PreviewTexture,
+	float NearPlane, float FarPlane, float DepthGamma)
+{
+	if (!ShadowMapPreviewVertexShader || !ShadowMapPreviewPixelShader)
+	{
+		return PreviewSRV;
+	}
+
+	if (!ShadowMapSRV || !PreviewRTV || !PreviewSRV || !PreviewTexture)
+	{
+		return nullptr;
+	}
+
+	ID3D11DeviceContext* Context = GetDeviceContext();
+	if (!Context)
+	{
+		return PreviewSRV;
+	}
+
+	if (!ShadowPreviewConstantBuffer)
+	{
+		ShadowPreviewConstantBuffer = FRenderResourceFactory::CreateConstantBuffer<FShadowPreviewParameters>();
+	}
+
+	D3D11_VIEWPORT OriginalViewport = {};
+	UINT NumViewports = 1;
+	Context->RSGetViewports(&NumViewports, &OriginalViewport);
+
+	ID3D11RenderTargetView* PreviousRTV = nullptr;
+	ID3D11DepthStencilView* PreviousDSV = nullptr;
+	Context->OMGetRenderTargets(1, &PreviousRTV, &PreviousDSV);
+
+	D3D11_TEXTURE2D_DESC PreviewDesc = {};
+	PreviewTexture->GetDesc(&PreviewDesc);
+
+	D3D11_VIEWPORT PreviewViewport = {};
+	PreviewViewport.TopLeftX = 0.0f;
+	PreviewViewport.TopLeftY = 0.0f;
+	PreviewViewport.Width = static_cast<float>(PreviewDesc.Width);
+	PreviewViewport.Height = static_cast<float>(PreviewDesc.Height);
+	PreviewViewport.MinDepth = 0.0f;
+	PreviewViewport.MaxDepth = 1.0f;
+	Context->RSSetViewports(1, &PreviewViewport);
+
+	const float ClearColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	Context->ClearRenderTargetView(PreviewRTV, ClearColor);
+	Pipeline->SetRenderTargets(1, &PreviewRTV, nullptr);
+
+	FRenderState RenderState;
+	ID3D11RasterizerState* RS = FRenderResourceFactory::GetRasterizerState(RenderState);
+	FPipelineInfo PipelineInfo = { nullptr, ShadowMapPreviewVertexShader, RS, DisabledDepthStencilState, ShadowMapPreviewPixelShader, nullptr, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP };
+	Pipeline->UpdatePipeline(PipelineInfo);
+
+	FShadowPreviewParameters Parameters = { NearPlane, FarPlane, DepthGamma, 0.0f };
+	FRenderResourceFactory::UpdateConstantBufferData(ShadowPreviewConstantBuffer, Parameters);
+	Pipeline->SetConstantBuffer(0, EShaderType::VS | EShaderType::PS, ShadowPreviewConstantBuffer);
+
+	Pipeline->SetShaderResourceView(0, EShaderType::PS, ShadowMapSRV);
+	Pipeline->SetSamplerState(0, EShaderType::PS, DefaultSampler);
+	Pipeline->SetVertexBuffer(nullptr, 0);
+	Pipeline->Draw(4, 0);
+
+	ID3D11RenderTargetView* NullRTV = nullptr;
+	Pipeline->SetRenderTargets(1, &NullRTV, nullptr);
+	Pipeline->SetShaderResourceView(0, EShaderType::PS, nullptr);
+
+	Context->RSSetViewports(1, &OriginalViewport);
+	Context->OMSetRenderTargets(1, &PreviousRTV, PreviousDSV);
+
+	SafeRelease(PreviousRTV);
+	SafeRelease(PreviousDSV);
+
+	return PreviewSRV;
 }
 
 TSet<ShaderUsage> URenderer::GatherHotReloadTargets()
@@ -626,6 +721,11 @@ void URenderer::HotReloadShaders()
 						break;
 					}
 				}
+				break;
+			case ShaderUsage::SHADOW_PREVIEW:
+				SafeRelease(ShadowMapPreviewVertexShader);
+				SafeRelease(ShadowMapPreviewPixelShader);
+				CreateShadowPreviewShader();
 				break;
 			case ShaderUsage::CLUSTERED_RENDERING_GRID:
 				SafeRelease(ClusteredRenderingGridInputLayout);
@@ -1050,6 +1150,7 @@ void URenderer::CreateConstantBuffers()
 	ConstantBufferColor = FRenderResourceFactory::CreateConstantBuffer<FVector4>();
 	ConstantBufferViewProj = FRenderResourceFactory::CreateConstantBuffer<FCameraConstants>();
 	ConstantBufferLightViewProj = FRenderResourceFactory::CreateConstantBuffer<FLightViewProjConstants>();
+	ShadowPreviewConstantBuffer = FRenderResourceFactory::CreateConstantBuffer<FShadowPreviewParameters>();
 }
 
 void URenderer::ReleaseConstantBuffers()
@@ -1058,4 +1159,5 @@ void URenderer::ReleaseConstantBuffers()
 	SafeRelease(ConstantBufferColor);
 	SafeRelease(ConstantBufferViewProj);
 	SafeRelease(ConstantBufferLightViewProj);
+	SafeRelease(ShadowPreviewConstantBuffer);
 }

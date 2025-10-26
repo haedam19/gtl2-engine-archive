@@ -15,6 +15,8 @@ class FViewportClient;
 class FFXAAPass;
 class FLightPass;
 class FClusteredRenderingGridPass;
+struct FShadowMapData;
+class FShadowMapPass;
 
 // URenderer 내부에서 셰이더들은 용도에 따라 분류될 수 있음.
 // 용도별로 Create Shader 메소드가 존재함. (e.g. CreateStaticmeshShader)
@@ -27,7 +29,8 @@ enum class ShaderUsage
 	FXAA,
 	STATICMESH,
 	GIZMO,
-	CLUSTERED_RENDERING_GRID
+	CLUSTERED_RENDERING_GRID,
+	SHADOW_PREVIEW
 };
 
 
@@ -58,6 +61,7 @@ public:
 	void CreateGizmoShader();
 	void CreateClusteredRenderingGrid();
 	void CreateShadowDepthShader();
+	void CreateShadowPreviewShader();
 
 	// HotReload
 	/** @brief 런타임 중 VS, PS 셰이더 파일이 변경되었는지 확인하고, 변경된 파일을 사용하는 Shader Usage들을 반환합니다.*/
@@ -106,7 +110,6 @@ public:
 
 	void SetIsResizing(bool isResizing) { bIsResizing = isResizing; }
 
-	// Shadow Filter Mode
 	void SetShadowFilterMode(EShadowFilterMode InMode) { ShadowFilterMode = InMode; }
 	EShadowFilterMode GetShadowFilterMode() const { return ShadowFilterMode; }
 
@@ -115,7 +118,13 @@ public:
 
 	FLightPass* GetLightPass() { return LightPass; }
 	FClusteredRenderingGridPass* GetClusteredRenderingGridPass() { return ClusteredRenderingGridPass; }
-	class FShadowMapPass* GetShadowMapPass() { return ShadowMapPass; }
+	FShadowMapPass* GetShadowMapPass() { return ShadowMapPass; }
+
+	ID3D11ShaderResourceView* RenderShadowPreview(ID3D11ShaderResourceView* ShadowMapSRV,
+		ID3D11RenderTargetView* PreviewRTV,
+		ID3D11ShaderResourceView* PreviewSRV,
+		ID3D11Texture2D* PreviewTexture,
+		float NearPlane, float FarPlane, float DepthGamma);
 
 private:
 	/*
@@ -140,6 +149,7 @@ private:
 	ID3D11Buffer* ConstantBufferViewProj = nullptr;
 	ID3D11Buffer* ConstantBufferColor = nullptr;
 	ID3D11Buffer* ConstantBufferLightViewProj = nullptr;
+	ID3D11Buffer* ShadowPreviewConstantBuffer = nullptr;
 	FLOAT ClearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
 	// Default Shaders
@@ -198,6 +208,10 @@ private:
 	ID3D11PixelShader* ShadowDepthPixelShader = nullptr;
 	ID3D11InputLayout* ShadowDepthInputLayout = nullptr;
 	ID3D11SamplerState* ShadowSampler = nullptr;
+
+	// Shadow Map Preview Shaders
+	ID3D11VertexShader* ShadowMapPreviewVertexShader = nullptr;
+	ID3D11PixelShader* ShadowMapPreviewPixelShader = nullptr;
 	
 	uint32 Stride = 0;
 
@@ -214,7 +228,7 @@ private:
 	FFXAAPass* FXAAPass = nullptr;
 	FLightPass* LightPass = nullptr;
 	FClusteredRenderingGridPass* ClusteredRenderingGridPass = nullptr;
-	class FShadowMapPass* ShadowMapPass = nullptr;
+	FShadowMapPass* ShadowMapPass = nullptr;
 
 	// For Hot Reloading Shaders
 	TMap<std::wstring, TSet<ShaderUsage>> ShaderFileUsageMap;
