@@ -716,11 +716,12 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
         specularColor *= SpecularTexture.Sample(SamplerWrap, UV);
     }
     
+    //float shadowFactor = CalculateShadow(Input.LightSpacePos);
+    float shadowFactor = CalculateCSMShadow(Input.WorldPosition);
     
 #if LIGHTING_MODEL_GOURAUD
     // Use pre-calculated vertex lighting; apply diffuse material/texture per-pixel
-    //float shadowFactor = CalculateShadow(Input.LightSpacePos);
-    float shadowFactor = CalculateCSMShadow(Input.WorldPosition);
+
     finalPixel.rgb = Input.AmbientLight.rgb * ambientColor.rgb + (Input.DiffuseLight.rgb * shadowFactor) * diffuseColor.rgb + (Input.SpecularLight.rgb * shadowFactor) * specularColor.rgb;
     
 #elif LIGHTING_MODEL_LAMBERT || LIGHTING_MODEL_BLINNPHONG
@@ -733,8 +734,7 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
 
     // 2. Directional Light with Shadow
     FIllumination DirLightIllum = CalculateDirectionalLight(Directional, N, Input.WorldPosition, ViewWorldLocation);
-    //float shadowFactor = CalculateShadow(Input.LightSpacePos);
-    float shadowFactor = CalculateCSMShadow(Input.WorldPosition);
+
     DirLightIllum.Diffuse *= shadowFactor;
     DirLightIllum.Specular *= shadowFactor;
     ADD_ILLUM(Illumination, DirLightIllum);

@@ -148,7 +148,9 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
         const float SnappedCenterX = std::round(CenterX / WorldUnitsPerTexelX) * WorldUnitsPerTexelX;
         const float SnappedCenterY = std::round(CenterY / WorldUnitsPerTexelY) * WorldUnitsPerTexelY;
 
-        const FMatrix SnapTranslation = FMatrix::TranslationMatrix(FVector(-SnappedCenterX, -SnappedCenterY, 0.0f));
+        const float DeltaX = SnappedCenterX - CenterX;
+        const float DeltaY = SnappedCenterY - CenterY;
+        const FMatrix SnapTranslation = FMatrix::TranslationMatrix(FVector(-DeltaX, -DeltaY, 0.0f));
         OutView = OutView * SnapTranslation;
     }
 
