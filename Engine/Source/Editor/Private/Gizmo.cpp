@@ -81,6 +81,15 @@ void UGizmo::UpdateScale(UCamera* InCamera)
 
 void UGizmo::RenderGizmo(UCamera* InCamera)
 {
+	// 카메라가 오버라이딩 중이고 selected actor가 오버라이더라면 기즈모 렌더링 안함 (화면 가리지 않도록)
+	AActor* Overrider = InCamera->GetOverrider();
+	if (Overrider)
+	{
+		USceneComponent* SelectedComponent = Cast<USceneComponent>(GEditor->GetEditorModule()->GetSelectedComponent());
+		if (SelectedComponent && SelectedComponent->GetOwner() == Overrider)
+			return;
+	}
+
 	TargetComponent = Cast<USceneComponent>(GEditor->GetEditorModule()->GetSelectedComponent());
 	if (!TargetComponent || !InCamera) { return; }
 
