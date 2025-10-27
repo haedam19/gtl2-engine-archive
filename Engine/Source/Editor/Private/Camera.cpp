@@ -5,7 +5,10 @@
 #include "Manager/Config/Public/ConfigManager.h"
 
 #include "Component/Public/PrimitiveComponent.h"
+#include "Component/Public/SceneComponent.h"
 #include "Level/Public/Level.h"
+#include "Actor/Public/Actor.h"
+#include "Global/Quaternion.h"
 
 UCamera::UCamera() :
 	CameraConstants(FCameraConstants()),
@@ -25,6 +28,9 @@ FVector UCamera::UpdateInput()
 {
 	FVector MovementDelta = FVector::Zero(); // 마우스의 변화량을 반환할 객체
 	const UInputManager& Input = UInputManager::GetInstance();
+
+	FVector Location = GetEffectiveLocation();
+	FVector Rotation = GetEffectiveRotation();
 
 	/**
 	 * @brief 마우스 우클릭을 하고 있는 동안 카메라 제어가 가능합니다.
@@ -46,7 +52,7 @@ FVector UCamera::UpdateInput()
 		{
 			Direction.Normalize();
 		}
-		RelativeLocation += Direction * CurrentMoveSpeed * DT;
+		Location += Direction * CurrentMoveSpeed * DT;
 		MovementDelta = Direction * CurrentMoveSpeed * DT;
 
 		// 오른쪽 마우스 버튼 + 마우스 휠로 카메라 이동속도 조절
@@ -64,19 +70,39 @@ FVector UCamera::UpdateInput()
 		if (CameraType == ECameraType::ECT_Perspective)
 		{
 			const FVector MouseDelta = UInputManager::GetInstance().GetMouseDelta();
-			RelativeRotation.Z += MouseDelta.X * KeySensitivityDegPerPixel * 2;
-			RelativeRotation.Y += MouseDelta.Y * KeySensitivityDegPerPixel * 2;
+			Rotation.Z += MouseDelta.X * KeySensitivityDegPerPixel * 2;
+			Rotation.Y += MouseDelta.Y * KeySensitivityDegPerPixel * 2;
 			MovementDelta = FVector::Zero(); // 원근 투영 모드는 반환할 필요가 없음
 		}
 
 
 		// Yaw 래핑(값이 무한히 커지지 않도록)
-		if (RelativeRotation.Z > 180.0f) RelativeRotation.Z -= 360.0f;
-		if (RelativeRotation.Z < -180.0f) RelativeRotation.Z += 360.0f;
+		if (Rotation.Z > 180.0f) Rotation.Z -= 360.0f;
+		if (Rotation.Z < -180.0f) Rotation.Z += 360.0f;
 
 		// Pitch 클램프(짐벌 플립 방지)
-		if (RelativeRotation.Y > 89.0f)  RelativeRotation.Y = 89.0f;
-		if (RelativeRotation.Y < -89.0f) RelativeRotation.Y = -89.0f;
+		if (Rotation.Y > 89.0f)  Rotation.Y = 89.0f;
+		if (Rotation.Y < -89.0f) Rotation.Y = -89.0f;
+	}
+
+	if (Overrider)
+	{
+		const FQuaternion NewRotationQuat = FQuaternion::FromEuler(Rotation);
+		if (USceneComponent* Root = Overrider->GetRootComponent())
+		{
+			Root->SetWorldLocation(Location);
+			Root->SetWorldRotation(NewRotationQuat);
+		}
+		else
+		{
+			Overrider->SetActorLocation(Location);
+			Overrider->SetActorRotation(NewRotationQuat);
+		}
+	}
+	else
+	{
+		RelativeLocation = Location;
+		RelativeRotation = Rotation;
 	}
 
 	return MovementDelta;
@@ -91,7 +117,8 @@ void UCamera::Update(const D3D11_VIEWPORT& InViewport)
 		UpdateInput();
 	}
 	
-	const FMatrix RotationMatrix = FMatrix::RotationMatrix(FVector::GetDegreeToRadian(RelativeRotation));
+	const FVector EffectiveRotation = GetEffectiveRotation();
+	const FMatrix RotationMatrix = FMatrix::RotationMatrix(FVector::GetDegreeToRadian(EffectiveRotation));
 	const FVector4 Forward4 = FVector4::ForwardVector() * RotationMatrix;
 	const FVector4 WorldUp4 = FVector4::UpVector() * RotationMatrix;
 	const FVector WorldUp = { WorldUp4.X, WorldUp4.Y, WorldUp4.Z };
@@ -137,7 +164,8 @@ void UCamera::UpdateMatrixByPers()
 	/**
 	 * @brief View 행렬 연산
 	 */
-	FMatrix T = FMatrix::TranslationMatrixInverse(RelativeLocation);
+	const FVector Location = GetEffectiveLocation();
+	FMatrix T = FMatrix::TranslationMatrixInverse(Location);
 	FMatrix R = FMatrix(Right, Up, Forward);
 	R = R.Transpose();
 	CameraConstants.View = T * R;
@@ -164,7 +192,7 @@ void UCamera::UpdateMatrixByPers()
 
 	CameraConstants.Projection = P;
 	
-	CameraConstants.ViewWorldLocation = RelativeLocation;
+	CameraConstants.ViewWorldLocation = Location;
 	CameraConstants.NearClip = NearZ;
 	CameraConstants.FarClip = FarZ;
 }
@@ -174,7 +202,8 @@ void UCamera::UpdateMatrixByOrth()
 	/**
 	 * @brief View 행렬 연산
 	 */
-	FMatrix T = FMatrix::TranslationMatrixInverse(RelativeLocation);
+	const FVector Location = GetEffectiveLocation();
+	FMatrix T = FMatrix::TranslationMatrixInverse(Location);
 	FMatrix R = FMatrix(Right, Up, Forward);
 	R = R.Transpose();
 	CameraConstants.View = T * R;
@@ -201,7 +230,7 @@ void UCamera::UpdateMatrixByOrth()
 	P.Data[3][3] = 1.0f;
 	CameraConstants.Projection = P;
 	
-	CameraConstants.ViewWorldLocation = RelativeLocation;
+	CameraConstants.ViewWorldLocation = Location;
 	CameraConstants.NearClip = NearZ;
 	CameraConstants.FarClip = FarZ;
 }
@@ -209,7 +238,7 @@ void UCamera::UpdateMatrixByOrth()
 FMatrix UCamera::GetViewMatrix() const
 {
 	// View 행렬 계산
-	FMatrix T = FMatrix::TranslationMatrixInverse(RelativeLocation);
+	FMatrix T = FMatrix::TranslationMatrixInverse(GetEffectiveLocation());
 	FMatrix R = FMatrix(Right, Up, Forward);
 	R = R.Transpose();
 	return T * R;
@@ -263,7 +292,8 @@ const FCameraConstants UCamera::GetFViewProjConstantsInverse() const
 	FCameraConstants Result = {};
 	//FMatrix R = FMatrix::RotationMatrix(FVector::GetDegreeToRadian(RelativeRotation));
 	FMatrix R = FMatrix(Right, Up, Forward);
-	FMatrix T = FMatrix::TranslationMatrix(RelativeLocation);
+	const FVector Location = GetEffectiveLocation();
+	FMatrix T = FMatrix::TranslationMatrix(Location);
 	Result.View = R * T;
 
 	if (CameraType == ECameraType::ECT_Orthographic)
@@ -304,7 +334,7 @@ const FCameraConstants UCamera::GetFViewProjConstantsInverse() const
 		Result.Projection = P;
 	}
 
-	Result.ViewWorldLocation = RelativeLocation;
+	Result.ViewWorldLocation = Location;
 	Result.NearClip = NearZ;
 	Result.FarClip = FarZ;
 	return Result;
@@ -376,4 +406,93 @@ FVector UCamera::CalculatePlaneNormal(const FVector4& Axis)
 FVector UCamera::CalculatePlaneNormal(const FVector& Axis)
 {
 	return FVector(Axis.X, Axis.Y, Axis.Z).Cross(Forward);
+}
+
+FVector UCamera::GetEffectiveLocation() const
+{
+	if (Overrider)
+	{
+		if (USceneComponent* Root = Overrider->GetRootComponent())
+		{
+			return Root->GetWorldLocation();
+		}
+		return Overrider->GetActorLocation();
+	}
+	return RelativeLocation;
+}
+
+FVector UCamera::GetEffectiveRotation() const
+{
+	if (Overrider)
+	{
+		if (USceneComponent* Root = Overrider->GetRootComponent())
+		{
+			return Root->GetWorldRotationAsQuaternion().ToEuler();
+		}
+		return Overrider->GetActorRotation().ToEuler();
+	}
+	return RelativeRotation;
+}
+
+void UCamera::OverrideCamera(AActor* InActor)
+{
+	if (Overrider == InActor)
+	{
+		return;
+	}
+
+	if (Overrider)
+	{
+		ClearOverride();
+	}
+
+	if (InActor)
+	{
+		if (!bHasCachedRelativeTransform)
+		{
+			CachedRelativeLocation = RelativeLocation;
+			CachedRelativeRotation = RelativeRotation;
+			bHasCachedRelativeTransform = true;
+		}
+
+		if (UCamera* ExistingCamera = InActor->GetOverrideCamera())
+		{
+			if (ExistingCamera != this)
+			{
+				ExistingCamera->ClearOverride();
+			}
+		}
+
+		Overrider = InActor;
+		InActor->SetOverrideCamera(this);
+	}
+}
+
+void UCamera::ClearOverride()
+{
+	if (!Overrider)
+	{
+		if (bHasCachedRelativeTransform)
+		{
+			RelativeLocation = CachedRelativeLocation;
+			RelativeRotation = CachedRelativeRotation;
+			bHasCachedRelativeTransform = false;
+		}
+		return;
+	}
+
+	AActor* CurrentActor = Overrider;
+	Overrider = nullptr;
+
+	if (CurrentActor->GetOverrideCamera() == this)
+	{
+		CurrentActor->SetOverrideCamera(nullptr);
+	}
+
+	if (bHasCachedRelativeTransform)
+	{
+		RelativeLocation = CachedRelativeLocation;
+		RelativeRotation = CachedRelativeRotation;
+		bHasCachedRelativeTransform = false;
+	}
 }

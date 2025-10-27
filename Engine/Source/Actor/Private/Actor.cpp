@@ -5,6 +5,7 @@
 #include "Component/Public/LightComponent.h"
 #include "Component/Public/SceneComponent.h"
 #include "Component/Public/UUIDTextComponent.h"
+#include "Editor/Public/Camera.h"
 #include "Editor/Public/Editor.h"
 #include "Level/Public/Level.h"
 #include "Utility/Public/JsonSerializer.h"
@@ -28,6 +29,10 @@ AActor::~AActor()
 	}
 	SetOuter(nullptr);
 	OwnedComponents.clear();
+	if (OverrideCamera)
+	{
+		OverrideCamera->ClearOverride(); // 댕글링 포인터가 되지 않도록 카메라 오버라이드 해제
+	}
 }
 
 void AActor::Serialize(const bool bInIsLoading, JSON& InOutHandle)
@@ -446,4 +451,14 @@ void AActor::EndPlay()
 			Component->EndPlay();
 		}
 	}
+}
+
+void AActor::SetOverrideCamera(UCamera* InCamera)
+{
+	if (OverrideCamera == InCamera)
+	{
+		return;
+	}
+
+	OverrideCamera = InCamera;
 }

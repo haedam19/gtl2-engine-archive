@@ -3,6 +3,7 @@
 #include "Optimization/Public/ViewVolumeCuller.h"
 
 class UConfigManager;
+class AActor;
 
 enum class ECameraType
 {
@@ -97,7 +98,15 @@ public:
 		return Result;
 	}
 
+	// Camera Override methods
+	void OverrideCamera(AActor* InActor);
+	void ClearOverride();
+	AActor* GetOverrider() const { return Overrider; }
+
 private:
+	FVector GetEffectiveLocation() const;
+	FVector GetEffectiveRotation() const;
+
 	FCameraConstants CameraConstants = {};
 	FVector RelativeLocation = {};
 	FVector RelativeRotation = {};
@@ -120,4 +129,10 @@ private:
 	
 	// Dynamic Movement Speed
 	float CurrentMoveSpeed = DEFAULT_SPEED;
+
+	// Override Properties
+	AActor* Overrider = nullptr;
+	FVector CachedRelativeLocation = {};
+	FVector CachedRelativeRotation = {};
+	bool bHasCachedRelativeTransform = false;
 };
