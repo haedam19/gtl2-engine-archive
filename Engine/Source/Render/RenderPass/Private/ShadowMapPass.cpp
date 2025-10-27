@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include <algorithm>
 #include <cmath>
 #include "Render/RenderPass/Public/ShadowMapPass.h"
@@ -150,11 +150,10 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 			);
 			CascadeData.bIsCSM = FVector4(1.0f, 0.0f, 0.0f, 0.0f);
 
-			uint32 CascadeCount = FCSMBuilder::BuildCascadeData(DirLight, Context.CurrentCamera, CascadeData);
+			TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
+			uint32 CascadeCount = FCSMBuilder::BuildCascadeData(DirLight, Context.CurrentCamera, MeshComponents, CascadeData);
 			CascadeData.CascadeParams.X = static_cast<float>(CascadeCount);
 			TempCascadeData = CascadeData;
-
-			TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
 
 			for (uint32 CascadeIndex = 0; CascadeIndex < CascadeCount; ++CascadeIndex)
 			{
@@ -435,3 +434,9 @@ void FShadowMapPass::ExecuteVSMFilter()
 
 	UE_LOG("[VSM] Filter executed successfully");
 }
+
+
+
+
+
+

@@ -1,7 +1,9 @@
-#pragma once
+﻿#pragma once
+#include "Global/Types.h"
 
 class UCamera;
 class UDirectionalLightComponent;
+class UStaticMeshComponent;
 
 constexpr float CSMShadowMapResolution = 2048.0f;
 constexpr uint32 CascadesPerRow = 2;
@@ -24,11 +26,14 @@ class FCSMBuilder
 {
 public:
 	FCSMBuilder();
-	static uint32 BuildCascadeData(UDirectionalLightComponent* Light, UCamera* Camera, FCascadeShadowConstants& OutData);
+	static uint32 BuildCascadeData(UDirectionalLightComponent* Light, UCamera* Camera, const TArray<UStaticMeshComponent*>& MeshComponents, FCascadeShadowConstants& OutData);
 
 private:
 	static FVector4 BuildCascadeScaleOffset(uint32 CascadeIndex);
 	static void CalculateFrustumCorners(UCamera* Camera, float NearPlane, float FarPlane, std::array<FVector, 8>& OutCorners);
-	static void BuildCascadeMatrices(const std::array<FVector, 8>& Corners, const FVector& LightDirection, FMatrix& OutView, FMatrix& OutProjection);
+	static void BuildCascadeMatrices(const std::array<FVector, 8>& Corners, const FVector& LightDirection, const FVector& SceneMin, const FVector& SceneMax, bool bHasSceneBounds, FMatrix& OutView, FMatrix& OutProjection);
 	static void FillFallbackCascade(UDirectionalLightComponent* Light, FCascadeShadowConstants& OutData);
 };
+
+
+

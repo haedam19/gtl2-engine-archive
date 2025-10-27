@@ -8,6 +8,7 @@
 #include "Utility/Public/CSMBuilder.h"
 #include "Editor/Public/Camera.h"
 #include "Component/Public/DirectionalLightComponent.h"
+#include "Component/Mesh/Public/StaticMeshComponent.h"
 
 FCSMBuilder::FCSMBuilder()
 {
@@ -61,23 +62,48 @@ void FCSMBuilder::CalculateFrustumCorners(UCamera* Camera, float NearPlane, floa
     OutCorners[7] = FarCenter - Up * FarHeight + Right * FarWidth;
 }
 
-void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, const FVector& LightDirection, FMatrix& OutView, FMatrix& OutProjection)
+void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, const FVector& LightDirection, const FVector& SceneMin, const FVector& SceneMax, bool bHasSceneBounds, FMatrix& OutView, FMatrix& OutProjection)
 {
-    FVector Center = FVector::ZeroVector();
+    std::array<FVector, 8> SceneBoundsPoints{};
+    if (bHasSceneBounds)
+    {
+        SceneBoundsPoints = {
+            FVector(SceneMin.X, SceneMin.Y, SceneMin.Z),
+            FVector(SceneMin.X, SceneMin.Y, SceneMax.Z),
+            FVector(SceneMin.X, SceneMax.Y, SceneMin.Z),
+            FVector(SceneMin.X, SceneMax.Y, SceneMax.Z),
+            FVector(SceneMax.X, SceneMin.Y, SceneMin.Z),
+            FVector(SceneMax.X, SceneMin.Y, SceneMax.Z),
+            FVector(SceneMax.X, SceneMax.Y, SceneMin.Z),
+            FVector(SceneMax.X, SceneMax.Y, SceneMax.Z)
+        };
+    }
 
-    // Corners는 잘려진 개별 Cascade의 월드 좌표 8개
-    // 각 프러스텀의 코너 좌표를 전부 더한 후, size(8)로 나눠서 프러스텀의 중점을 찾음
+    FVector Center = FVector::ZeroVector();
+    float PointCount = static_cast<float>(Corners.size());
+
     for (const FVector& Corner : Corners)
     {
         Center += Corner;
     }
 
-    Center *= (1.0f / static_cast<float>(Corners.size()));
+    if (bHasSceneBounds)
+    {
+        for (const FVector& BoundsPoint : SceneBoundsPoints)
+        {
+            Center += BoundsPoint;
+        }
+        PointCount += static_cast<float>(SceneBoundsPoints.size());
+    }
+
+    if (PointCount > 0.0f)
+    {
+        Center *= (1.0f / PointCount);
+    }
 
     FVector Direction = LightDirection.GetNormalized();
     FVector Up = FVector::UpVector();
 
-    // 빛의 방향이 좌표계의 Up 벡터와 매우 유사할경우 제대로 Light View 행렬이 생성되기 힘드므로 아예 다른 임의 축으로 설정
     if (std::abs(Direction.Dot(Up)) > 0.99f)
     {
         Up = FVector::RightVector();
@@ -85,17 +111,20 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
 
     float Radius = 0.0f;
 
-    // 8개의 프러스텀 코너 좌표에 대해 중심과의 거리가 가장 긴 반지름을 찾는다.
     for (const FVector& Corner : Corners)
     {
         Radius = std::max(Radius, (Corner - Center).Length());
     }
+    if (bHasSceneBounds)
+    {
+        for (const FVector& BoundsPoint : SceneBoundsPoints)
+        {
+            Radius = std::max(Radius, (BoundsPoint - Center).Length());
+        }
+    }
 
-    // 1/16 단위 양자화 스냅
     Radius = std::ceil(Radius * 16.0f) / 16.0f;
 
-    // 디렉셔널 라이트는 사실 위치가 (코드 레벨에서) 정의되지 않는다.
-    // 하지만 뷰 행렬을 만드려면 임의의 위치가 필요하므로 중점에서 Direction 방향의 벡터를 빼 Direction 방향으로 보았을 때 Center을 보게 되는 임의의 좌표를 구한다.
     const FVector LightPosition = Center - Direction * (Radius * 2.0f);
     OutView = FMatrix::LookAtLH(LightPosition, Center, Up);
 
@@ -106,7 +135,6 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
     float MinZ = FLT_MAX;
     float MaxZ = -FLT_MAX;
 
-    // 8개의 프러스텀 코너 좌표를 라이트 뷰 행렬을 곱해 이동시킨 후, 경계 좌표 6개를 구해 너비, 높이, 깊이를 계산할 수 있도록 준비 
     for (const FVector& Corner : Corners)
     {
         const FVector4 Transformed = FMatrix::VectorMultiply(FVector4(Corner, 1.0f), OutView);
@@ -117,8 +145,20 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
         MinZ = std::min(MinZ, Transformed.Z);
         MaxZ = std::max(MaxZ, Transformed.Z);
     }
+    if (bHasSceneBounds)
+    {
+        for (const FVector& BoundsPoint : SceneBoundsPoints)
+        {
+            const FVector4 Transformed = FMatrix::VectorMultiply(FVector4(BoundsPoint, 1.0f), OutView);
+            MinX = std::min(MinX, Transformed.X);
+            MaxX = std::max(MaxX, Transformed.X);
+            MinY = std::min(MinY, Transformed.Y);
+            MaxY = std::max(MaxY, Transformed.Y);
+            MinZ = std::min(MinZ, Transformed.Z);
+            MaxZ = std::max(MaxZ, Transformed.Z);
+        }
+    }
 
-    // 라이트 뷰 공간에서 XY 중심을 (0, 0)으로 이동 -> Ortho 행렬에 들어가는 Width/Height를 좌우 상하 균등하게 펼치게 하려고
     const float CenterX = 0.5f * (MinX + MaxX);
     const float CenterY = 0.5f * (MinY + MaxY);
     const FMatrix recenterMatrix = FMatrix::TranslationMatrix(FVector(-CenterX, -CenterY, 0.0f));
@@ -129,14 +169,12 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
     MinY -= CenterY;
     MaxY -= CenterY;
 
-    // 라이트 뷰 정사영 박스의 Width와 Heigth, Near Z와 Far Z를 계산
     float Width = MaxX - MinX;
     float Height = MaxY - MinY;
     float NearPlane = MinZ;
     float FarPlane = MaxZ;
 
     {
-        // 전역 상수를 이용해서 타일 픽셀 크기 계산
         const float TileSize = CSMShadowMapResolution / CascadesPerRow;
         const float EffectiveSize = std::max(TileSize - AtlasBorder * 2.0f, 1.0f);
         const uint32 TileW = static_cast<uint32>(EffectiveSize);
@@ -154,7 +192,6 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
         OutView = OutView * SnapTranslation;
     }
 
-    // Ortho 행렬 계산 시에 값이 너무 작아 생기는 특이 현상 방지(최소 폭, 너비, 깊이에 대해 1.0f 보장)
     Width = std::max(Width, 1.0f);
     Height = std::max(Height, 1.0f);
 
@@ -174,7 +211,7 @@ void FCSMBuilder::FillFallbackCascade(UDirectionalLightComponent* Light, FCascad
     OutData.CascadeScaleOffsets[0] = FVector4(1.0f, 1.0f, 0.0f, 0.0f);
 }
 
-uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera* Camera, FCascadeShadowConstants& OutData)
+uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera* Camera, const TArray<UStaticMeshComponent*>& MeshComponents, FCascadeShadowConstants& OutData)
 {
     // 카메라가 없거나 Persprective가 아닐 경우에는 Fallback(단일 정사영)
     if (!Camera || Camera->GetCameraType() != ECameraType::ECT_Perspective)
@@ -191,6 +228,52 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
 
     // 디렉셔널 라이트의 방향 벡터
     FVector LightDirection = Light->GetForwardVector().GetNormalized();
+
+    FVector SceneMin(FLT_MAX, FLT_MAX, FLT_MAX);
+    FVector SceneMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+    bool bHasSceneBounds = false;
+
+    if (!MeshComponents.empty())
+    {
+        const FVector CameraPosition = Camera->GetLocation();
+        const FVector CameraForward = Camera->GetForward().GetNormalized();
+        const float ShadowDistance = Light->GetShadowDistance();
+
+        for (UStaticMeshComponent* MeshComp : MeshComponents)
+        {
+            if (!MeshComp || !MeshComp->IsVisible() || !MeshComp->GetStaticMesh())
+            {
+                continue;
+            }
+
+            FVector BoundsMin;
+            FVector BoundsMax;
+            MeshComp->GetWorldAABB(BoundsMin, BoundsMax);
+
+            FVector BoundsCenter = (BoundsMin + BoundsMax) * 0.5f;
+            float DistanceAlongForward = (BoundsCenter - CameraPosition).Dot(CameraForward);
+            if (DistanceAlongForward < -ShadowDistance * 0.25f || DistanceAlongForward > ShadowDistance)
+            {
+                continue;
+            }
+
+            SceneMin.X = std::min(SceneMin.X, BoundsMin.X);
+            SceneMin.Y = std::min(SceneMin.Y, BoundsMin.Y);
+            SceneMin.Z = std::min(SceneMin.Z, BoundsMin.Z);
+
+            SceneMax.X = std::max(SceneMax.X, BoundsMax.X);
+            SceneMax.Y = std::max(SceneMax.Y, BoundsMax.Y);
+            SceneMax.Z = std::max(SceneMax.Z, BoundsMax.Z);
+
+            bHasSceneBounds = true;
+        }
+    }
+
+    if (!bHasSceneBounds)
+    {
+        SceneMin = FVector::ZeroVector();
+        SceneMax = FVector::ZeroVector();
+    }
 
     // 나눠진 Cascade의 Far Z를 기록할 배열 선언
     float Splits[4] = {};
@@ -218,7 +301,7 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
         // 이전에 정의한 BuildCascadeMatrices 함수를 통해 Light의 View, Projection 행렬과 Cascade에 대한 Frustum 8 좌표를 얻는다
         FMatrix ViewMatrix;
         FMatrix ProjectionMatrix;
-        BuildCascadeMatrices(Corners, LightDirection, ViewMatrix, ProjectionMatrix);
+        BuildCascadeMatrices(Corners, LightDirection, SceneMin, SceneMax, bHasSceneBounds, ViewMatrix, ProjectionMatrix);
 
         // 같은 라이트라고 하더라도 각 Cascade에 대해 다른 View, Projection 행렬이 계산된다.
         OutData.CascadesLightView[CascadeIndex] = ViewMatrix;
@@ -231,3 +314,5 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
 
     return CSM_MAX_CASCADES;
 }
+
+
