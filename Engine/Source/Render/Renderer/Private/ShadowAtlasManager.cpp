@@ -163,6 +163,55 @@ const FShadowAtlasInfo* FShadowAtlasManager::GetAtlas(EShadowAtlasType Type, uin
     return nullptr;
 }
 
+ID3D11ShaderResourceView* FShadowAtlasManager::GetSliceSRV(EShadowAtlasType type, uint32 sliceIndex)
+{
+    if (!Device)
+    {
+        return nullptr;
+    }
+
+    // 해당 타입의 Texture2DArray 선택
+    ID3D11Texture2D* TargetTexture = nullptr;
+
+    switch (type)
+    {
+    case EShadowAtlasType::DirectionalCSM:
+        TargetTexture = DirectionalAtlasArrayTexture;
+        break;
+    case EShadowAtlasType::PointSpotLight:
+        TargetTexture = PointSpotAtlasArrayTexture;
+        break;
+    default:
+        return nullptr;
+    }
+
+    if (!TargetTexture)
+    {
+        return nullptr;
+    }
+
+    // 특정 슬라이스만 보여주는 SRV 생성
+    ID3D11ShaderResourceView* SliceSRV = nullptr;
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;  // Depth format
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+    srvDesc.Texture2DArray.MostDetailedMip = 0;
+    srvDesc.Texture2DArray.MipLevels = 1;
+    srvDesc.Texture2DArray.FirstArraySlice = sliceIndex;  // 특정 슬라이스만
+    srvDesc.Texture2DArray.ArraySize = 1;                 // 1개만
+
+    HRESULT hr = Device->CreateShaderResourceView(TargetTexture, &srvDesc, &SliceSRV);
+    if (FAILED(hr))
+    {
+        UE_LOG_ERROR("ShadowAtlasManager: Slice SRV 생성 실패 (Type: %d, SliceIndex: %d)",
+            static_cast<int>(type), sliceIndex);
+        return nullptr;
+    }
+
+    return SliceSRV;
+}
+
 bool FShadowAtlasManager::CreateNewAtlasSlice(EShadowAtlasType Type, uint32 AtlasSize)
 {
     if (!Device)
@@ -486,6 +535,15 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(const 
         NewAllocations.clear();
         Result.clear();
 
+        // ✅ Atlas를 Clear했으므로 모든 라이트를 Dirty로 마킹하여 재렌더링 강제
+        for (UPointLightComponent* Light : Lights)
+        {
+            if (Light && Light->GetLightEnabled())
+            {
+                Light->MarkShadowDirty();
+            }
+        }
+
         // 모든 활성화된 라이트를 다시 정렬하여 재할당
         SortEntries.clear();
         for (UPointLightComponent* Light : Lights)
@@ -526,8 +584,8 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(const 
                 // Light별 할당 정보 저장 (DetailWindow 시각화용)
                 CurrentLightAllocations[Entry.Light] = Pair.Allocation;
 
-                // 더티 플래그 클리어
-                Entry.Light->ClearShadowDirty();
+                // ✅ 더티 플래그는 ShadowMapPass에서 렌더링 후에 클리어되도록 변경
+                // Entry.Light->ClearShadowDirty();  // 제거: 렌더링 전에 클리어하면 안됨
             }
             else
             {

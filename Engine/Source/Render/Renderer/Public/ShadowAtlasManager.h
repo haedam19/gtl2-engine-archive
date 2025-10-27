@@ -100,6 +100,9 @@ public:
     ID3D11ShaderResourceView* GetDirectionalAtlasArraySRV() const { return DirectionalAtlasArraySRV; }
     ID3D11ShaderResourceView* GetPointSpotAtlasArraySRV() const { return PointSpotAtlasArraySRV; }
 
+    ID3D11ShaderResourceView* GetSliceSRV(
+        EShadowAtlasType type, uint32 sliceIndex);
+
 private:
     // 새 Atlas Slice 생성 (Texture2DArray의 다음 슬라이스)
     bool CreateNewAtlasSlice(EShadowAtlasType Type, uint32 AtlasSize);
@@ -136,7 +139,7 @@ private:
     ID3D11ShaderResourceView* DirectionalAtlasArraySRV = nullptr;
     ID3D11ShaderResourceView* PointSpotAtlasArraySRV = nullptr;
     uint32 DirectionalArrayCapacity = 1;  // Directional 4장 시작, 필요시 8, 16... 확장
-    uint32 PointSpotArrayCapacity = 2;    // PointSpot 8장 시작, 필요시 16, 32... 확장
+    uint32 PointSpotArrayCapacity = 1;    // PointSpot 8장 시작, 필요시 16, 32... 확장
 
     // Release 중복 호출 방지
     bool bIsReleased = false;

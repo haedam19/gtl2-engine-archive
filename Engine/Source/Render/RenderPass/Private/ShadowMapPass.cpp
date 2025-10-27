@@ -160,103 +160,147 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		}
 	}
 	TArray<UPointLightComponent*> SpotLightsAsPointLights;
-	for (USpotLightComponent* SpotLight : Context.SpotLights)
+	/*for (USpotLightComponent* SpotLight : Context.SpotLights)
 	{
 		if (!SpotLight || !SpotLight->GetLightEnabled()) { continue; }
 		if (SpotLight && SpotLight->GetLightEnabled())
 		{
 			SpotLightsAsPointLights.push_back(SpotLight);
 		}
-	}
+	}*/
 
-	TArray<FLightAllocationPair> AllocatedSpotLights = AtlasManager->AllocatePointSpotLights(SpotLightsAsPointLights);
+	//TArray<FLightAllocationPair> AllocatedSpotLights = AtlasManager->AllocatePointSpotLights(SpotLightsAsPointLights);
 	// ===========================================================================
 	// 3단계: SpotLight Shadow 렌더링 (개별 텍스처)
 	// ===========================================================================
+	// ===========================================================================
+// 2단계 이후: SpotLight Shadow 렌더링 (Atlas 기반, 슬라이스/리전 사용)
+// ===========================================================================
+
+// 1) SpotLight를 Point/Spot 공용 할당기로 변환 (이미 있는 코드 OK)
+	//TArray<UPointLightComponent*> SpotLightsAsPointLights;
+	for (USpotLightComponent* SpotLight : Context.SpotLights)
+	{
+		if (SpotLight && SpotLight->GetLightEnabled())
+			SpotLightsAsPointLights.push_back(SpotLight);
+	}
+
+	// 2) Atlas에서 영역/슬라이스 할당
+	TArray<FLightAllocationPair> AllocatedSpotLights = AtlasManager->AllocatePointSpotLights(SpotLightsAsPointLights);
+
+	// 3) 🔥 슬라이스별로 라이트를 묶는다 (AtlasIndex 기준)
+	std::unordered_map<uint32, std::vector<const FLightAllocationPair*>> spotBySlice;
 	for (const FLightAllocationPair& Pair : AllocatedSpotLights)
 	{
-		if (!Pair.IsValid())
-			continue;
+		if (!Pair.IsValid()) continue;
+		spotBySlice[Pair.Allocation.AtlasIndex].push_back(&Pair);
+	}
 
-		USpotLightComponent* SpotLight = Cast<USpotLightComponent>(Pair.Light);
-		if (!SpotLight)
-			continue;
+	// 4) 🔥 슬라이스 단위 렌더링: 슬라이스 진입 시 "1회만" Clear
+	for (auto& kv : spotBySlice)
+	{
+		const uint32 sliceIndex = kv.first;
+		auto& lights = kv.second;
 
-		const FShadowAtlasRegion& Region = Pair.Allocation.Region;
+		if (lights.empty()) continue;
 
-		// Clear DSV
-		DeviceContext->ClearDepthStencilView(Pair.Allocation.DSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
+		ID3D11DepthStencilView* dsv = lights.front()->Allocation.DSV;
 
-		// Bind DSV
+		// RTV 끄고 DSV만 바인딩
 		ID3D11RenderTargetView* NullRTV = nullptr;
-		Pipeline->SetRenderTargets(1, &NullRTV, Pair.Allocation.DSV);
+		Pipeline->SetRenderTargets(1, &NullRTV, dsv);
 
-		// Viewport = Atlas 내 Region
-		D3D11_VIEWPORT ShadowViewport = {};
-		ShadowViewport.TopLeftX = (float)Region.X;
-		ShadowViewport.TopLeftY = (float)Region.Y;
-		ShadowViewport.Width = (float)Region.Width;
-		ShadowViewport.Height = (float)Region.Height;
-		ShadowViewport.MinDepth = 0.0f;
-		ShadowViewport.MaxDepth = 1.0f;
-		DeviceContext->RSSetViewports(1, &ShadowViewport);
+		// ✅ 이 슬라이스는 프레임당 "한 번만" 클리어
+		DeviceContext->ClearDepthStencilView(dsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
-		// Light View/Proj 생성
-		FVector LightPos = SpotLight->GetWorldLocation();
-		FVector LightDir = SpotLight->GetForwardVector().GetNormalized();
-		FVector Up = FVector::UpVector();
-		if (fabs(LightDir.Dot(Up)) > 0.99f)
-			Up = FVector::RightVector();
+		// Scissor 활성화된 래스터라이저 상태 준비
+		FRenderState RSState = UStaticMeshComponent::GetClassDefaultRenderState();
+	//	RSState.ScissorEnable = true;
+		ID3D11RasterizerState* RS_scissor = FRenderResourceFactory::GetRasterizerState(RSState);
+		FPipelineInfo PipeInfo = { InputLayout, VS, RS_scissor, DS, PS, nullptr, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST };
+		Pipeline->UpdatePipeline(PipeInfo);
 
-		FMatrix LightView = FMatrix::LookAtLH(LightPos, LightPos + LightDir, Up);
-
-		float OuterAngle = max(SpotLight->GetOuterConeAngle(), 0.01f);
-		float FovY = clamp(OuterAngle * 2.0f, 0.01f, PI - 0.01f);
-		float NearZ = 0.01f;
-		float FarZ = max(SpotLight->GetAttenuationRadius(), 0.5f);
-
-		FMatrix LightProj = FMatrix::PerspectiveFovLH(FovY, 1.0f, NearZ, FarZ);
-
-		// Rasterizer(Depth Bias) 업데이트
-		RenderState.SlopeScaledDepthBias = SpotLight->GetShadowSlopeBias();
-		RS = FRenderResourceFactory::GetRasterizerState(RenderState);
-		PipelineInfo.RasterizerState = RS;
-		Pipeline->UpdatePipeline(PipelineInfo);
-
-		// Update Constant Buffers
-		FLightViewProjConstants LightVP;
-		LightVP.LightView = LightView;
-		LightVP.LightProjection = LightProj;
-		FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);
-		Pipeline->SetConstantBuffer(1, EShaderType::VS, ConstantBufferLightViewProj);
-
-		// Mesh Draw
-		TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
+		// 메쉬 캐시 포인터
 		FStaticMesh* CurrentMeshAsset = nullptr;
 
-		for (UStaticMeshComponent* MeshComp : MeshComponents)
+		// 5) 슬라이스 안의 각 SpotLight를 "자기 Region"에 그린다
+		for (const FLightAllocationPair* P : lights)
 		{
-			if (!MeshComp || !MeshComp->IsVisible()) continue;
-			if (!MeshComp->GetStaticMesh()) continue;
-			FStaticMesh* MeshAsset = MeshComp->GetStaticMesh()->GetStaticMeshAsset();
-			if (!MeshAsset) continue;
+			const auto& Pair = *P;
+			USpotLightComponent* SpotLight = Cast<USpotLightComponent>(Pair.Light);
+			if (!SpotLight) continue;
 
-			if (CurrentMeshAsset != MeshAsset)
+			const FShadowAtlasRegion& Region = Pair.Allocation.Region;
+
+			// Viewport/Scissor = 이 라이트의 Atlas 내 사각형
+			D3D11_VIEWPORT vp{};
+			vp.TopLeftX = (float)Region.X;
+			vp.TopLeftY = (float)Region.Y;
+			vp.Width = (float)Region.Width;
+			vp.Height = (float)Region.Height;
+			vp.MinDepth = 0.0f;
+			vp.MaxDepth = 1.0f;
+			DeviceContext->RSSetViewports(1, &vp);
+
+			D3D11_RECT sc{ (LONG)Region.X, (LONG)Region.Y, (LONG)(Region.X + Region.Width), (LONG)(Region.Y + Region.Height) };
+			DeviceContext->RSSetScissorRects(1, &sc);
+
+			// 라이트별 DepthBias 적용
+			RSState.SlopeScaledDepthBias = SpotLight->GetShadowSlopeBias();
+			ID3D11RasterizerState* RS_light = FRenderResourceFactory::GetRasterizerState(RSState);
+			PipeInfo.RasterizerState = RS_light;
+			Pipeline->UpdatePipeline(PipeInfo);
+
+			// Spot Light View/Projection 만들기
+			const FVector LightPos = SpotLight->GetWorldLocation();
+			const FVector LightDir = SpotLight->GetForwardVector().GetNormalized();
+
+			FVector Up = FVector::UpVector();
+			if (fabs(LightDir.Dot(Up)) > 0.99f) Up = FVector::RightVector();
+
+			FMatrix LightView = FMatrix::LookAtLH(LightPos, LightPos + LightDir, Up);
+
+			const float OuterAngle = max(SpotLight->GetOuterConeAngle(), 0.01f);
+			const float FovY = clamp(OuterAngle * 2.0f, 0.01f, PI - 0.01f);
+			const float NearZ = 0.01f;
+			const float FarZ = max(SpotLight->GetAttenuationRadius(), 0.5f);
+
+			FMatrix LightProj = FMatrix::PerspectiveFovLH(FovY, 1.0f, NearZ, FarZ);
+
+			// VS 상수 버퍼 갱신
+			FLightViewProjConstants LightVP{};
+			LightVP.LightView = LightView;
+			LightVP.LightProjection = LightProj;
+			FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);
+			Pipeline->SetConstantBuffer(1, EShaderType::VS, ConstantBufferLightViewProj);
+
+			// 메쉬 드로우
+			for (UStaticMeshComponent* MeshComp : Context.StaticMeshes)
 			{
-				Pipeline->SetVertexBuffer(MeshComp->GetVertexBuffer(), sizeof(FNormalVertex));
-				Pipeline->SetIndexBuffer(MeshComp->GetIndexBuffer(), 0);
-				CurrentMeshAsset = MeshAsset;
+				if (!MeshComp || !MeshComp->IsVisible()) continue;
+				if (!MeshComp->GetStaticMesh()) continue;
+				FStaticMesh* MeshAsset = MeshComp->GetStaticMesh()->GetStaticMeshAsset();
+				if (!MeshAsset) continue;
+
+				if (CurrentMeshAsset != MeshAsset)
+				{
+					Pipeline->SetVertexBuffer(MeshComp->GetVertexBuffer(), sizeof(FNormalVertex));
+					Pipeline->SetIndexBuffer(MeshComp->GetIndexBuffer(), 0);
+					CurrentMeshAsset = MeshAsset;
+				}
+
+				FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferModel, MeshComp->GetWorldTransformMatrix());
+				Pipeline->SetConstantBuffer(0, EShaderType::VS, ConstantBufferModel);
+
+				Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
 			}
 
-			FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferModel, MeshComp->GetWorldTransformMatrix());
-			Pipeline->SetConstantBuffer(0, EShaderType::VS, ConstantBufferModel);
-
-			Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
+			// Optional: 라이트에 LVP/해상도 캐시
+			SpotLight->UpdateLVP(LightView, LightProj);
+			SpotLight->UpdateShadowMapSize(Region.Width, Region.Height);
 		}
-
-		SpotLight->UpdateLVP(LightView, LightProj);
-		SpotLight->UpdateShadowMapSize(Region.Width, Region.Height);
 	}
+
 
 	// ===========================================================================
 	// 정리: Unbind DSV and Restore Viewport
