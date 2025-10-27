@@ -542,13 +542,43 @@ float CalculateSpotShadow(FSpotLightInfo Info, float3 WorldPos)
     // Shadow Atlas Region 정보 가져오기
     FShadowAtlasRegionInfo region = ShadowRegions[Info.ShadowRegionIndex];
 
-    // Shadow Map UV를 Atlas UV로 변환
+    // 🔥 Shadow Map UV를 Atlas UV로 변환 (Region 좌표 기반)
+    // region.UVTransform = (UMin, VMin, UScale, VScale)
     float2 atlasUV = projCoords.xy * region.UVTransform.zw + region.UVTransform.xy;
 
     float currentDepth = projCoords.z;
     float bias = Info.ShadowBias;
 
-    // PCF: Percentage Closer Filtering
+#if SHADOW_FILTER_VSM
+    // 🔥 VSM: Variance Shadow Mapping (SpotLight도 Atlas 기반)
+    float2 moments = float2(0.0f, 0.0f);
+
+    // ⚠️ PointSpot Atlas에서 샘플링 (AtlasType == 1), Texture2DArray의 3번째 파라미터는 SliceIndex
+    moments = PointSpotAtlases.Sample(ShadowSampler, float3(atlasUV, region.AtlasIndex));
+
+    float mean = moments.x;
+    float variance = max(moments.y - mean * mean, 0.00001f);
+    float depth = currentDepth - bias;
+
+    // If depth is less than or equal to mean, fully lit
+    if (depth <= mean)
+        return 1.0f;
+
+    // Chebyshev's inequality
+    float d = depth - mean;
+    float p_max = variance / (variance + d * d);
+
+    // Light bleeding reduction
+    const float LBR = 0.3f;
+    p_max = saturate((p_max - LBR) / (1.0f - LBR));
+
+    // Shadow sharpening
+    float sharpen = max(0.0f, Info.ShadowSharpen);
+    float shadow = saturate((p_max - 0.5f) * (sharpen + 1.0f) + 0.5f);
+
+    return shadow;
+#else
+    // 🔥 PCF: Percentage Closer Filtering (SpotLight도 Atlas 기반)
     float shadow = 0.0f;
     float2 texelSize = 1.0f / float2(4096.0f, 4096.0f);  // Shadow Atlas size
 
@@ -561,7 +591,7 @@ float CalculateSpotShadow(FSpotLightInfo Info, float3 WorldPos)
         {
             float2 offset = float2(x, y) * texelSize;
 
-            // PointSpot Atlas에서 샘플링 (AtlasType == 1)
+            // ⚠️ PointSpot Atlas에서 샘플링, Texture2DArray의 3번째 파라미터는 SliceIndex
             float shadowMapDepth = PointSpotAtlases.SampleLevel(ShadowSampler, float3(atlasUV + offset, region.AtlasIndex), 0).r;
             shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
         }
@@ -575,6 +605,7 @@ float CalculateSpotShadow(FSpotLightInfo Info, float3 WorldPos)
     shadow = saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
 
     return shadow;
+#endif
 }
 
 // Vertex Shader

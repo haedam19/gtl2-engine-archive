@@ -387,6 +387,25 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(const 
     TArray<FLightAllocationPair> Result;
 
     // ===========================================================================
+    // 0단계: CurrentLightAllocations에서 기존 PointSpot 할당 정보 제거
+    // (DirectionalLight 할당 정보는 유지)
+    // ===========================================================================
+    // PointSpot Light 할당 정보만 선택적으로 제거
+    TArray<ULightComponentBase*> LightsToRemove;
+    for (auto& Pair : CurrentLightAllocations)
+    {
+        // PointLightComponent 또는 SpotLightComponent인 경우만 제거
+        if (dynamic_cast<UPointLightComponent*>(Pair.first))
+        {
+            LightsToRemove.push_back(Pair.first);
+        }
+    }
+    for (auto* Light : LightsToRemove)
+    {
+        CurrentLightAllocations.erase(Light);
+    }
+
+    // ===========================================================================
     // 1단계: 더티 플래그를 확인하여 재할당이 필요한 라이트만 수집
     // ===========================================================================
     struct FSortEntry
@@ -419,7 +438,10 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(const 
 
         // 더티 라이트이거나 이전에 할당된 적이 없는 라이트만 재할당 필요
         auto It = PreviousPointSpotAllocations.find(Light);
-        if (Entry.bIsDirty || It == PreviousPointSpotAllocations.end())
+        bool bNeedsRealloc = Entry.bIsDirty || (It == PreviousPointSpotAllocations.end());
+
+        // SpotLight는 Dirty 없으면 재할당하지 않도록 조정 ✅
+        if (bNeedsRealloc)
         {
             SortEntries.push_back(Entry);
         }
@@ -435,6 +457,8 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(const 
 
             Result.push_back(Pair);
             NewAllocations[Light] = PrevAlloc;
+            // ✅ CurrentLightAllocations에도 등록 (DetailWindow 시각화용)
+            CurrentLightAllocations[Light] = PrevAlloc;
         }
     }
 
@@ -483,7 +507,7 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(const 
         for (const FSortEntry& Entry : SortEntries)
         {
             FLightAllocationPair Pair;
-            Pair.Light = nullptr;  // DirectionalLight용 필드이므로 nullptr
+            Pair.Light = Entry.Light;  // DirectionalLight용 필드이므로 nullptr
             Pair.ShadowResolution = Entry.Resolution;
 
             // Point Light는 6면 큐브맵이 필요하지만, 일단 단일 Shadow Map으로 구현

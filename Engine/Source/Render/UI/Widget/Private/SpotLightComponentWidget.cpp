@@ -14,61 +14,7 @@ IMPLEMENT_CLASS(USpotLightComponentWidget, UWidget)
 
 USpotLightComponentWidget::~USpotLightComponentWidget()
 {
-    ReleaseShadowPreviewResources();
-}
-
-void USpotLightComponentWidget::ReleaseShadowPreviewResources()
-{
-    SafeRelease(ShadowMapPreviewSRV);
-    SafeRelease(ShadowMapPreviewRTV);
-    SafeRelease(ShadowMapPreviewTexture);
-}
-
-void USpotLightComponentWidget::EnsureShadowPreviewResources(ID3D11Device* Device, uint32 Size)
-{
-    if (!Device)
-    {
-        return;
-    }
-
-    if (ShadowMapPreviewTexture)
-    {
-        D3D11_TEXTURE2D_DESC ExistingDesc = {};
-        ShadowMapPreviewTexture->GetDesc(&ExistingDesc);
-        if (ExistingDesc.Width == Size && ExistingDesc.Height == Size)
-        {
-            return;
-        }
-        ReleaseShadowPreviewResources();
-    }
-
-    D3D11_TEXTURE2D_DESC Desc = {};
-    Desc.Width = Size;
-    Desc.Height = Size;
-    Desc.MipLevels = 1;
-    Desc.ArraySize = 1;
-    Desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    Desc.SampleDesc.Count = 1;
-    Desc.SampleDesc.Quality = 0;
-    Desc.Usage = D3D11_USAGE_DEFAULT;
-    Desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-
-    if (FAILED(Device->CreateTexture2D(&Desc, nullptr, &ShadowMapPreviewTexture)))
-    {
-        ReleaseShadowPreviewResources();
-        return;
-    }
-
-    if (FAILED(Device->CreateRenderTargetView(ShadowMapPreviewTexture, nullptr, &ShadowMapPreviewRTV)))
-    {
-        ReleaseShadowPreviewResources();
-        return;
-    }
-
-    if (FAILED(Device->CreateShaderResourceView(ShadowMapPreviewTexture, nullptr, &ShadowMapPreviewSRV)))
-    {
-        ReleaseShadowPreviewResources();
-    }
+    // Shadow Atlas 기반으로 변경되어 더이상 별도 프리뷰 리소스 불필요
 }
 
 void USpotLightComponentWidget::Initialize()
@@ -232,32 +178,34 @@ void USpotLightComponentWidget::RenderWidget()
     // ========================================= Shadow Properties =========================================
     ImGui::Text("Shadow Depth Map Preview");
 
-    SpotLightComponent->CreateShadowMapResources();
-    FShadowMapData& ShadowData = SpotLightComponent->GetShadowMapData();
-
     URenderer& Renderer = URenderer::GetInstance();
-    EnsureShadowPreviewResources(Renderer.GetDevice(), 256);
+    FShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
 
-    float NearPlane = 0.1f;
-    float FarPlane = std::max(SpotLightComponent->GetAttenuationRadius(), NearPlane + 0.1f);
-    ID3D11ShaderResourceView* PreviewSRV = Renderer.RenderShadowPreview(
-        ShadowData.ShadowMapSRV,
-        ShadowMapPreviewRTV,
-        ShadowMapPreviewSRV,
-        ShadowMapPreviewTexture,
-        NearPlane, FarPlane, 1.4f);
-    if (PreviewSRV)
+    // Shadow Atlas에서 이 SpotLight의 할당 정보 가져오기
+    const FShadowAtlasAllocation* Allocation = AtlasManager ? AtlasManager->GetLightAllocation(SpotLightComponent) : nullptr;
+
+    if (Allocation && Allocation->IsValid())
     {
+        // Shadow Atlas에서 할당된 영역을 프리뷰로 표시
         ImVec2 PreviewSize(256.0f, 256.0f);
-        ImGui::Image(static_cast<void*>(PreviewSRV), PreviewSize);
+
+        // 할당된 영역의 UV 좌표로 이미지 표시
+        ImVec2 uv0(Allocation->Region.UMin, Allocation->Region.VMin);
+        ImVec2 uv1(Allocation->Region.UMax, Allocation->Region.VMax);
+
+        ImGui::Image(static_cast<void*>(Allocation->SRV), PreviewSize, uv0, uv1);
+
         if (ImGui::IsItemHovered())
         {
-            ImGui::SetTooltip("이 스포트라이트의 Shadow Depth Map 프리뷰\n밝을수록 빛에 가깝고 어두울수록 그림자 영역입니다.");
+            ImGui::SetTooltip("이 스포트라이트의 Shadow Atlas 영역 프리뷰\n흰색에 가까울수록 빛에 가깝고\n검은색에 가까울수록 그림자 영역입니다.\n\nAtlas Index: %d\nRegion: (%d, %d) %dx%d",
+                Allocation->AtlasIndex,
+                Allocation->Region.X, Allocation->Region.Y,
+                Allocation->Region.Width, Allocation->Region.Height);
         }
     }
     else
     {
-        ImGui::TextDisabled("Shadow Map이 생성되지 않았습니다");
+        ImGui::TextDisabled("Shadow Atlas 할당 정보가 없습니다.\n한 프레임 렌더링 후 표시됩니다.");
     }
 
     ImGui::Separator();
@@ -312,7 +260,7 @@ void USpotLightComponentWidget::RenderWidget()
     // ========================================= Shadow Atlas Debug =========================================
     ImGui::Text("Shadow Atlas Allocation Info");
 
-    FShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
+    AtlasManager = Renderer.GetShadowAtlasManager();
 
     if (AtlasManager)
     {
