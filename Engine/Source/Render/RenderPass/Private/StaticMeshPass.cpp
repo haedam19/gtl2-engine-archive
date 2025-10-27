@@ -95,7 +95,7 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 				shadowSRV = DeviceRes->GetShadowMapSRV();
 			}
 		}
-		else
+		else if (Renderer.GetShadowFilterMode() == EShadowFilterMode::PCF)
 		{
 			// PCF 모드: 기존 Depth Map 사용
 			shadowSRV = DeviceRes->GetShadowMapSRV();

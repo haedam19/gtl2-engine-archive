@@ -1150,6 +1150,7 @@ void URenderer::CreateConstantBuffers()
 	ConstantBufferViewProj = FRenderResourceFactory::CreateConstantBuffer<FCameraConstants>();
 	ConstantBufferLightViewProj = FRenderResourceFactory::CreateConstantBuffer<FLightViewProjConstants>();
 	ShadowPreviewConstantBuffer = FRenderResourceFactory::CreateConstantBuffer<FShadowPreviewParameters>();
+	ConstantBufferCascadeShadow = FRenderResourceFactory::CreateConstantBuffer<FCascadeShadowConstants>();
 }
 
 void URenderer::ReleaseConstantBuffers()
@@ -1159,4 +1160,5 @@ void URenderer::ReleaseConstantBuffers()
 	SafeRelease(ConstantBufferViewProj);
 	SafeRelease(ConstantBufferLightViewProj);
 	SafeRelease(ShadowPreviewConstantBuffer);
+	SafeRelease(ConstantBufferCascadeShadow);
 }

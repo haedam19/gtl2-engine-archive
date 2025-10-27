@@ -8,6 +8,7 @@
 #include "Render/Renderer/Public/Pipeline.h"
 #include "Render/Renderer/Public/RenderResourceFactory.h"
 #include "Render/Renderer/Public/Renderer.h"
+#include "Utility/Public/CSMBuilder.h"
 
 FShadowMapPass::FShadowMapPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferLightViewProj, ID3D11Buffer* InConstantBufferModel,
     ID3D11VertexShader* InVS, ID3D11PixelShader* InPS, ID3D11InputLayout* InLayout, ID3D11DepthStencilState* InDS)
@@ -111,6 +112,94 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		Pipeline->SetRenderTargets(1, &NullRT, NullDSV);
 	};
 
+	auto RenderShadowForLightWithCSM = [&](UDirectionalLightComponent* DirLight,
+		ID3D11DepthStencilView* InDSV, float InSlopeBias)
+		{
+			if (!InDSV)
+			{
+				return;
+			}
+
+			//D3D11_VIEWPORT originalViewport = {};
+			//UINT viewportCount = 1;
+			//DeviceResources->GetDeviceContext()->RSGetViewports(&viewportCount, &originalViewport);
+			//
+			//DeviceResources->GetDeviceContext()->ClearDepthStencilView(ShadowDSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
+
+			ID3D11RenderTargetView* NullRTV = nullptr;
+			Pipeline->SetRenderTargets(1, &NullRTV, InDSV);
+
+			FRenderState RenderState = UStaticMeshComponent::GetClassDefaultRenderState();
+			RenderState.SlopeScaledDepthBias = InSlopeBias;
+			ID3D11RasterizerState* RS = FRenderResourceFactory::GetRasterizerState(RenderState);
+			FPipelineInfo PipelineInfo = { InputLayout, VS, RS, DS, PS, nullptr, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST };
+			Pipeline->UpdatePipeline(PipelineInfo);
+
+			FCascadeShadowConstants CascadeData;
+			CascadeData.CascadeParams = FVector4(
+				static_cast<float>(CSM_MAX_CASCADES),
+				0.0f,
+				CSMShadowMapResolution,
+				1.0f / CSMShadowMapResolution
+			);
+
+			uint32 CascadeCount = FCSMBuilder::BuildCascadeData(DirLight, Context.CurrentCamera, CascadeData);
+			CascadeData.CascadeParams.X = static_cast<float>(CascadeCount);
+
+			TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
+			FStaticMesh* CurrentMeshAsset = nullptr;
+
+			for (uint32 CascadeIndex = 0; CascadeIndex < CascadeCount; ++CascadeIndex)
+			{
+				CascadeData.CascadeParams.Y = static_cast<float>(CascadeIndex);
+				FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, CascadeData);
+				Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
+
+				D3D11_VIEWPORT cascadeViewport = {};
+				const float tileSize = CSMShadowMapResolution / CascadesPerRow;
+				const float viewportSize = std::max(tileSize - AtlasBorder * 2.0f, 1.0f);
+				cascadeViewport.TopLeftX = static_cast<float>(CascadeIndex % CascadesPerRow) * tileSize + AtlasBorder;
+				cascadeViewport.TopLeftY = static_cast<float>(CascadeIndex / CascadesPerRow) * tileSize + AtlasBorder;
+				cascadeViewport.Width = viewportSize;
+				cascadeViewport.Height = viewportSize;
+				cascadeViewport.MinDepth = 0.0f;
+				cascadeViewport.MaxDepth = 1.0f;
+				DeviceResources->GetDeviceContext()->RSSetViewports(1, &cascadeViewport);
+
+				FStaticMesh* CurrentMeshAsset = nullptr;
+
+				for (UStaticMeshComponent* MeshComp : MeshComponents)
+				{
+					if (!MeshComp->IsVisible()) { continue; }
+					if (!MeshComp->GetStaticMesh()) { continue; }
+					FStaticMesh* MeshAsset = MeshComp->GetStaticMesh()->GetStaticMeshAsset();
+					if (!MeshAsset) { continue; }
+
+					if (CurrentMeshAsset != MeshAsset)
+					{
+						Pipeline->SetVertexBuffer(MeshComp->GetVertexBuffer(), sizeof(FNormalVertex));
+						Pipeline->SetIndexBuffer(MeshComp->GetIndexBuffer(), 0);
+						CurrentMeshAsset = MeshAsset;
+					}
+
+					FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferModel, MeshComp->GetWorldTransformMatrix());
+					Pipeline->SetConstantBuffer(0, EShaderType::VS, ConstantBufferModel);
+
+					Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
+				}
+			}
+
+
+			ID3D11RenderTargetView* NullRT = nullptr;
+			ID3D11DepthStencilView* NullDSV = nullptr;
+			Pipeline->SetRenderTargets(1, &NullRT, NullDSV);
+
+			//ID3D11DepthStencilView* nullDSV = nullptr;
+			//Pipeline->SetRenderTargets(1, &nullRTV, nullDSV);
+			//
+			//DeviceResources->GetDeviceContext()->RSSetViewports(1, &originalViewport);
+		};
+
 	// 1) Directional light shadow (supports VSM)
 	if (!Context.DirectionalLights.empty())
 	{
@@ -121,17 +210,29 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 			{
 				LightVP.LightView = DirLight->GetLightViewMatrix(Context.CurrentCamera);
 				LightVP.LightProjection = DirLight->GetLightProjectionMatrix(Context.CurrentCamera);
+
+				constexpr UINT DirectionalShadowSize = 2048;
+				RenderShadowForLight(LightVP.LightView, LightVP.LightProjection,
+					DeviceResources->GetShadowMapDSV(), DirectionalShadowSize, DirectionalShadowSize,
+					DirLight->GetShadowSlopeBias());
 			}
-			else
+			else if (DirLight->GetShadowMapType() == EShadowMapType::LVP && Context.CurrentCamera)
 			{
 				LightVP.LightView = DirLight->GetLightViewMatrix();
 				LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
-			}
 
-			constexpr UINT DirectionalShadowSize = 2048;
-			RenderShadowForLight(LightVP.LightView, LightVP.LightProjection,
-			                     DeviceResources->GetShadowMapDSV(), DirectionalShadowSize, DirectionalShadowSize,
-			                     DirLight->GetShadowSlopeBias());
+				constexpr UINT DirectionalShadowSize = 2048;
+				RenderShadowForLight(LightVP.LightView, LightVP.LightProjection,
+					DeviceResources->GetShadowMapDSV(), DirectionalShadowSize, DirectionalShadowSize,
+					DirLight->GetShadowSlopeBias());
+			}
+			else if (DirLight->GetShadowMapType() == EShadowMapType::CSM && Context.CurrentCamera)
+			{
+				LightVP.LightView = DirLight->GetLightViewMatrix();
+				LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
+
+				RenderShadowForLightWithCSM(DirLight, DeviceResources->GetShadowMapDSV(), DirLight->GetShadowSlopeBias());
+			}
 
 			if (Renderer.GetShadowFilterMode() == EShadowFilterMode::VSM)
 			{

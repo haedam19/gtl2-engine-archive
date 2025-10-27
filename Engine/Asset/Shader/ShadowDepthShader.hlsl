@@ -1,3 +1,5 @@
+#define CSM_MAX_CASCADES 4
+
 cbuffer ModelConstants : register(b0)
 {
 	row_major float4x4 World;
@@ -7,6 +9,15 @@ cbuffer LightViewProj : register(b1)
 {
 	row_major float4x4 LightView;
 	row_major float4x4 LightProjection;
+};
+
+cbuffer CSMLightViewProj : register(b7)
+{
+    row_major float4x4 CascadeLightView[CSM_MAX_CASCADES];
+    row_major float4x4 CascadeLightProjection[CSM_MAX_CASCADES];
+    float CascadeSplits[CSM_MAX_CASCADES];
+    float4 CascadeScaleOffsets[CSM_MAX_CASCADES];
+    float4 CascadeParams;
 };
 
 struct VS_INPUT

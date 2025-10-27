@@ -11,6 +11,8 @@
 #define NUM_POINT_LIGHT 8
 #define NUM_SPOT_LIGHT 8
 #define ADD_ILLUM(a, b) { (a).Ambient += (b).Ambient; (a).Diffuse += (b).Diffuse; (a).Specular += (b).Specular; }
+#define CSM_MAX_CASCADES 4
+#define SHADOW_MAP_RESOLUTION 2048.0f
 
 static const float PI = 3.14159265f;
 
@@ -43,6 +45,15 @@ cbuffer LightViewProj : register(b6)
 {
     row_major float4x4 LightView;
     row_major float4x4 LightProjection;
+};
+
+cbuffer CSMLightViewProj : register(b7)
+{
+    row_major float4x4 CascadeLightView[CSM_MAX_CASCADES];
+    row_major float4x4 CascadeLightProjection[CSM_MAX_CASCADES];
+    float4 CascadeSplits;
+    float4 CascadeScaleOffsets[CSM_MAX_CASCADES];
+    float4 CascadeParams;
 };
 
 cbuffer GlobalLightConstant : register(b3)
@@ -481,6 +492,64 @@ float CalculateShadow(float4 LightSpacePos)
 #endif
 }
 
+float CalculateCSMShadow(float3 WorldPos)
+{
+
+    float4 worldPos = float4(WorldPos, 1.0f);
+    float viewDepth = mul(worldPos, View).z;
+
+    uint cascadeCount = max((uint) CascadeParams.x, 1u);
+    uint cascadeIndex = cascadeCount - 1u;
+    
+    if (cascadeCount > 0u && viewDepth <= CascadeSplits.x)
+        cascadeIndex = 0u;
+    else if (cascadeCount > 1u && viewDepth <= CascadeSplits.y)
+        cascadeIndex = 1u;
+    else if (cascadeCount > 2u && viewDepth <= CascadeSplits.z)
+        cascadeIndex = 2u;
+    else if (cascadeCount > 3u && viewDepth <= CascadeSplits.w)
+        cascadeIndex = 3u;
+
+    float4 lightViewPos = mul(worldPos, CascadeLightView[cascadeIndex]);
+    float4 lightProjPos = mul(lightViewPos, CascadeLightProjection[cascadeIndex]);
+    float3 projCoords = lightProjPos.xyz / lightProjPos.w;
+
+
+    if (projCoords.x < -1.0f || projCoords.x > 1.0f ||
+    projCoords.y < -1.0f || projCoords.y > 1.0f ||
+    projCoords.z < 0.0f || projCoords.z > 1.0f)
+    {
+        return 1.0f;
+    }
+
+    projCoords.x = projCoords.x * 0.5f + 0.5f;
+    projCoords.y = -projCoords.y * 0.5f + 0.5f;
+
+    float4 scaleOffset = CascadeScaleOffsets[cascadeIndex];
+    float2 atlasUV = projCoords.xy * scaleOffset.xy + scaleOffset.zw;
+    float currentDepth = projCoords.z;
+    
+    float shadow = 0.0f;
+    float bias = 0.0005f;
+    
+    float texel = CascadeParams.w;
+
+    // 3x3 PCF kernel
+    for (int x = -1; x <= 1; ++x)
+    {
+        for (int y = -1; y <= 1; ++y)
+        {
+            float2 offset = float2(x, y) * texel;
+            float shadowMapDepth = ShadowMap.Sample(ShadowSampler, atlasUV + offset).r;
+            shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
+        }
+    }
+    
+    shadow /= 9.0f;
+
+    return shadow;
+}
+
 float SampleSpotDepth(uint idx, float2 uv, float lod)
 {
     [branch]
@@ -650,7 +719,8 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     
 #if LIGHTING_MODEL_GOURAUD
     // Use pre-calculated vertex lighting; apply diffuse material/texture per-pixel
-    float shadowFactor = CalculateShadow(Input.LightSpacePos);
+    // float shadowFactor = CalculateShadow(Input.LightSpacePos);
+    float shadowFactor = CalculateShadow(Input.WorldPosition);
     finalPixel.rgb = Input.AmbientLight.rgb * ambientColor.rgb + (Input.DiffuseLight.rgb * shadowFactor) * diffuseColor.rgb + (Input.SpecularLight.rgb * shadowFactor) * specularColor.rgb;
     
 #elif LIGHTING_MODEL_LAMBERT || LIGHTING_MODEL_BLINNPHONG
@@ -663,7 +733,8 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
 
     // 2. Directional Light with Shadow
     FIllumination DirLightIllum = CalculateDirectionalLight(Directional, N, Input.WorldPosition, ViewWorldLocation);
-    float shadowFactor = CalculateShadow(Input.LightSpacePos);
+    //float shadowFactor = CalculateShadow(Input.LightSpacePos);
+    float shadowFactor = CalculateShadow(Input.WorldPosition);
     DirLightIllum.Diffuse *= shadowFactor;
     DirLightIllum.Specular *= shadowFactor;
     ADD_ILLUM(Illumination, DirLightIllum);
