@@ -42,8 +42,9 @@ struct FSpotLightInfo
     float ShadowBias;
     float ShadowSharpen;
     uint ShadowMapIndex;
+    uint ShadowRegionIndex;  // ShadowRegions 버퍼의 인덱스
     float2 ShadowMapInvSize;
-    float2 Padding;
+    float Padding;
     row_major float4x4 LightViewMatrix;
     row_major float4x4 LightProjectionMatrix;
 };

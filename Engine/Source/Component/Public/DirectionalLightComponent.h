@@ -64,6 +64,19 @@ public:
     void SetShadowMapType(EShadowMapType InType) { ShadowMapType = InType; }
     EShadowMapType GetShadowMapType() const { return ShadowMapType; }
 
+    // Shadow Resolution
+    void SetShadowResolutionScale(float InScale) { ShadowResolutionScale = InScale; }
+    float GetShadowResolutionScale() const { return ShadowResolutionScale; }
+    uint32 GetShadowResolution() const { return static_cast<uint32>(BaseShadowResolution * ShadowResolutionScale); }
+
+    // Shadow Bias
+    void SetShadowBias(float InBias) { ShadowBias = InBias; }
+    float GetShadowBias() const { return ShadowBias; }
+    void SetShadowSlopeBias(float InBias) { ShadowSlopeBias = InBias; }
+    float GetShadowSlopeBias() const { return ShadowSlopeBias; }
+    void SetShadowSharpen(float InSharpen) { ShadowSharpen = InSharpen; }
+    float GetShadowSharpen() const { return ShadowSharpen; }
+
 private:
     void EnsureVisualizationBillboard()override;
 
@@ -73,5 +86,14 @@ private:
     // Shadow parameters
     float ShadowDistance = 1000.0f;  // Shadow 렌더링 거리
     EShadowMapType ShadowMapType = EShadowMapType::LVP;  // Shadow Map 타입
+
+    // Shadow Resolution
+    static constexpr uint32 BaseShadowResolution = 2048;  // 기본 해상도
+    float ShadowResolutionScale = 1.0f;  // 해상도 배율 (0.25~4.0)
+
+    // Shadow Quality
+    float ShadowBias = 0.001f;           // Depth bias
+    float ShadowSlopeBias = 1.0f;        // Slope-scaled depth bias
+    float ShadowSharpen = 1.0f;          // Edge sharpening
 };
 

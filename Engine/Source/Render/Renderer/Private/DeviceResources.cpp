@@ -22,7 +22,6 @@ void UDeviceResources::Create(HWND InWindowHandle)
 	CreateFrameBuffer();
 	CreateNormalBuffer();
 	CreateDepthBuffer();
-	CreateShadowMap();
 	CreateSceneColorTarget();
 	CreateFactories();
 }
@@ -31,7 +30,6 @@ void UDeviceResources::Release()
 {
 	ReleaseFactories();
 	ReleaseSceneColorTarget();
-	ReleaseShadowMap();
 	ReleaseFrameBuffer();
 	ReleaseNormalBuffer();
 	ReleaseDepthBuffer();
@@ -348,78 +346,6 @@ void UDeviceResources::ReleaseDepthBuffer()
 		DepthBufferSRV->Release();
 		DepthBufferSRV = nullptr;
 	}
-}
-
-/**
- * @brief Shadow Map 생성 함수 (2048x2048 depth texture)
- */
-void UDeviceResources::CreateShadowMap()
-{
-	ReleaseShadowMap();
-
-	if (!Device)
-	{
-		return;
-	}
-
-	// Shadow Map은 고정 해상도 사용 (2048x2048)
-	const uint32 ShadowMapSize = 2048;
-
-	D3D11_TEXTURE2D_DESC shadowDesc = {};
-	shadowDesc.Width = ShadowMapSize;
-	shadowDesc.Height = ShadowMapSize;
-	shadowDesc.MipLevels = 1;
-	shadowDesc.ArraySize = 1;
-	shadowDesc.Format = DXGI_FORMAT_R24G8_TYPELESS;
-	shadowDesc.SampleDesc.Count = 1;
-	shadowDesc.SampleDesc.Quality = 0;
-	shadowDesc.Usage = D3D11_USAGE_DEFAULT;
-	shadowDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
-	shadowDesc.CPUAccessFlags = 0;
-	shadowDesc.MiscFlags = 0;
-
-	HRESULT Result = Device->CreateTexture2D(&shadowDesc, nullptr, &ShadowMapTexture);
-	if (FAILED(Result))
-	{
-		UE_LOG_ERROR("DeviceResources: Shadow Map Texture 생성 실패");
-		return;
-	}
-
-	D3D11_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
-	dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-	dsvDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
-	dsvDesc.Texture2D.MipSlice = 0;
-
-	Result = Device->CreateDepthStencilView(ShadowMapTexture, &dsvDesc, &ShadowMapDSV);
-	if (FAILED(Result))
-	{
-		UE_LOG_ERROR("DeviceResources: Shadow Map DSV 생성 실패");
-		ReleaseShadowMap();
-		return;
-	}
-
-	D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
-	srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Texture2D.MostDetailedMip = 0;
-	srvDesc.Texture2D.MipLevels = 1;
-
-	Result = Device->CreateShaderResourceView(ShadowMapTexture, &srvDesc, &ShadowMapSRV);
-	if (FAILED(Result))
-	{
-		UE_LOG_ERROR("DeviceResources: Shadow Map SRV 생성 실패");
-		ReleaseShadowMap();
-	}
-}
-
-/**
- * @brief Shadow Map을 해제하는 함수
- */
-void UDeviceResources::ReleaseShadowMap()
-{
-	SafeRelease(ShadowMapSRV);
-	SafeRelease(ShadowMapDSV);
-	SafeRelease(ShadowMapTexture);
 }
 
 void UDeviceResources::UpdateViewport(float InMenuBarHeight)

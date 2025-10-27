@@ -23,4 +23,9 @@ private:
 
     ID3D11Buffer* ConstantBufferMaterial = nullptr;
     ID3D11Buffer* ConstantBufferLightViewProj = nullptr;
+
+    // Shadow Atlas Region Structured Buffer
+    ID3D11Buffer* ShadowRegionStructuredBuffer = nullptr;
+    ID3D11ShaderResourceView* ShadowRegionStructuredBufferSRV = nullptr;
+    uint32 ShadowRegionBufferCount = 64;  // 초기 크기 (동적 확장)
 };

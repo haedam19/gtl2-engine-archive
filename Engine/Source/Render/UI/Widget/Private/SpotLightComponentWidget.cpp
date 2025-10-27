@@ -7,6 +7,7 @@
 #include "Level/Public/Level.h"
 #include "Component/Public/ActorComponent.h"
 #include "Render/Renderer/Public/Renderer.h"
+#include "Render/Renderer/Public/ShadowAtlasManager.h"
 #include "ImGui/imgui.h"
 
 IMPLEMENT_CLASS(USpotLightComponentWidget, UWidget)
@@ -18,6 +19,7 @@ USpotLightComponentWidget::~USpotLightComponentWidget()
 
 void USpotLightComponentWidget::ReleaseShadowPreviewResources()
 {
+    SafeRelease(CachedSliceSRV);
     SafeRelease(ShadowMapPreviewSRV);
     SafeRelease(ShadowMapPreviewRTV);
     SafeRelease(ShadowMapPreviewTexture);
@@ -89,13 +91,20 @@ void USpotLightComponentWidget::Update()
 
 void USpotLightComponentWidget::RenderWidget()
 {
+    // 이전 프레임에서 생성된 SliceSRV를 Release
+    if (CachedSliceSRV)
+    {
+        CachedSliceSRV->Release();
+        CachedSliceSRV = nullptr;
+    }
+
     if (!SpotLightComponent)
     {
         return;
     }
 
     ImGui::Separator();
-    
+
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
@@ -231,32 +240,69 @@ void USpotLightComponentWidget::RenderWidget()
     // ========================================= Shadow Properties =========================================
     ImGui::Text("Shadow Depth Map Preview");
 
-    SpotLightComponent->CreateShadowMapResources();
-    FShadowMapData& ShadowData = SpotLightComponent->GetShadowMapData();
-
     URenderer& Renderer = URenderer::GetInstance();
-    EnsureShadowPreviewResources(Renderer.GetDevice(), 256);
+    FShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
 
-    float NearPlane = 0.1f;
-    float FarPlane = std::max(SpotLightComponent->GetAttenuationRadius(), NearPlane + 0.1f);
-    ID3D11ShaderResourceView* PreviewSRV = Renderer.RenderShadowPreview(
-        ShadowData.ShadowMapSRV,
-        ShadowMapPreviewRTV,
-        ShadowMapPreviewSRV,
-        ShadowMapPreviewTexture,
-        NearPlane, FarPlane, 1.4f);
-    if (PreviewSRV)
+    // Shadow Atlas에서 이 SpotLight의 할당 정보 가져오기
+    const FShadowAtlasAllocation* Allocation = AtlasManager ? AtlasManager->GetLightAllocation(SpotLightComponent) : nullptr;
+
+    // RenderShadowPreview 결과를 저장할 변수 (아래 Debug 섹션에서도 사용)
+    ID3D11ShaderResourceView* CachedPreviewSRV = nullptr;
+
+    if (Allocation && Allocation->IsValid())
     {
-        ImVec2 PreviewSize(256.0f, 256.0f);
-        ImGui::Image(static_cast<void*>(PreviewSRV), PreviewSize);
-        if (ImGui::IsItemHovered())
+        // 이전 프레임의 Slice SRV 해제 (매 프레임 재생성되므로)
+        SafeRelease(CachedSliceSRV);
+
+        // Slice 전용 SRV 생성 (FirstArraySlice=AtlasIndex, ArraySize=1)
+        CachedSliceSRV = AtlasManager->GetSliceSRV(Allocation->AtlasType, Allocation->AtlasIndex);
+
+        if (CachedSliceSRV)
         {
-            ImGui::SetTooltip("이 스포트라이트의 Shadow Depth Map 프리뷰\n밝을수록 빛에 가깝고 어두울수록 그림자 영역입니다.");
+            // RenderShadowPreview용 리소스 준비
+            EnsureShadowPreviewResources(Renderer.GetDevice(), 256);
+
+            // RenderShadowPreview로 Shadow Atlas의 depth를 시각화
+            float NearPlane = 0.1f;
+            float FarPlane = std::max(SpotLightComponent->GetAttenuationRadius(), NearPlane + 0.1f);
+
+            CachedPreviewSRV = Renderer.RenderShadowPreview(
+                CachedSliceSRV,  // Slice 전용 SRV 사용
+                ShadowMapPreviewRTV,
+                ShadowMapPreviewSRV,
+                ShadowMapPreviewTexture,
+                NearPlane, FarPlane, 1.4f);
+
+            if (CachedPreviewSRV)
+            {
+                ImVec2 PreviewSize(256.0f, 256.0f);
+
+                // 할당된 Region만 표시 (UV 좌표로 자르기)
+                ImVec2 uv0(Allocation->Region.UMin, Allocation->Region.VMin);
+                ImVec2 uv1(Allocation->Region.UMax, Allocation->Region.VMax);
+                ImGui::Image(static_cast<void*>(CachedPreviewSRV), PreviewSize, uv0, uv1);
+
+                if (ImGui::IsItemHovered())
+                {
+                    ImGui::SetTooltip("이 스포트라이트가 할당받은 Shadow Region\n밝을수록 빛에 가깝고 어두울수록 그림자 영역입니다.\n\nAtlas Index: %d\nRegion: (%d, %d) %dx%d",
+                        Allocation->AtlasIndex,
+                        Allocation->Region.X, Allocation->Region.Y,
+                        Allocation->Region.Width, Allocation->Region.Height);
+                }
+            }
+            else
+            {
+                ImGui::TextDisabled("프리뷰 생성 실패");
+            }
+        }
+        else
+        {
+            ImGui::TextDisabled("Slice SRV 생성 실패");
         }
     }
     else
     {
-        ImGui::TextDisabled("Shadow Map이 생성되지 않았습니다");
+        ImGui::TextDisabled("Shadow Atlas 할당 정보가 없습니다.\n한 프레임 렌더링 후 표시됩니다.");
     }
 
     ImGui::Separator();
@@ -304,5 +350,43 @@ void USpotLightComponentWidget::RenderWidget()
     if (ImGui::IsItemHovered())
     {
         ImGui::SetTooltip("PCF 결과의 대비를 조절합니다.\n높을수록 그림자 경계가 단단해집니다.");
+    }
+
+    ImGui::Separator();
+
+    // ========================================= Shadow Atlas Debug =========================================
+    ImGui::Text("Shadow Atlas Allocation Info");
+
+    if (AtlasManager && Allocation && Allocation->IsValid() && CachedPreviewSRV)
+    {
+        // 위에서 생성한 CachedPreviewSRV 재사용
+        // Slice 전체 미리보기 (256x256) - Region UV 제거
+        ImVec2 previewSize(256.0f, 256.0f);
+        ImGui::Image((void*)CachedPreviewSRV, previewSize, ImVec2(0, 0), ImVec2(1, 1));
+
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Shadow Atlas Slice %d 전체 (4096x4096)\n이 라이트는 아래 영역을 사용 중", Allocation->AtlasIndex);
+        }
+
+        // 할당된 영역 정보 표시
+        ImGui::Text("Atlas Type: SpotLight");
+        ImGui::Text("Atlas Index: %d", Allocation->AtlasIndex);
+        ImGui::Text("Region: (%d, %d) - (%d x %d)",
+            Allocation->Region.X,
+            Allocation->Region.Y,
+            Allocation->Region.Width,
+            Allocation->Region.Height);
+
+        // UV 좌표 표시
+        ImGui::Text("UV: (%.3f, %.3f) - (%.3f, %.3f)",
+            Allocation->Region.UMin,
+            Allocation->Region.VMin,
+            Allocation->Region.UMax,
+            Allocation->Region.VMax);
+    }
+    else
+    {
+        ImGui::TextDisabled("Shadow Atlas 할당 정보가 없습니다");
     }
 }

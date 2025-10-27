@@ -421,6 +421,8 @@
     <ClInclude Include="Source\Render\Renderer\Public\Pipeline.h" />
     <ClInclude Include="Source\Render\Renderer\Public\Renderer.h" />
     <ClInclude Include="Source\Render\Renderer\Public\RenderResourceFactory.h" />
+    <ClInclude Include="Source\Render\Renderer\Public\ShadowAtlas.h" />
+    <ClInclude Include="Source\Render\Renderer\Public\ShadowAtlasManager.h" />
     <ClInclude Include="Source\Render\Renderer\Public\ShadowMapData.h" />
     <ClInclude Include="Source\Render\RenderPass\Public\BillboardPass.h" />
     <ClInclude Include="Source\Render\RenderPass\Public\ClusteredRenderingGridPass.h" />
@@ -676,6 +678,8 @@
     <ClCompile Include="Source\Render\Renderer\Private\Pipeline.cpp" />
     <ClCompile Include="Source\Render\Renderer\Private\Renderer.cpp" />
     <ClCompile Include="Source\Render\Renderer\Private\RenderResourceFactory.cpp" />
+    <ClCompile Include="Source\Render\Renderer\Private\ShadowAtlas.cpp" />
+    <ClCompile Include="Source\Render\Renderer\Private\ShadowAtlasManager.cpp" />
     <ClCompile Include="Source\Render\RenderPass\Private\BillboardPass.cpp" />
     <ClCompile Include="Source\Render\RenderPass\Private\ClusteredRenderingGridPass.cpp" />
     <ClCompile Include="Source\Render\RenderPass\Private\DecalPass.cpp" />

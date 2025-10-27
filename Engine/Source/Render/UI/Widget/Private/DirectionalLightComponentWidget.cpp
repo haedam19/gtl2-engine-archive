@@ -6,6 +6,7 @@
 #include "Component/Public/ActorComponent.h"
 #include "Render/Renderer/Public/Renderer.h"
 #include "Render/Renderer/Public/DeviceResources.h"
+#include "Render/Renderer/Public/ShadowAtlasManager.h"
 #include "ImGui/imgui.h"
 
 IMPLEMENT_CLASS(UDirectionalLightComponentWidget, UWidget)
@@ -114,27 +115,66 @@ void UDirectionalLightComponentWidget::RenderWidget()
 
     ImGui::Separator();
 
-    // Shadow Map 미리보기
-    ImGui::Text("Shadow Depth Map Preview");
+    // Shadow Atlas 미리보기
+    ImGui::Text("Shadow Atlas Preview");
 
     const auto& Renderer = URenderer::GetInstance();
-    const auto& DeviceResources = Renderer.GetDeviceResources();
-    ID3D11ShaderResourceView* ShadowMapSRV = DeviceResources->GetShadowMapSRV();
+    FShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
 
-    if (ShadowMapSRV)
+    if (AtlasManager)
     {
-        // Shadow Map을 ImGui 이미지로 표시 (256x256 크기로 미리보기)
-        ImVec2 previewSize(256.0f, 256.0f);
-        ImGui::Image((void*)ShadowMapSRV, previewSize);
+        // 이 라이트의 할당 정보 가져오기
+        const FShadowAtlasAllocation* Allocation = AtlasManager->GetLightAllocation(DirectionalLightComponent);
 
-        if (ImGui::IsItemHovered())
+        if (Allocation && Allocation->IsValid())
         {
-            ImGui::SetTooltip("현재 라이트의 Shadow Depth Map\n흰색에 가까울수록 빛에 가깝고\n검은색에 가까울수록 빛에서 멀어요");
+            // Atlas 전체 미리보기 (256x256)
+            ImVec2 previewSize(256.0f, 256.0f);
+            ImGui::Image((void*)Allocation->SRV, previewSize);
+
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::SetTooltip("Shadow Atlas 전체 (4096x4096)\n이 라이트는 아래 영역을 사용 중");
+            }
+
+            // 할당된 영역 정보 표시
+            ImGui::Text("Atlas Type: DirectionalCSM");
+            ImGui::Text("Atlas Index: %d", Allocation->AtlasIndex);
+            ImGui::Text("Region: (%d, %d) - (%d x %d)",
+                Allocation->Region.X,
+                Allocation->Region.Y,
+                Allocation->Region.Width,
+                Allocation->Region.Height);
+
+            // UV 좌표 표시
+            ImGui::Text("UV: (%.3f, %.3f) - (%.3f, %.3f)",
+                Allocation->Region.UMin,
+                Allocation->Region.VMin,
+                Allocation->Region.UMax,
+                Allocation->Region.VMax);
+
+            // 할당된 영역만 확대해서 보기
+            ImGui::Separator();
+            ImGui::Text("Allocated Region (Zoomed)");
+
+            // UV 좌표로 할당된 영역만 표시
+            ImVec2 uv0(Allocation->Region.UMin, Allocation->Region.VMin);
+            ImVec2 uv1(Allocation->Region.UMax, Allocation->Region.VMax);
+            ImGui::Image((void*)Allocation->SRV, previewSize, uv0, uv1);
+
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::SetTooltip("이 라이트가 할당받은 영역만 확대\n흰색에 가까울수록 빛에 가깝고\n검은색에 가까울수록 빛에서 멀어요");
+            }
+        }
+        else
+        {
+            ImGui::TextDisabled("Shadow Atlas 할당 정보가 없습니다");
         }
     }
     else
     {
-        ImGui::TextDisabled("Shadow Map이 생성되지 않았습니다");
+        ImGui::TextDisabled("Shadow Atlas Manager를 찾을 수 없습니다");
     }
 
     ImGui::Separator();

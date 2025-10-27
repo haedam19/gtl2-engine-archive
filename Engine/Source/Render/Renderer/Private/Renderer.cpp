@@ -1,5 +1,6 @@
 #include "pch.h"
 #include <algorithm>
+#include "Render/Renderer/Public/ShadowAtlasManager.h"
 #include "Component/Mesh/Public/StaticMesh.h"
 #include "Component/Mesh/Public/StaticMeshComponent.h"
 #include "Component/Public/DecalComponent.h"
@@ -66,9 +67,13 @@ void URenderer::Init(HWND InWindowHandle)
 	CreateShadowSamplerState();
 	CreateShadowPreviewShader();
 
+	// Shadow Atlas Manager 초기화
+	ShadowAtlasManager = new FShadowAtlasManager();
+	ShadowAtlasManager->Initialize(GetDevice());
+
 	// Build render passes
 	// render pass order: Shadow Map -> Light -> Static Mesh -> Decal -> Billboard -> Text -> Fog -> SceneDepth (-> FXAA)
-	
+
 	ShadowMapPass = new FShadowMapPass(Pipeline, ConstantBufferLightViewProj, ConstantBufferModels,
 		ShadowDepthVertexShader, ShadowDepthPixelShader, ShadowDepthInputLayout, DefaultDepthStencilState);
 	RenderPasses.push_back(ShadowMapPass);
@@ -123,7 +128,10 @@ void URenderer::Release()
 	}
 	FXAAPass->Release();
 	SafeDelete(FXAAPass);
-	
+
+	// ShadowAtlasManager 해제
+	SafeDelete(ShadowAtlasManager);
+
 	SafeDelete(ViewportClient);
 	SafeDelete(Pipeline);
 	SafeDelete(DeviceResources);
@@ -459,15 +467,15 @@ void URenderer::CreateShadowDepthShader()
 
 void URenderer::CreateShadowSamplerState()
 {
-	// Shadow Sampler 생성 (Comparison Sampler for PCF)
+	// Shadow Sampler 생성 (일반 샘플러 - Shadow Atlas용)
 	D3D11_SAMPLER_DESC shadowSamplerDesc = {};
-	shadowSamplerDesc.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR;
+	shadowSamplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
 	shadowSamplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
 	shadowSamplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
 	shadowSamplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
 	shadowSamplerDesc.MipLODBias = 0.0f;
 	shadowSamplerDesc.MaxAnisotropy = 1;
-	shadowSamplerDesc.ComparisonFunc = D3D11_COMPARISON_LESS_EQUAL;
+	shadowSamplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;  // 사용 안 함
 	shadowSamplerDesc.BorderColor[0] = 1.0f;
 	shadowSamplerDesc.BorderColor[1] = 1.0f;
 	shadowSamplerDesc.BorderColor[2] = 1.0f;
@@ -738,6 +746,19 @@ void URenderer::HotReloadShaders()
 					ClusteredRenderingGridPass->SetInputLayout(ClusteredRenderingGridInputLayout);
 				}
 				break;
+			case ShaderUsage::SHADOW_DEPTH:
+				SafeRelease(ShadowDepthInputLayout);
+				SafeRelease(ShadowDepthVertexShader);
+				SafeRelease(ShadowDepthPixelShader);
+				SafeRelease(ShadowSampler);
+				CreateShadowDepthShader();
+				if (ShadowMapPass)
+				{
+					ShadowMapPass->SetVertexShader(ShadowDepthVertexShader);
+					ShadowMapPass->SetPixelShader(ShadowDepthPixelShader);
+					ShadowMapPass->SetInputLayout(ShadowDepthInputLayout);
+				}
+				break;
 		}
 	}
 }
@@ -783,6 +804,11 @@ void URenderer::ReleaseDefaultShader()
 	SafeRelease(ClusteredRenderingGridInputLayout);
 	SafeRelease(ClusteredRenderingGridVS);
 	SafeRelease(ClusteredRenderingGridPS);
+
+	SafeRelease(ShadowDepthVertexShader);
+	SafeRelease(ShadowDepthPixelShader);
+	SafeRelease(ShadowDepthInputLayout);
+	SafeRelease(ShadowSampler);
 }
 
 void URenderer::ReleaseDepthStencilState()

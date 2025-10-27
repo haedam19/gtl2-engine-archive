@@ -150,11 +150,13 @@ void USpotLightComponent::SetOuterAngle(float const InAttenuationAngleRad)
 {
     OuterConeAngleRad = std::clamp(InAttenuationAngleRad, 0.0f, PI/2.0f - MATH_EPSILON);
     InnerConeAngleRad = std::min(InnerConeAngleRad, OuterConeAngleRad);
+    MarkShadowDirty();
 }
 
 void USpotLightComponent::SetInnerAngle(float const InAttenuationAngleRad)
 {
     InnerConeAngleRad = std::clamp(InAttenuationAngleRad, 0.0f, OuterConeAngleRad);
+    MarkShadowDirty();
 }
 
 void USpotLightComponent::RenderLightDirectionGizmo(UCamera* InCamera)
@@ -195,8 +197,9 @@ FSpotLightInfo USpotLightComponent::GetSpotLightInfo() const
     Info.ShadowBias = GetShadowBias();
     Info.ShadowSharpen = GetShadowSharpen();
     Info.ShadowMapIndex = ShadowMapArrayIndex;
+    Info.ShadowRegionIndex = ShadowRegionIndex;  // Shadow Atlas Region 인덱스
     Info.ShadowMapInvSize = ShadowMapInvSize;
-    Info.Padding = FVector2(0.0f, 0.0f);
+    Info.Padding = 0.0f;
     Info.LightViewMatrix = LightViewMatrix;
     Info.LightProjectionMatrix = LightProjectionMatrix;
     return Info;
