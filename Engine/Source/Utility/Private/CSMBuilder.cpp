@@ -135,6 +135,23 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
     float NearPlane = MinZ;
     float FarPlane = MaxZ;
 
+    {
+        // 전역 상수를 이용해서 타일 픽셀 크기 계산
+        const float TileSize = CSMShadowMapResolution / CascadesPerRow;
+        const float EffectiveSize = std::max(TileSize - AtlasBorder * 2.0f, 1.0f);
+        const uint32 TileW = static_cast<uint32>(EffectiveSize);
+        const uint32 TileH = TileW;
+
+        const float WorldUnitsPerTexelX = Width / static_cast<float>(TileW);
+        const float WorldUnitsPerTexelY = Height / static_cast<float>(TileH);
+
+        const float SnappedCenterX = std::round(CenterX / WorldUnitsPerTexelX) * WorldUnitsPerTexelX;
+        const float SnappedCenterY = std::round(CenterY / WorldUnitsPerTexelY) * WorldUnitsPerTexelY;
+
+        const FMatrix SnapTranslation = FMatrix::TranslationMatrix(FVector(-SnappedCenterX, -SnappedCenterY, 0.0f));
+        OutView = OutView * SnapTranslation;
+    }
+
     // Ortho 행렬 계산 시에 값이 너무 작아 생기는 특이 현상 방지(최소 폭, 너비, 깊이에 대해 1.0f 보장)
     Width = std::max(Width, 1.0f);
     Height = std::max(Height, 1.0f);
