@@ -265,11 +265,35 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera, 
     FMatrix CameraView = InCamera->GetViewMatrix();
     FMatrix CameraProj = InCamera->GetProjectionMatrix();
 
-    // 2. Compute virtual camera near/far from scene AABB in eye space
-    // Left-Handed View Space: Camera at origin, +Z is forward
+    // 2. Compute virtual camera near/far
+    // Use ShadowDistance to limit shadow range around camera (better resolution)
+    // Instead of using entire scene AABB which might be very far from camera
+    float ZNear = InCamera->GetNearZ();  // Use camera's near plane
+    float ZFar = std::min(ShadowDistance, InCamera->GetFarZ());  // Clamp to ShadowDistance
+
+    // Optional: Also consider scene AABB but clamp to ShadowDistance
     FAABB EyeSpaceAABB = SceneAABB.Transform(CameraView, false);
-    float ZNear = std::max(0.1f, EyeSpaceAABB.Min.Z);  // Closest point (smallest positive Z)
-    float ZFar = std::max(ZNear + 1.0f, EyeSpaceAABB.Max.Z);  // Farthest point (largest positive Z)
+    if (EyeSpaceAABB.Min.Z > ZNear && EyeSpaceAABB.Min.Z < ZFar)
+    {
+        ZNear = std::max(ZNear, EyeSpaceAABB.Min.Z * 0.5f);  // Start a bit before scene
+    }
+    if (EyeSpaceAABB.Max.Z > ZNear && EyeSpaceAABB.Max.Z < ZFar)
+    {
+        ZFar = std::min(ZFar, EyeSpaceAABB.Max.Z * 1.2f);  // End a bit after scene
+    }
+
+    // Ensure valid range
+    ZNear = std::max(0.1f, ZNear);
+    ZFar = std::max(ZNear + 1.0f, ZFar);
+
+    // Debug: Log virtual camera parameters
+    static int logCount = 0;
+    if (logCount < 3)  // Log first 3 frames
+    {
+        UE_LOG("[PSM] Virtual Camera - ZNear: %.2f, ZFar: %.2f, ShadowDistance: %.2f", ZNear, ZFar, ShadowDistance);
+        UE_LOG("[PSM] Eye Space AABB - Min.Z: %.2f, Max.Z: %.2f", EyeSpaceAABB.Min.Z, EyeSpaceAABB.Max.Z);
+        logCount++;
+    }
 
     // 3. Compute slideback for numerical stability
     float Infinity = ZFar / (ZFar - ZNear);

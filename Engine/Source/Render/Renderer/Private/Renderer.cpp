@@ -986,7 +986,7 @@ void URenderer::RenderLevel(FViewport* InViewport)
 		);
 
 	// Compute SceneAABB for PSM using Octree
-	constexpr float MIN_SCENE_AABB_SIZE = 100.0f;
+	constexpr float MIN_SCENE_AABB_SIZE = 1.0f;  // Reduced from 100.0f for better shadow resolution
 	if (FOctree* StaticOctree = CurrentLevel->GetStaticOctree())
 	{
 		FOctree* EnclosingNode = StaticOctree->FindSmallestEnclosingNode();
@@ -995,13 +995,29 @@ void URenderer::RenderLevel(FViewport* InViewport)
 			FAABB OctreeAABB = EnclosingNode->GetBoundingBox();
 			FVector Size = OctreeAABB.Max - OctreeAABB.Min;
 
-			// Clamp to minimum size for numerical stability
+			// Debug: Log actual scene size
+			static bool bLoggedOnce = false;
+			if (!bLoggedOnce)
+			{
+				UE_LOG("[PSM] Scene AABB: Min(%.2f, %.2f, %.2f) Max(%.2f, %.2f, %.2f) Size(%.2f, %.2f, %.2f)",
+					OctreeAABB.Min.X, OctreeAABB.Min.Y, OctreeAABB.Min.Z,
+					OctreeAABB.Max.X, OctreeAABB.Max.Y, OctreeAABB.Max.Z,
+					Size.X, Size.Y, Size.Z);
+				bLoggedOnce = true;
+			}
+
+			// Clamp to minimum size for numerical stability (very small scenes only)
 			if (Size.X < MIN_SCENE_AABB_SIZE || Size.Y < MIN_SCENE_AABB_SIZE || Size.Z < MIN_SCENE_AABB_SIZE)
 			{
 				FVector Center = OctreeAABB.GetCenter();
 				float HalfSize = MIN_SCENE_AABB_SIZE * 0.5f;
 				OctreeAABB.Min = Center - FVector(HalfSize, HalfSize, HalfSize);
 				OctreeAABB.Max = Center + FVector(HalfSize, HalfSize, HalfSize);
+
+				if (!bLoggedOnce)
+				{
+					UE_LOG("[PSM] Scene too small, clamped to MIN_SIZE: %.2f", MIN_SCENE_AABB_SIZE);
+				}
 			}
 			RenderingContext.SceneAABB = OctreeAABB;
 		}
