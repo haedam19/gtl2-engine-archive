@@ -489,8 +489,54 @@ float CalculateShadow(float4 LightSpacePos)
     float sharpen = max(0.0f, Directional.ShadowSharpen);
     shadow = saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
 
-    return shadow;
+	return shadow;
 #endif
+}
+
+float SampleCSMCascadePCF(float currentDepth, float bias, float texelSize, float2 atlasUV)
+{
+	float shadow = 0.0f;
+
+	[unroll]
+	for (int x = -1; x <= 1; ++x)
+	{
+		[unroll]
+		for (int y = -1; y <= 1; ++y)
+		{
+			float2 offset = float2(x, y) * texelSize;
+			float shadowMapDepth = ShadowMap.Sample(ShadowSampler, atlasUV + offset).r;
+			shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
+		}
+	}
+
+	shadow /= 9.0f;
+	shadow = saturate(shadow);
+
+	float sharpen = max(0.0f, Directional.ShadowSharpen);
+	return saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
+}
+
+float SampleCSMCascadeVSM(float currentDepth, float bias, float2 atlasUV)
+{
+	float depth = currentDepth - bias;
+
+	float2 moments = ShadowMap.Sample(ShadowSampler, atlasUV);
+	float mean = moments.x;
+	float variance = max(moments.y - mean * mean, 0.00001f);
+
+	if (depth <= mean)
+	{
+		return 1.0f;
+	}
+
+	float d = depth - mean;
+	float p_max = variance / (variance + d * d);
+
+	const float LBR = 0.3f;
+	p_max = saturate((p_max - LBR) / (1.0f - LBR));
+
+	float sharpen = max(0.0f, Directional.ShadowSharpen);
+	return saturate((p_max - 0.5f) * (sharpen + 1.0f) + 0.5f);
 }
 
 float CalculateCSMShadow(float3 WorldPos)
@@ -531,56 +577,50 @@ float CalculateCSMShadow(float3 WorldPos)
     float2 atlasUV = projCoords.xy * scaleOffset.xy + scaleOffset.zw;
     float currentDepth = projCoords.z;
     
-    #if SHADOW_FILTER_VSM
-    // VSM: Chebyshev inequality
-    float2 moments = ShadowMap.Sample(ShadowSampler, atlasUV);
-    float mean = moments.x;
-    float variance = max(moments.y - mean * mean, 0.00001f);
-
-    // Apply bias (similar to PCF)
-    float bias = Directional.ShadowBias;
-    float depth = currentDepth - bias;
-
-    // If depth is less than or equal to mean, fully lit
-    if (depth <= mean)
-        return 1.0f;
-
-    // Chebyshev's inequality
-    float d = depth - mean;
-    float p_max = variance / (variance + d * d);
-
-    // Light bleeding reduction
-    const float LBR = 0.3f;
-    p_max = saturate((p_max - LBR) / (1.0f - LBR));
-
-    // Shadow sharpening (same as PCF)
-    float sharpen = max(0.0f, Directional.ShadowSharpen);
-    float shadow = saturate((p_max - 0.5f) * (sharpen + 1.0f) + 0.5f);
-
-    return shadow;
+	float shadowValue = 1.0f;
+#if SHADOW_FILTER_VSM
+	shadowValue = SampleCSMCascadeVSM(currentDepth, Directional.ShadowBias, atlasUV);
 #else
-    
-    float shadow = 0.0f;
-    float bias = 0.0005f;
-    
-    float texel = CascadeParams.w;
-
-    // 3x3 PCF kernel
-    for (int x = -1; x <= 1; ++x)
-    {
-        for (int y = -1; y <= 1; ++y)
-        {
-            float2 offset = float2(x, y) * texel;
-            float shadowMapDepth = ShadowMap.Sample(ShadowSampler, atlasUV + offset).r;
-            shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
-        }
-    }
-    
-    shadow /= 9.0f;
-
-    return shadow;
-    
+	shadowValue = SampleCSMCascadePCF(currentDepth, 0.0005f, CascadeParams.w, atlasUV);
 #endif
+
+	// Cross-fade with the next cascade near split boundaries for smoother transitions
+	if (cascadeCount > 1u && cascadeIndex < cascadeCount - 1u)
+	{
+		float cascadeNear = (cascadeIndex == 0u) ? NearClip : CascadeSplits[cascadeIndex - 1u];
+		float cascadeFar = CascadeSplits[cascadeIndex];
+		const float BlendRatio = 0.1f;
+		float blendRange = (cascadeFar - cascadeNear) * BlendRatio;
+		float distanceToFar = cascadeFar - viewDepth;
+
+		if (blendRange > 0.0f && distanceToFar > 0.0f && distanceToFar < blendRange)
+		{
+			uint nextIndex = cascadeIndex + 1u;
+			float4 nextLightViewPos = mul(worldPos, CascadeLightView[nextIndex]);
+			float4 nextLightProjPos = mul(nextLightViewPos, CascadeLightProjection[nextIndex]);
+			float3 nextProjCoords = nextLightProjPos.xyz / nextLightProjPos.w;
+
+			if (nextProjCoords.x >= -1.0f && nextProjCoords.x <= 1.0f &&
+				nextProjCoords.y >= -1.0f && nextProjCoords.y <= 1.0f &&
+				nextProjCoords.z >= 0.0f && nextProjCoords.z <= 1.0f)
+			{
+				nextProjCoords.x = nextProjCoords.x * 0.5f + 0.5f;
+				nextProjCoords.y = -nextProjCoords.y * 0.5f + 0.5f;
+				float4 nextScaleOffset = CascadeScaleOffsets[nextIndex];
+				float2 nextAtlasUV = nextProjCoords.xy * nextScaleOffset.xy + nextScaleOffset.zw;
+				float nextDepth = nextProjCoords.z;
+#if SHADOW_FILTER_VSM
+				float nextShadow = SampleCSMCascadeVSM(nextDepth, Directional.ShadowBias, nextAtlasUV);
+#else
+				float nextShadow = SampleCSMCascadePCF(nextDepth, 0.0005f, CascadeParams.w, nextAtlasUV);
+#endif
+				float weight = saturate((blendRange - distanceToFar) / blendRange);
+				shadowValue = lerp(shadowValue, nextShadow, weight);
+			}
+		}
+	}
+
+	return shadowValue;
 }
 
 float SampleSpotDepth(uint idx, float2 uv, float lod)
