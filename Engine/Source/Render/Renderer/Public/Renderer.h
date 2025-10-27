@@ -20,7 +20,7 @@ class FShadowMapPass;
 
 // URenderer 내부에서 셰이더들은 용도에 따라 분류될 수 있음.
 // 용도별로 Create Shader 메소드가 존재함. (e.g. CreateStaticmeshShader)
-enum class ShaderUsage
+enum class ShaderUsage: uint8
 {
 	DEFAULT,
 	TEXTURE,
@@ -30,6 +30,7 @@ enum class ShaderUsage
 	STATICMESH,
 	GIZMO,
 	CLUSTERED_RENDERING_GRID,
+	SHADOW_MAPPING,
 	SHADOW_PREVIEW
 };
 
@@ -61,6 +62,7 @@ public:
 	void CreateGizmoShader();
 	void CreateClusteredRenderingGrid();
 	void CreateShadowDepthShader();
+	void CreateShadowSamplerState();
 	void CreateShadowPreviewShader();
 
 	// HotReload

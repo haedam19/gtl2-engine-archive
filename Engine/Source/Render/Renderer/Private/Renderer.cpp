@@ -16,12 +16,11 @@
 #include "Render/UI/Viewport/Public/ViewportClient.h"
 #include "Level/Public/Level.h"
 #include "Manager/UI/Public/UIManager.h"
-#include "Optimization/Public/OcclusionCuller.h"
+// #include "Optimization/Public/OcclusionCuller.h"
 #include "Render/RenderPass/Public/BillboardPass.h"
 #include "Render/RenderPass/Public/DecalPass.h"
 #include "Render/RenderPass/Public/FXAAPass.h"
 #include "Render/RenderPass/Public/FogPass.h"
-#include "Render/RenderPass/Public/PointLightPass.h"
 #include "Render/RenderPass/Public/RenderPass.h"
 #include "Render/RenderPass/Public/LightPass.h"
 #include "Render/RenderPass/Public/StaticMeshPass.h"
@@ -50,7 +49,6 @@ void URenderer::Init(HWND InWindowHandle)
 	Pipeline = new UPipeline(GetDeviceContext());
 	ViewportClient = new FViewport();
 	
-	
 	// 렌더링 상태 및 리소스 생성
 	CreateDepthStencilState();
 	CreateBlendState();
@@ -65,11 +63,12 @@ void URenderer::Init(HWND InWindowHandle)
 	CreateGizmoShader();
 	CreateClusteredRenderingGrid();
 	CreateShadowDepthShader();
+	CreateShadowSamplerState();
 	CreateShadowPreviewShader();
 
-	//ViewportClient->InitializeLayout(DeviceResources->GetViewportInfo());
-
-	// Shadow Map Pass를 가장 먼저 추가 (다른 Pass보다 먼저 실행되어야 함)
+	// Build render passes
+	// render pass order: Shadow Map -> Light -> Static Mesh -> Decal -> Billboard -> Text -> Fog -> SceneDepth (-> FXAA)
+	
 	ShadowMapPass = new FShadowMapPass(Pipeline, ConstantBufferLightViewProj, ConstantBufferModels,
 		ShadowDepthVertexShader, ShadowDepthPixelShader, ShadowDepthInputLayout, DefaultDepthStencilState);
 	RenderPasses.push_back(ShadowMapPass);
@@ -104,10 +103,8 @@ void URenderer::Init(HWND InWindowHandle)
 	FSceneDepthPass* SceneDepthPass = new FSceneDepthPass(Pipeline, ConstantBufferViewProj, DisabledDepthStencilState);
 	RenderPasses.push_back(SceneDepthPass);
 
-	// UPipeline* InPipeline, UDeviceResources* InDeviceResources, ID3D11VertexShader* InVS,
-	// ID3D11PixelShader* InPS, ID3D11InputLayout* InLayout, ID3D11SamplerState* InSampler
+	// bFXAAEnabled로 실행 여부 별도 관리
 	FXAAPass = new FFXAAPass(Pipeline, DeviceResources, FXAAVertexShader, FXAAPixelShader, FXAAInputLayout, FXAASamplerState);
-	//RenderPasses.push_back(FXAAPass);
 	
 }
 
@@ -457,6 +454,11 @@ void URenderer::CreateShadowDepthShader()
 	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, LayoutDesc, &ShadowDepthVertexShader, &ShadowDepthInputLayout);
 	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &ShadowDepthPixelShader);
 
+	RegisterShaderReloadCache(ShaderPath, ShaderUsage::SHADOW_MAPPING);
+}
+
+void URenderer::CreateShadowSamplerState()
+{
 	// Shadow Sampler 생성 (Comparison Sampler for PCF)
 	D3D11_SAMPLER_DESC shadowSamplerDesc = {};
 	shadowSamplerDesc.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR;
@@ -474,7 +476,6 @@ void URenderer::CreateShadowDepthShader()
 	shadowSamplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
 
 	GetDevice()->CreateSamplerState(&shadowSamplerDesc, &ShadowSampler);
-
 }
 
 void URenderer::CreateShadowPreviewShader()
@@ -538,8 +539,8 @@ ID3D11ShaderResourceView* URenderer::RenderShadowPreview(ID3D11ShaderResourceVie
 	PreviewViewport.MaxDepth = 1.0f;
 	Context->RSSetViewports(1, &PreviewViewport);
 
-	const float ClearColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	Context->ClearRenderTargetView(PreviewRTV, ClearColor);
+	constexpr float ShadowMapClearColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	Context->ClearRenderTargetView(PreviewRTV, ShadowMapClearColor);
 	Pipeline->SetRenderTargets(1, &PreviewRTV, nullptr);
 
 	FRenderState RenderState;
@@ -711,16 +712,14 @@ void URenderer::HotReloadShaders()
 				SafeRelease(GizmoVS);
 				SafeRelease(GizmoPS);
 				CreateGizmoShader();
-				for (FRenderPass* RenderPass : RenderPasses)
+				if (LightPass)
 				{
-					if (auto* LightPass = dynamic_cast<FLightPass*>(RenderPass))
-					{
-						LightPass->SetInputLayout(GizmoInputLayout);
-						LightPass->SetVertexShader(GizmoVS);
-						LightPass->SetPixelShader(GizmoPS);
-						break;
-					}
+					LightPass->SetInputLayout(GizmoInputLayout);
+					LightPass->SetVertexShader(GizmoVS);
+					LightPass->SetPixelShader(GizmoPS);
 				}
+				break;
+			case ShaderUsage::SHADOW_MAPPING:
 				break;
 			case ShaderUsage::SHADOW_PREVIEW:
 				SafeRelease(ShadowMapPreviewVertexShader);
@@ -825,11 +824,15 @@ void URenderer::Update()
 
     for (FViewport* Viewport : UViewportManager::GetInstance().GetViewports())
     {
-        if (Viewport->GetRect().Width < 1.0f || Viewport->GetRect().Height < 1.0f) { continue; }
+        if (Viewport->GetRect().Width < 1L || Viewport->GetRect().Height < 1L) { continue; }
 
     	FRect SingleWindowRect = Viewport->GetRect();
-    	const int32 ViewportToolBarHeight = 32;
-    	D3D11_VIEWPORT LocalViewport = { (float)SingleWindowRect.Left,(float)SingleWindowRect.Top + ViewportToolBarHeight, (float)SingleWindowRect.Width, (float)SingleWindowRect.Height - ViewportToolBarHeight, 0.0f, 1.0f };
+    	constexpr int32 ViewportToolBarHeight = 32;
+    	D3D11_VIEWPORT LocalViewport = { static_cast<float>(SingleWindowRect.Left),
+    		static_cast<float>(SingleWindowRect.Top + ViewportToolBarHeight),
+    		static_cast<float>(SingleWindowRect.Width),
+    		static_cast<float>(SingleWindowRect.Height - ViewportToolBarHeight),
+    		0.0f, 1.0f };
     	GetDeviceContext()->RSSetViewports(1, &LocalViewport);
 		Viewport->SetRenderRect(LocalViewport);
         UCamera* CurrentCamera = Viewport->GetViewportClient()->GetCamera();
@@ -890,7 +893,7 @@ void URenderer::RenderBegin() const
     if (bFXAAEnabled)
     {
         auto* SceneColorRenderTargetView = DeviceResources->GetSceneColorRenderTargetView();
-        auto* NormalRenderTargetView = DeviceResources->GetNormalRenderTargetView();
+        
         GetDeviceContext()->ClearRenderTargetView(SceneColorRenderTargetView, ClearColor);
         GetDeviceContext()->ClearRenderTargetView(NormalRenderTargetView, ClearColor);
         GetDeviceContext()->ClearDepthStencilView(DepthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
@@ -899,8 +902,6 @@ void URenderer::RenderBegin() const
     }
     else
     {
-        auto* RenderTargetView = DeviceResources->GetRenderTargetView();
-        auto* NormalRenderTargetView = DeviceResources->GetNormalRenderTargetView();
         GetDeviceContext()->ClearRenderTargetView(RenderTargetView, ClearColor);
         GetDeviceContext()->ClearRenderTargetView(NormalRenderTargetView, ClearColor);
         GetDeviceContext()->ClearDepthStencilView(DepthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
@@ -1105,16 +1106,14 @@ ID3D11VertexShader* URenderer::GetVertexShader(EViewModeIndex ViewModeIndex) con
 	{
 		return UberLitVertexShaderGouraud;
 	}
-	else if (ViewModeIndex == EViewModeIndex::VMI_Lambert
-		|| ViewModeIndex == EViewModeIndex::VMI_BlinnPhong
-		|| ViewModeIndex == EViewModeIndex::VMI_WorldNormal)
-	{
-		return UberLitVertexShader;
-	}
-	else if (ViewModeIndex == EViewModeIndex::VMI_Unlit || ViewModeIndex == EViewModeIndex::VMI_SceneDepth)
+	if (ViewModeIndex == EViewModeIndex::VMI_Unlit || ViewModeIndex == EViewModeIndex::VMI_SceneDepth)
 	{
 		return TextureVertexShader;
 	}
+
+	// 기본값: VMI_Lambert || VMI_BlinnPhong || VMI_WorldNormal
+	// 반환값 보장을 위해 별도의 조건문 미설정
+	return UberLitVertexShader;
 }
 
 ID3D11PixelShader* URenderer::GetPixelShader(EViewModeIndex ViewModeIndex) const
