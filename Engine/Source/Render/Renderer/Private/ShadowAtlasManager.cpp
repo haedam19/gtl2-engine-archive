@@ -726,6 +726,19 @@ bool FShadowAtlasManager::ExpandAtlasArray(EShadowAtlasType Type)
         }
     }
 
+    // 기존 Texture2DArray와 SRV 해제 (메모리 누수 방지)
+    switch (Type)
+    {
+    case EShadowAtlasType::DirectionalCSM:
+        SafeRelease(DirectionalAtlasArraySRV);
+        SafeRelease(DirectionalAtlasArrayTexture);
+        break;
+    case EShadowAtlasType::PointSpotLight:
+        SafeRelease(PointSpotAtlasArraySRV);
+        SafeRelease(PointSpotAtlasArrayTexture);
+        break;
+    }
+
     // 새로운 Texture2DArray 생성
     if (!CreateAtlasArray(Type, NewCapacity))
     {

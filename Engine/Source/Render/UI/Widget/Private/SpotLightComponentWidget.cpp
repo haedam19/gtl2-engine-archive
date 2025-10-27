@@ -19,6 +19,7 @@ USpotLightComponentWidget::~USpotLightComponentWidget()
 
 void USpotLightComponentWidget::ReleaseShadowPreviewResources()
 {
+    SafeRelease(CachedSliceSRV);
     SafeRelease(ShadowMapPreviewSRV);
     SafeRelease(ShadowMapPreviewRTV);
     SafeRelease(ShadowMapPreviewTexture);
@@ -250,6 +251,9 @@ void USpotLightComponentWidget::RenderWidget()
 
     if (Allocation && Allocation->IsValid())
     {
+        // 이전 프레임의 Slice SRV 해제 (매 프레임 재생성되므로)
+        SafeRelease(CachedSliceSRV);
+
         // Slice 전용 SRV 생성 (FirstArraySlice=AtlasIndex, ArraySize=1)
         CachedSliceSRV = AtlasManager->GetSliceSRV(Allocation->AtlasType, Allocation->AtlasIndex);
 

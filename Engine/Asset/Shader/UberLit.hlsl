@@ -8,8 +8,8 @@
 // =============================================================================
 #include "LightStructures.hlsli"
 
-#define NUM_POINT_LIGHT 8
-#define NUM_SPOT_LIGHT 8
+#define NUM_POINT_LIGHT 100
+#define NUM_SPOT_LIGHT 100
 #define ADD_ILLUM(a, b) { (a).Ambient += (b).Ambient; (a).Diffuse += (b).Diffuse; (a).Specular += (b).Specular; }
 
 static const float PI = 3.14159265f;
