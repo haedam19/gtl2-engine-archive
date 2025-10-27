@@ -522,6 +522,7 @@ float CalculateCSMShadow(float3 WorldPos)
     {
         return 1.0f;
     }
+    
 
     projCoords.x = projCoords.x * 0.5f + 0.5f;
     projCoords.y = -projCoords.y * 0.5f + 0.5f;
@@ -529,6 +530,35 @@ float CalculateCSMShadow(float3 WorldPos)
     float4 scaleOffset = CascadeScaleOffsets[cascadeIndex];
     float2 atlasUV = projCoords.xy * scaleOffset.xy + scaleOffset.zw;
     float currentDepth = projCoords.z;
+    
+    #if SHADOW_FILTER_VSM
+    // VSM: Chebyshev inequality
+    float2 moments = ShadowMap.Sample(ShadowSampler, atlasUV);
+    float mean = moments.x;
+    float variance = max(moments.y - mean * mean, 0.00001f);
+
+    // Apply bias (similar to PCF)
+    float bias = Directional.ShadowBias;
+    float depth = currentDepth - bias;
+
+    // If depth is less than or equal to mean, fully lit
+    if (depth <= mean)
+        return 1.0f;
+
+    // Chebyshev's inequality
+    float d = depth - mean;
+    float p_max = variance / (variance + d * d);
+
+    // Light bleeding reduction
+    const float LBR = 0.3f;
+    p_max = saturate((p_max - LBR) / (1.0f - LBR));
+
+    // Shadow sharpening (same as PCF)
+    float sharpen = max(0.0f, Directional.ShadowSharpen);
+    float shadow = saturate((p_max - 0.5f) * (sharpen + 1.0f) + 0.5f);
+
+    return shadow;
+#else
     
     float shadow = 0.0f;
     float bias = 0.0005f;
@@ -549,6 +579,8 @@ float CalculateCSMShadow(float3 WorldPos)
     shadow /= 9.0f;
 
     return shadow;
+    
+#endif
 }
 
 float SampleSpotDepth(uint idx, float2 uv, float lod)
