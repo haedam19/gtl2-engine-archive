@@ -1,4 +1,4 @@
-#include "pch.h"
+ï»¿#include "pch.h"
 
 #include <array>
 #include <algorithm>
@@ -15,15 +15,15 @@ FCSMBuilder::FCSMBuilder()
 
 FVector4 FCSMBuilder::BuildCascadeScaleOffset(uint32 CascadeIndex)
 {
-    // Å¸ÀÏ »çÀÌÁî¿Í °¢ Cascade¿¡ ÇØ´çÇÏ´Â ¼¨µµ¿ì ¸ÊÀÌ ¾î´À °÷¿¡ ¹èÄ¡µÇ¾î¾ßÇÒÁö Column°ú Row °è»ê
-    // Å¸ÀÏ ¸ğ¾çÀº Á¤»ç°¢ÇüÀÓÀ» ¹Ì¸® ÇÕÀÇ
-    // AtlasBorderÀº PCF¿Í °°ÀÌ ÀÌ¿ô Å¸ÀÏÀ» »ùÇÃ¸µÇØ¾ßÇÏ´Â »óÈ²À» ¹æ¾îÇÏ±â À§ÇØ »ç¿ë
+    // íƒ€ì¼ ì‚¬ì´ì¦ˆì™€ ê° Cascadeì— í•´ë‹¹í•˜ëŠ” ì„€ë„ìš° ë§µì´ ì–´ëŠ ê³³ì— ë°°ì¹˜ë˜ì–´ì•¼í• ì§€ Columnê³¼ Row ê³„ì‚°
+    // íƒ€ì¼ ëª¨ì–‘ì€ ì •ì‚¬ê°í˜•ì„ì„ ë¯¸ë¦¬ í•©ì˜
+    // AtlasBorderì€ PCFì™€ ê°™ì´ ì´ì›ƒ íƒ€ì¼ì„ ìƒ˜í”Œë§í•´ì•¼í•˜ëŠ” ìƒí™©ì„ ë°©ì–´í•˜ê¸° ìœ„í•´ ì‚¬ìš©
     const float TileSize = CSMShadowMapResolution / CascadesPerRow;
     const float EffectiveSize = std::max(TileSize - AtlasBorder * 2.0f, 1.0f);
     const uint32 Col = CascadeIndex % CascadesPerRow;
     const uint32 Row = CascadeIndex / CascadesPerRow;
 
-    // Atlas¿¡¼­ÀÇ ÇØ´ç ¼¨µµ¿ì ¸Ê ½ÃÀÛÁ¡ÀÇ X, Y¸¦ Á¤ÀÇ (0 ~ 1·Î Á¤±ÔÈ­µÊ)
+    // Atlasì—ì„œì˜ í•´ë‹¹ ì„€ë„ìš° ë§µ ì‹œì‘ì ì˜ X, Yë¥¼ ì •ì˜ (0 ~ 1ë¡œ ì •ê·œí™”ë¨)
     const float OffsetX = (Col * TileSize + AtlasBorder) / CSMShadowMapResolution;
     const float OffsetY = (Row * TileSize + AtlasBorder) / CSMShadowMapResolution;
     const float Scale = EffectiveSize / CSMShadowMapResolution;
@@ -65,8 +65,8 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
 {
     FVector Center = FVector::ZeroVector();
 
-    // Corners´Â Àß·ÁÁø °³º° CascadeÀÇ ¿ùµå ÁÂÇ¥ 8°³
-    // °¢ ÇÁ·¯½ºÅÒÀÇ ÄÚ³Ê ÁÂÇ¥¸¦ ÀüºÎ ´õÇÑ ÈÄ, size(8)·Î ³ª´²¼­ ÇÁ·¯½ºÅÒÀÇ ÁßÁ¡À» Ã£À½
+    // CornersëŠ” ì˜ë ¤ì§„ ê°œë³„ Cascadeì˜ ì›”ë“œ ì¢Œí‘œ 8ê°œ
+    // ê° í”„ëŸ¬ìŠ¤í…€ì˜ ì½”ë„ˆ ì¢Œí‘œë¥¼ ì „ë¶€ ë”í•œ í›„, size(8)ë¡œ ë‚˜ëˆ ì„œ í”„ëŸ¬ìŠ¤í…€ì˜ ì¤‘ì ì„ ì°¾ìŒ
     for (const FVector& Corner : Corners)
     {
         Center += Corner;
@@ -77,7 +77,7 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
     FVector Direction = LightDirection.GetNormalized();
     FVector Up = FVector::UpVector();
 
-    // ºûÀÇ ¹æÇâÀÌ ÁÂÇ¥°èÀÇ Up º¤ÅÍ¿Í ¸Å¿ì À¯»çÇÒ°æ¿ì Á¦´ë·Î Light View Çà·ÄÀÌ »ı¼ºµÇ±â Èûµå¹Ç·Î ¾Æ¿¹ ´Ù¸¥ ÀÓÀÇ ÃàÀ¸·Î ¼³Á¤
+    // ë¹›ì˜ ë°©í–¥ì´ ì¢Œí‘œê³„ì˜ Up ë²¡í„°ì™€ ë§¤ìš° ìœ ì‚¬í• ê²½ìš° ì œëŒ€ë¡œ Light View í–‰ë ¬ì´ ìƒì„±ë˜ê¸° í˜ë“œë¯€ë¡œ ì•„ì˜ˆ ë‹¤ë¥¸ ì„ì˜ ì¶•ìœ¼ë¡œ ì„¤ì •
     if (std::abs(Direction.Dot(Up)) > 0.99f)
     {
         Up = FVector::RightVector();
@@ -85,17 +85,17 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
 
     float Radius = 0.0f;
 
-    // 8°³ÀÇ ÇÁ·¯½ºÅÒ ÄÚ³Ê ÁÂÇ¥¿¡ ´ëÇØ Áß½É°úÀÇ °Å¸®°¡ °¡Àå ±ä ¹İÁö¸§À» Ã£´Â´Ù.
+    // 8ê°œì˜ í”„ëŸ¬ìŠ¤í…€ ì½”ë„ˆ ì¢Œí‘œì— ëŒ€í•´ ì¤‘ì‹¬ê³¼ì˜ ê±°ë¦¬ê°€ ê°€ì¥ ê¸´ ë°˜ì§€ë¦„ì„ ì°¾ëŠ”ë‹¤.
     for (const FVector& Corner : Corners)
     {
         Radius = std::max(Radius, (Corner - Center).Length());
     }
 
-    // 1/16 ´ÜÀ§ ¾çÀÚÈ­ ½º³À
+    // 1/16 ë‹¨ìœ„ ì–‘ìí™” ìŠ¤ëƒ…
     Radius = std::ceil(Radius * 16.0f) / 16.0f;
 
-    // µğ·º¼Å³Î ¶óÀÌÆ®´Â »ç½Ç À§Ä¡°¡ (ÄÚµå ·¹º§¿¡¼­) Á¤ÀÇµÇÁö ¾Ê´Â´Ù.
-    // ÇÏÁö¸¸ ºä Çà·ÄÀ» ¸¸µå·Á¸é ÀÓÀÇÀÇ À§Ä¡°¡ ÇÊ¿äÇÏ¹Ç·Î ÁßÁ¡¿¡¼­ Direction ¹æÇâÀÇ º¤ÅÍ¸¦ »© Direction ¹æÇâÀ¸·Î º¸¾ÒÀ» ¶§ CenterÀ» º¸°Ô µÇ´Â ÀÓÀÇÀÇ ÁÂÇ¥¸¦ ±¸ÇÑ´Ù.
+    // ë””ë ‰ì…”ë„ ë¼ì´íŠ¸ëŠ” ì‚¬ì‹¤ ìœ„ì¹˜ê°€ (ì½”ë“œ ë ˆë²¨ì—ì„œ) ì •ì˜ë˜ì§€ ì•ŠëŠ”ë‹¤.
+    // í•˜ì§€ë§Œ ë·° í–‰ë ¬ì„ ë§Œë“œë ¤ë©´ ì„ì˜ì˜ ìœ„ì¹˜ê°€ í•„ìš”í•˜ë¯€ë¡œ ì¤‘ì ì—ì„œ Direction ë°©í–¥ì˜ ë²¡í„°ë¥¼ ë¹¼ Direction ë°©í–¥ìœ¼ë¡œ ë³´ì•˜ì„ ë•Œ Centerì„ ë³´ê²Œ ë˜ëŠ” ì„ì˜ì˜ ì¢Œí‘œë¥¼ êµ¬í•œë‹¤.
     const FVector LightPosition = Center - Direction * (Radius * 2.0f);
     OutView = FMatrix::LookAtLH(LightPosition, Center, Up);
 
@@ -106,7 +106,7 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
     float MinZ = FLT_MAX;
     float MaxZ = -FLT_MAX;
 
-    // 8°³ÀÇ ÇÁ·¯½ºÅÒ ÄÚ³Ê ÁÂÇ¥¸¦ ¶óÀÌÆ® ºä Çà·ÄÀ» °öÇØ ÀÌµ¿½ÃÅ² ÈÄ, °æ°è ÁÂÇ¥ 6°³¸¦ ±¸ÇØ ³Êºñ, ³ôÀÌ, ±íÀÌ¸¦ °è»êÇÒ ¼ö ÀÖµµ·Ï ÁØºñ 
+    // 8ê°œì˜ í”„ëŸ¬ìŠ¤í…€ ì½”ë„ˆ ì¢Œí‘œë¥¼ ë¼ì´íŠ¸ ë·° í–‰ë ¬ì„ ê³±í•´ ì´ë™ì‹œí‚¨ í›„, ê²½ê³„ ì¢Œí‘œ 6ê°œë¥¼ êµ¬í•´ ë„ˆë¹„, ë†’ì´, ê¹Šì´ë¥¼ ê³„ì‚°í•  ìˆ˜ ìˆë„ë¡ ì¤€ë¹„ 
     for (const FVector& Corner : Corners)
     {
         const FVector4 Transformed = FMatrix::VectorMultiply(FVector4(Corner, 1.0f), OutView);
@@ -118,7 +118,7 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
         MaxZ = std::max(MaxZ, Transformed.Z);
     }
 
-    // ¶óÀÌÆ® ºä °ø°£¿¡¼­ XY Áß½ÉÀ» (0, 0)À¸·Î ÀÌµ¿ -> Ortho Çà·Ä¿¡ µé¾î°¡´Â Width/Height¸¦ ÁÂ¿ì »óÇÏ ±ÕµîÇÏ°Ô ÆîÄ¡°Ô ÇÏ·Á°í
+    // ë¼ì´íŠ¸ ë·° ê³µê°„ì—ì„œ XY ì¤‘ì‹¬ì„ (0, 0)ìœ¼ë¡œ ì´ë™ -> Ortho í–‰ë ¬ì— ë“¤ì–´ê°€ëŠ” Width/Heightë¥¼ ì¢Œìš° ìƒí•˜ ê· ë“±í•˜ê²Œ í¼ì¹˜ê²Œ í•˜ë ¤ê³ 
     const float CenterX = 0.5f * (MinX + MaxX);
     const float CenterY = 0.5f * (MinY + MaxY);
     const FMatrix recenterMatrix = FMatrix::TranslationMatrix(FVector(-CenterX, -CenterY, 0.0f));
@@ -129,14 +129,14 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
     MinY -= CenterY;
     MaxY -= CenterY;
 
-    // ¶óÀÌÆ® ºä Á¤»ç¿µ ¹Ú½ºÀÇ Width¿Í Heigth, Near Z¿Í Far Z¸¦ °è»ê
+    // ë¼ì´íŠ¸ ë·° ì •ì‚¬ì˜ ë°•ìŠ¤ì˜ Widthì™€ Heigth, Near Zì™€ Far Zë¥¼ ê³„ì‚°
     float Width = MaxX - MinX;
     float Height = MaxY - MinY;
     float NearPlane = MinZ;
     float FarPlane = MaxZ;
 
     {
-        // Àü¿ª »ó¼ö¸¦ ÀÌ¿ëÇØ¼­ Å¸ÀÏ ÇÈ¼¿ Å©±â °è»ê
+        // ì „ì—­ ìƒìˆ˜ë¥¼ ì´ìš©í•´ì„œ íƒ€ì¼ í”½ì…€ í¬ê¸° ê³„ì‚°
         const float TileSize = CSMShadowMapResolution / CascadesPerRow;
         const float EffectiveSize = std::max(TileSize - AtlasBorder * 2.0f, 1.0f);
         const uint32 TileW = static_cast<uint32>(EffectiveSize);
@@ -152,7 +152,7 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
         OutView = OutView * SnapTranslation;
     }
 
-    // Ortho Çà·Ä °è»ê ½Ã¿¡ °ªÀÌ ³Ê¹« ÀÛ¾Æ »ı±â´Â Æ¯ÀÌ Çö»ó ¹æÁö(ÃÖ¼Ò Æø, ³Êºñ, ±íÀÌ¿¡ ´ëÇØ 1.0f º¸Àå)
+    // Ortho í–‰ë ¬ ê³„ì‚° ì‹œì— ê°’ì´ ë„ˆë¬´ ì‘ì•„ ìƒê¸°ëŠ” íŠ¹ì´ í˜„ìƒ ë°©ì§€(ìµœì†Œ í­, ë„ˆë¹„, ê¹Šì´ì— ëŒ€í•´ 1.0f ë³´ì¥)
     Width = std::max(Width, 1.0f);
     Height = std::max(Height, 1.0f);
 
@@ -174,26 +174,26 @@ void FCSMBuilder::FillFallbackCascade(UDirectionalLightComponent* Light, FCascad
 
 uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera* Camera, FCascadeShadowConstants& OutData)
 {
-    // Ä«¸Ş¶ó°¡ ¾ø°Å³ª Persprective°¡ ¾Æ´Ò °æ¿ì¿¡´Â Fallback(´ÜÀÏ Á¤»ç¿µ)
+    // ì¹´ë©”ë¼ê°€ ì—†ê±°ë‚˜ Persprectiveê°€ ì•„ë‹ ê²½ìš°ì—ëŠ” Fallback(ë‹¨ì¼ ì •ì‚¬ì˜)
     if (!Camera || Camera->GetCameraType() != ECameraType::ECT_Perspective)
     {
         FillFallbackCascade(Light, OutData);
         return 1;
     }
 
-    // ½ÇÁ¦·Î CSMÀÌ µ¤¾î¾ß ÇÏ´Â ±íÀÌ ¹üÀ§ °è»ê
+    // ì‹¤ì œë¡œ CSMì´ ë®ì–´ì•¼ í•˜ëŠ” ê¹Šì´ ë²”ìœ„ ê³„ì‚°
     const float NearClip = std::max(Camera->GetNearZ(), 0.1f);
     const float FarClip = std::max(NearClip + 1.0f, std::min(Light->GetShadowDistance(), Camera->GetFarZ()));
     const float Range = FarClip - NearClip;
     const float Ratio = FarClip / NearClip;
 
-    // µğ·º¼Å³Î ¶óÀÌÆ®ÀÇ ¹æÇâ º¤ÅÍ
+    // ë””ë ‰ì…”ë„ ë¼ì´íŠ¸ì˜ ë°©í–¥ ë²¡í„°
     FVector LightDirection = Light->GetForwardVector().GetNormalized();
 
-    // ³ª´²Áø CascadeÀÇ Far Z¸¦ ±â·ÏÇÒ ¹è¿­ ¼±¾ğ
+    // ë‚˜ëˆ ì§„ Cascadeì˜ Far Zë¥¼ ê¸°ë¡í•  ë°°ì—´ ì„ ì–¸
     float Splits[4] = {};
 
-    // Cascadeµé¿¡ ´ëÇØ °¢ Far Z¸¦ ±â·ÏÇÏ´Â ·çÇÁ
+    // Cascadeë“¤ì— ëŒ€í•´ ê° Far Zë¥¼ ê¸°ë¡í•˜ëŠ” ë£¨í”„
     for (uint32 CascadeIndex = 0; CascadeIndex < CSM_MAX_CASCADES; ++CascadeIndex)
     {
         // P = 1/4, 2/4 ... 4/4
@@ -201,30 +201,30 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
         const float LogSplit = NearClip * powf(Ratio, P);
         const float UniformSplit = NearClip + Range * P;
 
-        // SplitLambda °ªÀ» »ç¿ëÇØ ·Î±× ºĞÇÒ - À¯´ÏÆû ºĞÇÒÀ» º¼·Ï °áÇÕ
+        // SplitLambda ê°’ì„ ì‚¬ìš©í•´ ë¡œê·¸ ë¶„í•  - ìœ ë‹ˆí¼ ë¶„í• ì„ ë³¼ë¡ ê²°í•©
         const float SplitDistance = CascadeSplitLambda * (LogSplit - UniformSplit) + UniformSplit;
 
         Splits[CascadeIndex] = SplitDistance;
 
-        // 1¹øÂ° CascadeÀÇ °æ¿ì¿¡´Â NearClip °ªÀ» ±×´ë·Î ¾²°í, ±× ÀÌÈÄ·ÎºÎÅÍ´Â ÀÚ½ÅÀÇ ¹Ù·Î Àü CascadeÀÇ FarÀ» Near·Î »ç¿ë
+        // 1ë²ˆì§¸ Cascadeì˜ ê²½ìš°ì—ëŠ” NearClip ê°’ì„ ê·¸ëŒ€ë¡œ ì“°ê³ , ê·¸ ì´í›„ë¡œë¶€í„°ëŠ” ìì‹ ì˜ ë°”ë¡œ ì „ Cascadeì˜ Farì„ Nearë¡œ ì‚¬ìš©
         const float CascadeNear = (CascadeIndex == 0) ? NearClip : Splits[CascadeIndex - 1];
         const float CascadeFar = SplitDistance;
 
         std::array<FVector, 8> Corners;
         CalculateFrustumCorners(Camera, CascadeNear, CascadeFar, Corners);
 
-        // ÀÌÀü¿¡ Á¤ÀÇÇÑ BuildCascadeMatrices ÇÔ¼ö¸¦ ÅëÇØ LightÀÇ View, Projection Çà·Ä°ú Cascade¿¡ ´ëÇÑ Frustum 8 ÁÂÇ¥¸¦ ¾ò´Â´Ù
+        // ì´ì „ì— ì •ì˜í•œ BuildCascadeMatrices í•¨ìˆ˜ë¥¼ í†µí•´ Lightì˜ View, Projection í–‰ë ¬ê³¼ Cascadeì— ëŒ€í•œ Frustum 8 ì¢Œí‘œë¥¼ ì–»ëŠ”ë‹¤
         FMatrix ViewMatrix;
         FMatrix ProjectionMatrix;
         BuildCascadeMatrices(Corners, LightDirection, ViewMatrix, ProjectionMatrix);
 
-        // °°Àº ¶óÀÌÆ®¶ó°í ÇÏ´õ¶óµµ °¢ Cascade¿¡ ´ëÇØ ´Ù¸¥ View, Projection Çà·ÄÀÌ °è»êµÈ´Ù.
+        // ê°™ì€ ë¼ì´íŠ¸ë¼ê³  í•˜ë”ë¼ë„ ê° Cascadeì— ëŒ€í•´ ë‹¤ë¥¸ View, Projection í–‰ë ¬ì´ ê³„ì‚°ëœë‹¤.
         OutData.CascadesLightView[CascadeIndex] = ViewMatrix;
         OutData.CascadesLightProj[CascadeIndex] = ProjectionMatrix;
         OutData.CascadeScaleOffsets[CascadeIndex] = BuildCascadeScaleOffset(CascadeIndex);
     }
 
-    // CascadeSplits¿¡ °¢ CascadeÀÇ Far °ªÀ» ÀúÀåÇÑ´Ù
+    // CascadeSplitsì— ê° Cascadeì˜ Far ê°’ì„ ì €ì¥í•œë‹¤
     OutData.CascadeSplits = FVector4(Splits[0], Splits[1], Splits[2], Splits[3]);
 
     return CSM_MAX_CASCADES;
