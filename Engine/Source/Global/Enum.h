@@ -205,3 +205,9 @@ enum class EShadowMapType : uint8
 	LVP,	// Light View Projection (Orthographic)
 	PSM		// Perspective Shadow Maps
 };
+
+enum class EShadowFilterMode : uint8
+{
+	PCF,	// Percentage Closer Filtering (default)
+	VSM		// Variance Shadow Map
+};

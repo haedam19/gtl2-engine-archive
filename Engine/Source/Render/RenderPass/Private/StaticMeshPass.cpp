@@ -1,7 +1,10 @@
-﻿#include "pch.h"
+#include "pch.h"
+#include <algorithm>
 #include "Render/RenderPass/Public/StaticMeshPass.h"
+#include "Render/RenderPass/Public/ShadowMapPass.h"
 #include "Component/Mesh/Public/StaticMeshComponent.h"
 #include "Component/Public/DirectionalLightComponent.h"
+#include "Component/Public/SpotLightComponent.h"
 #include "Render/Renderer/Public/Pipeline.h"
 #include "Render/Renderer/Public/RenderResourceFactory.h"
 #include "Render/Renderer/Public/Renderer.h"
@@ -24,7 +27,7 @@ FStaticMeshPass::FStaticMeshPass(UPipeline* InPipeline, ID3D11Buffer* InConstant
 void FStaticMeshPass::Execute(FRenderingContext& Context)
 {
 
-	const auto& Renderer = URenderer::GetInstance();
+	auto& Renderer = URenderer::GetInstance();
 	FRenderState RenderState = UStaticMeshComponent::GetClassDefaultRenderState();
 	if (Context.ViewMode == EViewModeIndex::VMI_Wireframe)
 	{
@@ -126,8 +129,50 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 		FRenderResourceFactory::UpdateStructuredBuffer(ShadowRegionStructuredBuffer, ShadowRegions);
 		Pipeline->SetShaderResourceView(12, EShaderType::PS, ShadowRegionStructuredBufferSRV);
 	}
-	
-	if (!(Context.ShowFlags & EEngineShowFlags::SF_StaticMesh)) { return; }
+
+	constexpr uint32 MaxSpotLightSlots = 8;
+	ID3D11ShaderResourceView* SpotShadowSRVs[MaxSpotLightSlots] = {};
+	uint32 SpotShadowCount = 0;
+
+	for (USpotLightComponent* SpotLight : Context.SpotLights)
+	{
+		if (!SpotLight || !SpotLight->GetLightEnabled() || !SpotLight->HasValidShadowMapIndex())
+		{
+			continue;
+		}
+
+		uint32 ShadowIndex = SpotLight->GetShadowMapArrayIndex();
+		if (ShadowIndex >= MaxSpotLightSlots)
+		{
+			continue;
+		}
+
+		FShadowMapData& ShadowData = SpotLight->GetShadowMapData();
+		if (!ShadowData.ShadowMapSRV)
+		{
+			continue;
+		}
+
+		SpotShadowSRVs[ShadowIndex] = ShadowData.ShadowMapSRV;
+		SpotShadowCount = std::max(SpotShadowCount, ShadowIndex + 1);
+	}
+
+	for (uint32 Index = 0; Index < SpotShadowCount; ++Index)
+	{
+		Pipeline->SetShaderResourceView(13 + Index, EShaderType::PS, SpotShadowSRVs[Index]);
+	}
+
+	if (!(Context.ShowFlags & EEngineShowFlags::SF_StaticMesh))
+	{
+		Pipeline->SetShaderResourceView(10, EShaderType::PS, nullptr);
+		Pipeline->SetShaderResourceView(11, EShaderType::PS, nullptr);
+		for (uint32 Index = 0; Index < SpotShadowCount; ++Index)
+		{
+			Pipeline->SetShaderResourceView(13 + Index, EShaderType::PS, nullptr);
+		}
+		return;
+	}
+
 	TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
 	sort(MeshComponents.begin(), MeshComponents.end(),
 		[](UStaticMeshComponent* A, UStaticMeshComponent* B) {
@@ -252,6 +297,11 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 
 	// Shadow Map SRV unbind (다음 ShadowMapPass를 위해)
 	Pipeline->SetShaderResourceView(10, EShaderType::PS, nullptr);
+	Pipeline->SetShaderResourceView(11, EShaderType::PS, nullptr);
+	for (uint32 Index = 0; Index < SpotShadowCount; ++Index)
+	{
+		Pipeline->SetShaderResourceView(13 + Index, EShaderType::PS, nullptr);
+	}
 
 	// --- RTVs Reset ---
 	

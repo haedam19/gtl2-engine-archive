@@ -3,6 +3,7 @@
 #include "Render/UI/Overlay/Public/StatOverlay.h"
 #include "Utility/Public/UELogParser.h"
 #include "Utility/Public/ScopeCycleCounter.h"
+#include "Render/Renderer/Public/Renderer.h"
 
 IMPLEMENT_SINGLETON_CLASS(UConsoleWidget, UWidget)
 
@@ -454,6 +455,28 @@ void UConsoleWidget::ProcessCommand(const char* InCommand)
 		HandleStatCommand(StatCommand);
 	}
 
+	// Shadow Filter 명령어 처리
+	else if (FString CommandLower = InCommand;
+		std::transform(CommandLower.begin(), CommandLower.end(), CommandLower.begin(), ::tolower),
+		CommandLower.length() > 14 && CommandLower.substr(0, 14) == "shadow_filter ")
+	{
+		FString mode = CommandLower.substr(14);
+		if (mode == "pcf")
+		{
+			URenderer::GetInstance().SetShadowFilterMode(EShadowFilterMode::PCF);
+			AddLog(ELogType::Success, "Shadow filter mode: PCF (Percentage Closer Filtering)");
+		}
+		else if (mode == "vsm")
+		{
+			URenderer::GetInstance().SetShadowFilterMode(EShadowFilterMode::VSM);
+			AddLog(ELogType::Success, "Shadow filter mode: VSM (Variance Shadow Map - Soft Shadows)");
+		}
+		else
+		{
+			AddLog(ELogType::Error, "Usage: shadow_filter [PCF|VSM]");
+		}
+	}
+
 	// Help 명령어 입력
 	else if (FString CommandLower = InCommand;
 		std::transform(CommandLower.begin(), CommandLower.end(), CommandLower.begin(), ::tolower),
@@ -466,6 +489,8 @@ void UConsoleWidget::ProcessCommand(const char* InCommand)
 		AddLog(ELogType::Info, "  STAT MEMORY - Show memory overlay");
 		AddLog(ELogType::Info, "  STAT PICK - Show picking performance overlay");
 		AddLog(ELogType::Info, "  STAT NONE - Hide all overlays");
+		AddLog(ELogType::Info, "  SHADOW_FILTER PCF - Use PCF shadow filtering (hard shadows)");
+		AddLog(ELogType::Info, "  SHADOW_FILTER VSM - Use VSM shadow filtering (soft shadows)");
 		AddLog(ELogType::Info, "  UE_LOG(\"String with format\", Args...) - Enhanced printf Formatting");
 		AddLog(ELogType::Debug, "    기본 예제: UE_LOG(\"Hello World %%d\", 2025)");
 		AddLog(ELogType::Debug, "    문자열: UE_LOG(\"User: %%s\", \"John\")");
