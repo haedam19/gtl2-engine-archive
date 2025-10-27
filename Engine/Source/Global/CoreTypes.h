@@ -192,8 +192,9 @@ struct alignas(16) FSpotLightInfo
 	float ShadowBias;
 	float ShadowSharpen;
 	uint32 ShadowMapIndex;
+	uint32 ShadowRegionIndex;  // ShadowRegions 버퍼의 인덱스
 	FVector2 ShadowMapInvSize;
-	FVector2 Padding;
+	float Padding;
 
 	FMatrix LightViewMatrix;
 	FMatrix LightProjectionMatrix;

@@ -94,9 +94,6 @@ struct FShadowAtlasRegionInfo
 };
 StructuredBuffer<FShadowAtlasRegionInfo> ShadowRegions : register(t12);
 
-// SpotLight Shadow Maps (개별 텍스처 배열)
-Texture2D<float> ShadowMapSpot[NUM_SPOT_LIGHT] : register(t13);
-
 SamplerState ShadowSampler : register(s1);
 
 
@@ -490,8 +487,10 @@ float CalculateShadow(float4 LightSpacePos)
     float2 texelSize = 1.0f / float2(4096.0f, 4096.0f);  // Shadow Atlas size (4096x4096)
 
     // 3x3 PCF kernel
+    [unroll]
     for (int x = -1; x <= 1; ++x)
     {
+        [unroll]
         for (int y = -1; y <= 1; ++y)
         {
             float2 offset = float2(x, y) * texelSize;
@@ -500,11 +499,11 @@ float CalculateShadow(float4 LightSpacePos)
             float shadowMapDepth = 0.0f;
             if (region.AtlasType == 0) // DirectionalCSM
             {
-                shadowMapDepth = DirectionalAtlases.Sample(ShadowSampler, float3(atlasUV + offset, region.AtlasIndex)).r;
+                shadowMapDepth = DirectionalAtlases.SampleLevel(ShadowSampler, float3(atlasUV + offset, region.AtlasIndex), 0).r;
             }
             else // PointSpot
             {
-                shadowMapDepth = PointSpotAtlases.Sample(ShadowSampler, float3(atlasUV + offset, region.AtlasIndex)).r;
+                shadowMapDepth = PointSpotAtlases.SampleLevel(ShadowSampler, float3(atlasUV + offset, region.AtlasIndex), 0).r;
             }
 
             shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
@@ -521,37 +520,18 @@ float CalculateShadow(float4 LightSpacePos)
 #endif
 }
 
-float SampleSpotDepth(uint idx, float2 uv, float lod)
-{
-    [branch]
-    switch (idx)
-    {
-        case 0: return ShadowMapSpot[0].SampleLevel(ShadowSampler, uv, lod).r;
-        case 1: return ShadowMapSpot[1].SampleLevel(ShadowSampler, uv, lod).r;
-        case 2: return ShadowMapSpot[2].SampleLevel(ShadowSampler, uv, lod).r;
-        case 3: return ShadowMapSpot[3].SampleLevel(ShadowSampler, uv, lod).r;
-        case 4: return ShadowMapSpot[4].SampleLevel(ShadowSampler, uv, lod).r;
-        case 5: return ShadowMapSpot[5].SampleLevel(ShadowSampler, uv, lod).r;
-        case 6: return ShadowMapSpot[6].SampleLevel(ShadowSampler, uv, lod).r;
-        case 7: return ShadowMapSpot[7].SampleLevel(ShadowSampler, uv, lod).r;
-        default: return 1.0f;
-    }
-}
-
 float CalculateSpotShadow(FSpotLightInfo Info, float3 WorldPos)
 {
-    if (Info.ShadowMapIndex >= NUM_SPOT_LIGHT)
-    {
-        return 1.0f;
-    }
-
+    // Light Space로 변환
     float4 lightViewPos = mul(float4(WorldPos, 1.0f), Info.LightViewMatrix);
     float4 lightClipPos = mul(lightViewPos, Info.LightProjectionMatrix);
 
+    // Perspective divide 및 [0,1] 범위로 변환
     float3 projCoords = lightClipPos.xyz / lightClipPos.w;
     projCoords.x = projCoords.x * 0.5f + 0.5f;
     projCoords.y = -projCoords.y * 0.5f + 0.5f;
 
+    // Shadow Map 범위 밖이면 그림자 없음
     if (projCoords.x < 0.0f || projCoords.x > 1.0f ||
         projCoords.y < 0.0f || projCoords.y > 1.0f ||
         projCoords.z < 0.0f || projCoords.z > 1.0f)
@@ -559,18 +539,20 @@ float CalculateSpotShadow(FSpotLightInfo Info, float3 WorldPos)
         return 1.0f;
     }
 
+    // Shadow Atlas Region 정보 가져오기
+    FShadowAtlasRegionInfo region = ShadowRegions[Info.ShadowRegionIndex];
+
+    // Shadow Map UV를 Atlas UV로 변환
+    float2 atlasUV = projCoords.xy * region.UVTransform.zw + region.UVTransform.xy;
+
     float currentDepth = projCoords.z;
     float bias = Info.ShadowBias;
 
-    float2 texelSize = Info.ShadowMapInvSize;
-    if (texelSize.x <= 0.0f || texelSize.y <= 0.0f)
-    {
-        texelSize = float2(1.0f / 2048.0f, 1.0f / 2048.0f);
-    }
-
-    uint index = Info.ShadowMapIndex;
+    // PCF: Percentage Closer Filtering
     float shadow = 0.0f;
+    float2 texelSize = 1.0f / float2(4096.0f, 4096.0f);  // Shadow Atlas size
 
+    // 3x3 PCF kernel
     [unroll]
     for (int x = -1; x <= 1; ++x)
     {
@@ -578,7 +560,9 @@ float CalculateSpotShadow(FSpotLightInfo Info, float3 WorldPos)
         for (int y = -1; y <= 1; ++y)
         {
             float2 offset = float2(x, y) * texelSize;
-            float shadowMapDepth = SampleSpotDepth(index, projCoords.xy + offset, 0.0f);
+
+            // PointSpot Atlas에서 샘플링 (AtlasType == 1)
+            float shadowMapDepth = PointSpotAtlases.SampleLevel(ShadowSampler, float3(atlasUV + offset, region.AtlasIndex), 0).r;
             shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
         }
     }
@@ -586,6 +570,7 @@ float CalculateSpotShadow(FSpotLightInfo Info, float3 WorldPos)
     shadow /= 9.0f;
     shadow = saturate(shadow);
 
+    // Shadow sharpening
     float sharpen = max(0.0f, Info.ShadowSharpen);
     shadow = saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
 
@@ -624,16 +609,18 @@ PS_INPUT Uber_VS(VS_INPUT Input)
     // 3. Point Lights
     uint LightIndicesOffset = GetLightIndicesOffset(Output.WorldPosition);
     uint PointLightCount = GetPointLightCount(LightIndicesOffset);
+    [loop]
     for (uint i = 0; i < PointLightCount; i++)
-    {        
+    {
         FPointLightInfo PointLight = GetPointLight(LightIndicesOffset + i);
         ADD_ILLUM(Illumination, CalculatePointLight(PointLight, Output.WorldNormal, Output.WorldPosition, ViewWorldLocation));
     }
 
-    // 4.Spot Lights 
+    // 4.Spot Lights
     uint SpotLightCount = GetSpotLightCount(LightIndicesOffset);
+    [loop]
     for (uint j = 0; j < SpotLightCount; j++)
-    {        
+    {
         FSpotLightInfo SpotLight = GetSpotLight(LightIndicesOffset + j);
         FIllumination SpotIllum = CalculateSpotLight(SpotLight, Output.WorldNormal, Output.WorldPosition, ViewWorldLocation);
         float spotShadow = CalculateSpotShadow(SpotLight, Output.WorldPosition);
@@ -711,14 +698,16 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     // 3. Point Lights
     uint LightIndicesOffset = GetLightIndicesOffset(Input.WorldPosition);
     uint PointLightCount = GetPointLightCount(LightIndicesOffset);
+    [loop]
     for (uint i = 0; i < PointLightCount ; i++)
     {
         FPointLightInfo PointLight = GetPointLight(LightIndicesOffset + i);
         ADD_ILLUM(Illumination, CalculatePointLight(PointLight, N, Input.WorldPosition, ViewWorldLocation));
     }
-    
+
     // 4. Spot Lights
     uint SpotLightCount = GetSpotLightCount(LightIndicesOffset);
+    [loop]
     for (uint j = 0; j < SpotLightCount ; j++)
     {
         FSpotLightInfo SpotLight = GetSpotLight(LightIndicesOffset + j);

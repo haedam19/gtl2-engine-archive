@@ -429,7 +429,7 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(const 
             FShadowAtlasAllocation PrevAlloc = It->second;
 
             FLightAllocationPair Pair;
-            Pair.Light = nullptr;  // Point Light는 직접 사용하지 않으므로 nullptr
+            Pair.Light = Entry.Light;  // Point Light는 직접 사용하지 않으므로 nullptr
             Pair.Allocation = PrevAlloc;
             Pair.ShadowResolution = Entry.Resolution;
 

@@ -86,6 +86,7 @@ public:
 
     FSpotLightInfo GetSpotLightInfo() const;
 
+    uint32 ShadowRegionIndex = 0;  // ShadowRegions 버퍼에서의 인덱스
 private:
     void EnsureVisualizationBillboard()override;
     
@@ -108,4 +109,5 @@ private:
     FVector2 ShadowMapInvSize;
     static constexpr uint32 InvalidShadowMapIndex = std::numeric_limits<uint32>::max();
     uint32 ShadowMapArrayIndex = InvalidShadowMapIndex;
+   
 };

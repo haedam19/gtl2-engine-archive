@@ -55,7 +55,7 @@ struct FShadowAtlasRegionInfo
 // Light + Allocation 쌍 (Sorting 후 사용)
 struct FLightAllocationPair
 {
-    UDirectionalLightComponent* Light = nullptr;
+    ULightComponent* Light = nullptr;
     FShadowAtlasAllocation Allocation;
     uint32 ShadowResolution = 0;
 

@@ -110,6 +110,39 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 		Pipeline->SetSamplerState(1, EShaderType::PS, Renderer.GetShadowSampler());
 	}
 
+	// SpotLight Shadow Atlas Region 정보 수집
+	if (AtlasManager)
+	{
+		for (USpotLightComponent* SpotLight : Context.SpotLights)
+		{
+			if (!SpotLight || !SpotLight->GetLightEnabled())
+			{
+				continue;
+			}
+
+			const FShadowAtlasAllocation* Allocation = AtlasManager->GetLightAllocation(SpotLight);
+			if (Allocation && Allocation->IsValid())
+			{
+				// SpotLight에게 ShadowRegionIndex 알려주기
+				SpotLight->ShadowRegionIndex = static_cast<uint32>(ShadowRegions.size());
+
+				FShadowAtlasRegionInfo RegionInfo;
+				RegionInfo.UVTransform = FVector4(
+					Allocation->Region.UMin,
+					Allocation->Region.VMin,
+					Allocation->Region.UMax - Allocation->Region.UMin,  // UScale
+					Allocation->Region.VMax - Allocation->Region.VMin   // VScale
+				);
+				RegionInfo.AtlasType = static_cast<uint32>(Allocation->AtlasType);
+				RegionInfo.AtlasIndex = Allocation->AtlasIndex;
+				RegionInfo.CascadeIndex = 0;
+				RegionInfo.CubeFaceIndex = 0;
+
+				ShadowRegions.push_back(RegionInfo);
+			}
+		}
+	}
+
 	// Shadow Region Structured Buffer 업데이트
 	if (!ShadowRegions.empty())
 	{

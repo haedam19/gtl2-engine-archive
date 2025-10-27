@@ -87,7 +87,7 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 			continue;
 		}
 
-		UDirectionalLightComponent* DirLight = Pair.Light;
+		UDirectionalLightComponent* DirLight = Cast<UDirectionalLightComponent>(Pair.Light);
 		const FShadowAtlasRegion& Region = Pair.Allocation.Region;
 
 		// Shadow Map DSV Clear
@@ -159,79 +159,87 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 			Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
 		}
 	}
-
-	// ===========================================================================
-	// 3단계: SpotLight Shadow 렌더링 (개별 텍스처)
-	// ===========================================================================
+	TArray<UPointLightComponent*> SpotLightsAsPointLights;
 	for (USpotLightComponent* SpotLight : Context.SpotLights)
 	{
 		if (!SpotLight || !SpotLight->GetLightEnabled()) { continue; }
-
-		FShadowMapData& ShadowData = SpotLight->GetShadowMapData();
-		if (!ShadowData.ShadowMapDSV || !ShadowData.ShadowMapTexture)
+		if (SpotLight && SpotLight->GetLightEnabled())
 		{
-			continue;
+			SpotLightsAsPointLights.push_back(SpotLight);
 		}
+	}
 
-		D3D11_TEXTURE2D_DESC ShadowDesc = {};
-		ShadowData.ShadowMapTexture->GetDesc(&ShadowDesc);
+	TArray<FLightAllocationPair> AllocatedSpotLights = AtlasManager->AllocatePointSpotLights(SpotLightsAsPointLights);
+	// ===========================================================================
+	// 3단계: SpotLight Shadow 렌더링 (개별 텍스처)
+	// ===========================================================================
+	for (const FLightAllocationPair& Pair : AllocatedSpotLights)
+	{
+		if (!Pair.IsValid())
+			continue;
+
+		USpotLightComponent* SpotLight = Cast<USpotLightComponent>(Pair.Light);
+		if (!SpotLight)
+			continue;
+
+		const FShadowAtlasRegion& Region = Pair.Allocation.Region;
 
 		// Clear DSV
-		DeviceContext->ClearDepthStencilView(ShadowData.ShadowMapDSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
+		DeviceContext->ClearDepthStencilView(Pair.Allocation.DSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
-		// Set Render Target
+		// Bind DSV
 		ID3D11RenderTargetView* NullRTV = nullptr;
-		Pipeline->SetRenderTargets(1, &NullRTV, ShadowData.ShadowMapDSV);
+		Pipeline->SetRenderTargets(1, &NullRTV, Pair.Allocation.DSV);
 
-		// Set Viewport
+		// Viewport = Atlas 내 Region
 		D3D11_VIEWPORT ShadowViewport = {};
-		ShadowViewport.TopLeftX = 0.0f;
-		ShadowViewport.TopLeftY = 0.0f;
-		ShadowViewport.Width = static_cast<float>(ShadowDesc.Width);
-		ShadowViewport.Height = static_cast<float>(ShadowDesc.Height);
+		ShadowViewport.TopLeftX = (float)Region.X;
+		ShadowViewport.TopLeftY = (float)Region.Y;
+		ShadowViewport.Width = (float)Region.Width;
+		ShadowViewport.Height = (float)Region.Height;
 		ShadowViewport.MinDepth = 0.0f;
 		ShadowViewport.MaxDepth = 1.0f;
 		DeviceContext->RSSetViewports(1, &ShadowViewport);
 
-		// Calculate Light View Projection
-		FVector LightPosition = SpotLight->GetWorldLocation();
-		FVector LightDirection = SpotLight->GetForwardVector().GetNormalized();
-		FVector UpVector = FVector::UpVector();
-		if (std::abs(LightDirection.Dot(UpVector)) > 0.99f)
-		{
-			UpVector = FVector::RightVector();
-		}
+		// Light View/Proj 생성
+		FVector LightPos = SpotLight->GetWorldLocation();
+		FVector LightDir = SpotLight->GetForwardVector().GetNormalized();
+		FVector Up = FVector::UpVector();
+		if (fabs(LightDir.Dot(Up)) > 0.99f)
+			Up = FVector::RightVector();
 
-		FMatrix LightView = FMatrix::LookAtLH(LightPosition, LightPosition + LightDirection, UpVector);
-		float OuterCone = std::max(SpotLight->GetOuterConeAngle(), 0.01f);
-		float FovY = std::clamp(OuterCone * 2.0f, 0.01f, PI - 0.01f);
-		constexpr float NearZ = 0.01f;
-		float FarZ = std::max(SpotLight->GetAttenuationRadius(), 0.5f);
-		FMatrix LightProjection = FMatrix::PerspectiveFovLH(FovY, 1.0f, NearZ, FarZ);
+		FMatrix LightView = FMatrix::LookAtLH(LightPos, LightPos + LightDir, Up);
 
-		// Update Slope Bias
+		float OuterAngle = max(SpotLight->GetOuterConeAngle(), 0.01f);
+		float FovY = clamp(OuterAngle * 2.0f, 0.01f, PI - 0.01f);
+		float NearZ = 0.01f;
+		float FarZ = max(SpotLight->GetAttenuationRadius(), 0.5f);
+
+		FMatrix LightProj = FMatrix::PerspectiveFovLH(FovY, 1.0f, NearZ, FarZ);
+
+		// Rasterizer(Depth Bias) 업데이트
 		RenderState.SlopeScaledDepthBias = SpotLight->GetShadowSlopeBias();
 		RS = FRenderResourceFactory::GetRasterizerState(RenderState);
 		PipelineInfo.RasterizerState = RS;
 		Pipeline->UpdatePipeline(PipelineInfo);
 
-		// Update Constant Buffer
+		// Update Constant Buffers
 		FLightViewProjConstants LightVP;
 		LightVP.LightView = LightView;
-		LightVP.LightProjection = LightProjection;
+		LightVP.LightProjection = LightProj;
 		FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);
 		Pipeline->SetConstantBuffer(1, EShaderType::VS, ConstantBufferLightViewProj);
 
-		// Render Static Meshes
+		// Mesh Draw
 		TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
 		FStaticMesh* CurrentMeshAsset = nullptr;
 
 		for (UStaticMeshComponent* MeshComp : MeshComponents)
 		{
-			if (!MeshComp || !MeshComp->IsVisible()) { continue; }
-			if (!MeshComp->GetStaticMesh()) { continue; }
+			if (!MeshComp || !MeshComp->IsVisible()) continue;
+			if (!MeshComp->GetStaticMesh()) continue;
 			FStaticMesh* MeshAsset = MeshComp->GetStaticMesh()->GetStaticMeshAsset();
-			if (!MeshAsset) { continue; }
+			if (!MeshAsset) continue;
 
 			if (CurrentMeshAsset != MeshAsset)
 			{
@@ -242,12 +250,12 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
 			FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferModel, MeshComp->GetWorldTransformMatrix());
 			Pipeline->SetConstantBuffer(0, EShaderType::VS, ConstantBufferModel);
+
 			Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
 		}
 
-		// Update SpotLight LVP and Size
-		SpotLight->UpdateLVP(LightView, LightProjection);
-		SpotLight->UpdateShadowMapSize(ShadowDesc.Width, ShadowDesc.Height);
+		SpotLight->UpdateLVP(LightView, LightProj);
+		SpotLight->UpdateShadowMapSize(Region.Width, Region.Height);
 	}
 
 	// ===========================================================================

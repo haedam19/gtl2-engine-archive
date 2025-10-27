@@ -197,8 +197,9 @@ FSpotLightInfo USpotLightComponent::GetSpotLightInfo() const
     Info.ShadowBias = GetShadowBias();
     Info.ShadowSharpen = GetShadowSharpen();
     Info.ShadowMapIndex = ShadowMapArrayIndex;
+    Info.ShadowRegionIndex = ShadowRegionIndex;  // Shadow Atlas Region 인덱스
     Info.ShadowMapInvSize = ShadowMapInvSize;
-    Info.Padding = FVector2(0.0f, 0.0f);
+    Info.Padding = 0.0f;
     Info.LightViewMatrix = LightViewMatrix;
     Info.LightProjectionMatrix = LightProjectionMatrix;
     return Info;
