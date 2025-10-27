@@ -127,6 +127,11 @@ struct FMatrix
 	static FMatrix OrthographicLH(float Width, float Height, float NearZ, float FarZ);
 
 	/**
+	* @brief Left-handed Off-Center Orthographic Projection 행렬 생성 (PSM용)
+	*/
+	static FMatrix OrthographicOffCenterLH(float Left, float Right, float Bottom, float Top, float NearZ, float FarZ);
+
+	/**
 	* @brief Left-handed Perspective Projection 행렬 생성 (FOV 기반, PSM용)
 	*/
 	static FMatrix PerspectiveFovLH(float FovY, float AspectRatio, float NearZ, float FarZ);

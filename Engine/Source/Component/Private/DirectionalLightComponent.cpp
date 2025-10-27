@@ -10,6 +10,36 @@
 #include "Editor/Public/EditorEngine.h"
 #include "Actor/Public/Actor.h"
 #include "Level/Public/World.h"
+#include "Physics/Public/AABB.h"
+
+// Helper: Ray-AABB intersection (returns distance t from origin)
+// PracticalPSM uses this to position orthographic light (Line 240)
+static float RayAABBIntersection(const FAABB& Box, const FVector& Origin, const FVector& Direction)
+{
+    // Compute intersection with all 6 planes
+    FVector InvDir(
+        std::abs(Direction.X) > 1e-6f ? (1.0f / Direction.X) : 1e6f,
+        std::abs(Direction.Y) > 1e-6f ? (1.0f / Direction.Y) : 1e6f,
+        std::abs(Direction.Z) > 1e-6f ? (1.0f / Direction.Z) : 1e6f
+    );
+
+    float T1 = (Box.Min.X - Origin.X) * InvDir.X;
+    float T2 = (Box.Max.X - Origin.X) * InvDir.X;
+    float T3 = (Box.Min.Y - Origin.Y) * InvDir.Y;
+    float T4 = (Box.Max.Y - Origin.Y) * InvDir.Y;
+    float T5 = (Box.Min.Z - Origin.Z) * InvDir.Z;
+    float T6 = (Box.Max.Z - Origin.Z) * InvDir.Z;
+
+    float TMin = std::max({std::min(T1, T2), std::min(T3, T4), std::min(T5, T6)});
+    float TMax = std::min({std::max(T1, T2), std::max(T3, T4), std::max(T5, T6)});
+
+    if (TMax < 0.0f || TMin > TMax)
+    {
+        return -1.0f;  // No intersection
+    }
+
+    return TMin > 0.0f ? TMin : TMax;  // Return first positive intersection
+}
 
 IMPLEMENT_CLASS(UDirectionalLightComponent, ULightComponent)
 
@@ -197,62 +227,215 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera) 
 {
     if (!InCamera)
     {
-        // 기본 Orthographic or Directional용 LVP 반환
+        // 기본 Orthographic용 LVP 반환
         return GetLightProjectionMatrix();
     }
 
-    // PSM: Perspective Shadow Mapping
-    // 목표 변환 순서: WorldPos → CameraView → CameraProj → LightView
-    //
-    // Row-major 시스템에서:
-    // Shader는 mul(WorldPos, LightView) → mul(result, LightProj) 형태
-    // 즉 WorldPos * LightView * LightProj
-    //
-    // LightView = Identity이므로
-    // WorldPos * Identity * LightProj = WorldPos * LightProj
-    //
-    // 따라서 LightProj에 전체 변환을 넣어야 함:
-    // LightProj = CameraView × CameraProj × LightView
+    // PSM without SceneAABB - fallback to default scene bounds
+    FAABB DefaultAABB;
+    DefaultAABB.Min = FVector(-ShadowDistance * 0.5f, -ShadowDistance * 0.5f, -ShadowDistance * 0.5f);
+    DefaultAABB.Max = FVector(ShadowDistance * 0.5f, ShadowDistance * 0.5f, ShadowDistance * 0.5f);
 
-    // 1. PSM용 LightView: 카메라 위치를 따라가도록 설정
-    FVector LightDirection = GetForwardVector().GetNormalized();
+    return GetLightProjectionMatrix(InCamera, DefaultAABB);
+}
 
-    // 카메라 위치를 중심으로 Shadow Map 생성
-    FVector CameraPos = InCamera->GetLocation();
-    FVector FocusPoint = CameraPos;  // 카메라 위치를 타겟으로
-    FVector LightPosition = FocusPoint - LightDirection * (ShadowDistance * 0.5f);
-
-    FVector Up = FVector::UpVector();
-    if (std::abs(LightDirection.Dot(Up)) > 0.99f)
+FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera, const FAABB& SceneAABB) const
+{
+    if (!InCamera)
     {
-        Up = FVector::RightVector();
+        return GetLightProjectionMatrix();
     }
 
-    FMatrix LightView = FMatrix::LookAtLH(LightPosition, FocusPoint, Up);
+    // ========== Practical PSM Implementation ==========
+    // Reference: PracticalPSM.cpp (NVIDIA), Stamminger & Drettakis (2002)
+    //
+    // Key improvements over basic PSM:
+    // 1. Virtual camera with slideback for numerical stability
+    // 2. Proper handling of light position in post-perspective space
+    // 3. AABB-based frustum fitting (instead of cone intersection)
+    //
+    // Transformation chain:
+    // World → Camera View → Virtual Camera (slideback) → Virtual Projection → Light View → Light Projection
 
-    // 2. 카메라 View/Projection 행렬
+    constexpr float Z_EPSILON = 0.0001f;
+    constexpr float W_EPSILON = 0.001f;  // If |w| < this, use orthographic
+    constexpr float MIN_INFINITY_Z = 2.0f;  // Minimum distance from infinity plane
+
+    // 1. Get camera matrices
     FMatrix CameraView = InCamera->GetViewMatrix();
     FMatrix CameraProj = InCamera->GetProjectionMatrix();
 
-    // 3. PSM 행렬 계산
-    // Row-major에서 변환 순서: WorldPos * CameraView * CameraProj * LightView
+    // 2. Compute virtual camera near/far from scene AABB in eye space
+    // Left-Handed View Space: Camera at origin, +Z is forward
+    FAABB EyeSpaceAABB = SceneAABB.Transform(CameraView, false);
+    float ZNear = std::max(0.1f, EyeSpaceAABB.Min.Z);  // Closest point (smallest positive Z)
+    float ZFar = std::max(ZNear + 1.0f, EyeSpaceAABB.Max.Z);  // Farthest point (largest positive Z)
 
-    // PSM의 올바른 구현:
-    // 목표: worldPos → LightView → CameraView → OrthoProj
-    // Row-major이므로 행렬 순서: LightView * CameraView * OrthoProj
+    // 3. Compute slideback for numerical stability
+    float Infinity = ZFar / (ZFar - ZNear);
+    float SlideBack = 0.0f;
+    float OriginalZFar = ZFar;  // Save original far for FOV calculation
 
-    float orthoSize = ShadowDistance;
-    FMatrix OrthoProj = FMatrix::OrthographicLH(orthoSize, orthoSize, 0.1f, ShadowDistance);
+    if (Infinity <= MIN_INFINITY_Z)
+    {
+        float AdditionalSlide = MIN_INFINITY_Z * (ZFar - ZNear) - ZFar + Z_EPSILON;
+        SlideBack = AdditionalSlide;
+        ZFar += AdditionalSlide;  // Update ZFar for projection
+        ZNear += AdditionalSlide;
+    }
 
-    // 여러 순서 테스트:
-    // 옵션 1: LightView * CameraView * OrthoProj
-    //FMatrix PSM = LightView * CameraView * OrthoProj;
+    // 4. Create virtual camera matrices
+    FMatrix VirtualCameraView;
+    FMatrix VirtualCameraProj;
 
-    // 옵션 2: CameraView * LightView * OrthoProj (시도해볼 수 있음)
-     FMatrix PSM = CameraView  * CameraProj*GetLightViewMatrix();
+    if (SlideBack > 0.0f)
+    {
+        // Translate camera back for stability
+        VirtualCameraView = FMatrix::Identity();
+        VirtualCameraView.Data[3][2] = SlideBack;  // Translation in Z
 
-    // 옵션 3: LightView * OrthoProj (CameraView 제외, LVP와 유사)
-    // FMatrix PSM = LightView * OrthoProj;
+        // Adjust FOV to see the same world space after slideback
+        // This is critical for numerical stability (PracticalPSM Line 196-204)
+        float OriginalFovY = InCamera->GetFovY();
+        float HalfFovY = OriginalFovY * 0.5f;
 
-    return PSM;
+        // Compute view frustum height at ORIGINAL far plane (before slideback)
+        float ViewHeightAtFar = OriginalZFar * std::tan(HalfFovY);
+
+        // Compute new FOV to see the same height from slid-back position
+        // halfFovy = atan(viewHeight / (originalFar + slideback))
+        float NewHalfFovY = std::atan(ViewHeightAtFar / (OriginalZFar + SlideBack));
+        float NewFovY = 2.0f * NewHalfFovY;
+
+        float Aspect = InCamera->GetAspect();
+        VirtualCameraProj = FMatrix::PerspectiveFovLH(NewFovY, Aspect, ZNear, ZFar);
+    }
+    else
+    {
+        // No slideback: use original projection with adjusted near/far
+        VirtualCameraView = FMatrix::Identity();
+        float OriginalFovY = InCamera->GetFovY();
+        float Aspect = InCamera->GetAspect();
+        VirtualCameraProj = FMatrix::PerspectiveFovLH(OriginalFovY, Aspect, ZNear, ZFar);
+    }
+
+    // Compose: Eye space → Virtual camera space → Post-perspective space
+    FMatrix VirtualCameraViewProj = CameraView * VirtualCameraView * VirtualCameraProj;
+    FMatrix EyeToPostProjVirtualCamera = VirtualCameraView * VirtualCameraProj;
+
+    // 5. Transform light direction to post-perspective space
+    // NOTE: Negate direction due to internal quaternion-based rotation calculation
+    // GetForwardVector() returns "light pointing direction", but PSM needs "light source direction"
+    // (LVP mode and shader use GetForwardVector() directly without negation and work correctly)
+    FVector WorldLightDir = -GetForwardVector().GetNormalized();
+
+    // Transform to eye space (direction vector, w=0)
+    FVector EyeLightDir(
+        WorldLightDir.X * CameraView.Data[0][0] + WorldLightDir.Y * CameraView.Data[1][0] + WorldLightDir.Z * CameraView.Data[2][0],
+        WorldLightDir.X * CameraView.Data[0][1] + WorldLightDir.Y * CameraView.Data[1][1] + WorldLightDir.Z * CameraView.Data[2][1],
+        WorldLightDir.X * CameraView.Data[0][2] + WorldLightDir.Y * CameraView.Data[1][2] + WorldLightDir.Z * CameraView.Data[2][2]
+    );
+    EyeLightDir.Normalize();
+
+    // Transform to post-perspective space (w=0 for directional light)
+    FVector4 EyeLightDir4(EyeLightDir, 0.0f);
+    FVector4 PPLight = FMatrix::VectorMultiply(EyeLightDir4, VirtualCameraProj);
+
+    // 6. Check for inverted shadow (light coming from behind the eye)
+    // PracticalPSM Line 227: m_bShadowTestInverted = (ppLight.w < 0.f)
+    bool bShadowTestInverted = (PPLight.W < 0.0f);
+
+    // 7. Compute light position in post-perspective space
+    // Check if we should use orthographic (light nearly orthogonal to view OR inverted)
+    bool bUseOrthographic = (std::abs(PPLight.W) <= W_EPSILON) || bShadowTestInverted;
+
+    FMatrix LightView;
+    FMatrix LightProj;
+
+    if (bUseOrthographic)
+    {
+        // Orthographic case: treat as standard shadow mapping
+        FVector PPLightDir(PPLight.X, PPLight.Y, PPLight.Z);
+        PPLightDir.Normalize();
+
+        // Unit cube in post-projective space: [-1,-1,0] to [1,1,1]
+        FAABB PPUnitBox;
+        PPUnitBox.Min = FVector(-1.0f, -1.0f, 0.0f);
+        PPUnitBox.Max = FVector(1.0f, 1.0f, 1.0f);
+        FVector PPCubeCenter = PPUnitBox.GetCenter();
+
+        // PracticalPSM Line 240-241: Position light using ray-box intersection
+        float IntersectionDist = RayAABBIntersection(PPUnitBox, PPCubeCenter, PPLightDir);
+        if (IntersectionDist < 0.0f)
+        {
+            IntersectionDist = 3.0f;  // Fallback if no intersection
+        }
+        FVector PPLightPos = PPCubeCenter + PPLightDir * (IntersectionDist * 2.0f);
+
+        FVector PPUp = FVector::UpVector();
+        if (std::abs(PPLightDir.Dot(PPUp)) > 0.99f)
+        {
+            PPUp = FVector(0.0f, 0.0f, 1.0f);  // Use Z axis
+        }
+
+        LightView = FMatrix::LookAtLH(PPLightPos, PPCubeCenter, PPUp);
+
+        // Transform unit cube to light space (reuse PPUnitBox from above)
+        FAABB LightSpaceAABB = PPUnitBox.Transform(LightView, false);
+
+        LightProj = FMatrix::OrthographicOffCenterLH(
+            LightSpaceAABB.Min.X, LightSpaceAABB.Max.X,
+            LightSpaceAABB.Min.Y, LightSpaceAABB.Max.Y,
+            LightSpaceAABB.Min.Z, LightSpaceAABB.Max.Z
+        );
+    }
+    else
+    {
+        // Perspective case: true PSM
+        // Perspective divide to get light position
+        float WRecip = 1.0f / PPLight.W;
+        FVector PPLightPos(
+            PPLight.X * WRecip,
+            PPLight.Y * WRecip,
+            PPLight.Z * WRecip
+        );
+
+        // Post-projective cube center (DirectX: z in [0,1])
+        // PracticalPSM Line 267, 305-322: Use unit cube instead of scene AABB
+        FVector PPCubeCenter(0.0f, 0.0f, 0.5f);
+        constexpr float PPCubeRadius = 1.5f;  // Radius of [-1,1]^2 x [0,1]
+
+        // PracticalPSM Line 305: lookAt = ppCubeCenter - ppLightPos
+        FVector LookAtDir = PPCubeCenter - PPLightPos;
+        float Distance = LookAtDir.Length();
+        LookAtDir.Normalize();
+
+        FVector PPUp = FVector::UpVector();
+        if (std::abs(LookAtDir.Dot(PPUp)) > 0.99f)
+        {
+            PPUp = FVector(0.0f, 0.0f, 1.0f);
+        }
+
+        // PracticalPSM Line 318: D3DXMatrixLookAtLH(&lightView, &ppLightPos, &ppCubeCenter, &axis)
+        LightView = FMatrix::LookAtLH(PPLightPos, PPCubeCenter, PPUp);
+
+        // PracticalPSM Line 319-322: Treat unit box as sphere
+        // "super-cheese... lots of problems, looks like hell, and requires that MinInfinityZ >= 2"
+        float FovY = 2.0f * std::atan(PPCubeRadius / Distance);
+        float Aspect = 1.0f;
+
+        float FNear = std::max(0.001f, Distance - 2.0f * PPCubeRadius);
+        float FFar = Distance + 2.0f * PPCubeRadius;
+
+        // Clamp near plane for numerical stability (hack from PracticalPSM)
+        FNear = std::max(0.001f, FNear * 0.6f);
+
+        LightProj = FMatrix::PerspectiveFovLH(FovY, Aspect, FNear, FFar);
+    }
+
+    // 7. Compose final transformation
+    // World → Camera View → Virtual Camera → Virtual Proj → Light View → Light Proj
+    FMatrix FinalPSM = VirtualCameraViewProj * LightView * LightProj;
+
+    return FinalPSM;
 }

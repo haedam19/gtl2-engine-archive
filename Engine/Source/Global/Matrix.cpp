@@ -461,4 +461,31 @@ FMatrix FMatrix::PerspectiveFovLH(float FovY, float AspectRatio, float NearZ, fl
     return result;
 }
 
+FMatrix FMatrix::OrthographicOffCenterLH(float Left, float Right, float Bottom, float Top, float NearZ, float FarZ)
+{
+    FMatrix result;
+
+    result.Data[0][0] = 2.0f / (Right - Left);
+    result.Data[0][1] = 0.0f;
+    result.Data[0][2] = 0.0f;
+    result.Data[0][3] = 0.0f;
+
+    result.Data[1][0] = 0.0f;
+    result.Data[1][1] = 2.0f / (Top - Bottom);
+    result.Data[1][2] = 0.0f;
+    result.Data[1][3] = 0.0f;
+
+    result.Data[2][0] = 0.0f;
+    result.Data[2][1] = 0.0f;
+    result.Data[2][2] = 1.0f / (FarZ - NearZ);
+    result.Data[2][3] = 0.0f;
+
+    result.Data[3][0] = (Left + Right) / (Left - Right);
+    result.Data[3][1] = (Top + Bottom) / (Bottom - Top);
+    result.Data[3][2] = -NearZ / (FarZ - NearZ);
+    result.Data[3][3] = 1.0f;
+
+    return result;
+}
+
 

@@ -119,11 +119,13 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 			FLightViewProjConstants LightVP;
 			if (DirLight->GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
 			{
+				// PSM mode: Use post-perspective space with SceneAABB
 				LightVP.LightView = DirLight->GetLightViewMatrix(Context.CurrentCamera);
-				LightVP.LightProjection = DirLight->GetLightProjectionMatrix(Context.CurrentCamera);
+				LightVP.LightProjection = DirLight->GetLightProjectionMatrix(Context.CurrentCamera, Context.SceneAABB);
 			}
 			else
 			{
+				// LVP mode: Traditional orthographic shadow mapping
 				LightVP.LightView = DirLight->GetLightViewMatrix();
 				LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
 			}

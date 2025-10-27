@@ -55,9 +55,9 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 		FLightViewProjConstants LightVP;
 		if (DirLight->GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
 		{
-			// PSM: Camera 정보를 사용한 Perspective Shadow Mapping
+			// PSM: Camera와 SceneAABB를 사용한 Perspective Shadow Mapping
 			LightVP.LightView = DirLight->GetLightViewMatrix(Context.CurrentCamera);
-			LightVP.LightProjection = DirLight->GetLightProjectionMatrix(Context.CurrentCamera);
+			LightVP.LightProjection = DirLight->GetLightProjectionMatrix(Context.CurrentCamera, Context.SceneAABB);
 		}
 		else
 		{

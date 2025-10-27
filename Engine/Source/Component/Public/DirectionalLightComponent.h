@@ -57,6 +57,7 @@ public:
     FMatrix GetLightProjectionMatrix() const;
     FMatrix GetLightViewMatrix(class UCamera* InCamera) const;
     FMatrix GetLightProjectionMatrix(class UCamera* InCamera) const;
+    FMatrix GetLightProjectionMatrix(class UCamera* InCamera, const struct FAABB& SceneAABB) const;
 
     void SetShadowDistance(float InDistance) { ShadowDistance = InDistance; }
     float GetShadowDistance() const { return ShadowDistance; }

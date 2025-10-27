@@ -288,3 +288,50 @@ void FOctree::DeepCopy(FOctree* OutOctree) const
 		}
 	}
 }
+
+FOctree* FOctree::FindSmallestEnclosingNode() const
+{
+	// 리프 노드면 자기 자신 반환
+	if (IsLeaf())
+	{
+		return const_cast<FOctree*>(this);
+	}
+
+	// 비어있지 않은 자식 노드 카운트
+	FOctree* NonEmptyChild = nullptr;
+	int NonEmptyCount = 0;
+
+	for (int i = 0; i < 8; ++i)
+	{
+		FOctree* Child = Children[i];
+		if (!Child)
+		{
+			continue;
+		}
+
+		// 자식이 비어있는지 체크: Primitives가 비어있고 모든 하위 자식도 비어있으면 빈 것으로 간주
+		bool bIsEmpty = Child->Primitives.empty();
+		if (bIsEmpty && !Child->IsLeaf())
+		{
+			// 재귀적으로 모든 하위 자식이 비어있는지 체크
+			TArray<UPrimitiveComponent*> AllPrimitives;
+			Child->GetAllPrimitives(AllPrimitives);
+			bIsEmpty = AllPrimitives.empty();
+		}
+
+		if (!bIsEmpty)
+		{
+			NonEmptyChild = Child;
+			NonEmptyCount++;
+		}
+	}
+
+	// 정확히 하나의 자식만 비어있지 않으면 재귀적으로 탐색
+	if (NonEmptyCount == 1)
+	{
+		return NonEmptyChild->FindSmallestEnclosingNode();
+	}
+
+	// 여러 자식이 비어있지 않거나 모두 비어있으면 현재 노드 반환
+	return const_cast<FOctree*>(this);
+}

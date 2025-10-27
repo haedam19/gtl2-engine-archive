@@ -958,6 +958,29 @@ void URenderer::RenderLevel(FViewport* InViewport)
 		InViewport->GetRenderRect(),
 		{DeviceResources->GetViewportInfo().Width, DeviceResources->GetViewportInfo().Height}
 		);
+
+	// Compute SceneAABB for PSM using Octree
+	constexpr float MIN_SCENE_AABB_SIZE = 100.0f;
+	if (FOctree* StaticOctree = CurrentLevel->GetStaticOctree())
+	{
+		FOctree* EnclosingNode = StaticOctree->FindSmallestEnclosingNode();
+		if (EnclosingNode)
+		{
+			FAABB OctreeAABB = EnclosingNode->GetBoundingBox();
+			FVector Size = OctreeAABB.Max - OctreeAABB.Min;
+
+			// Clamp to minimum size for numerical stability
+			if (Size.X < MIN_SCENE_AABB_SIZE || Size.Y < MIN_SCENE_AABB_SIZE || Size.Z < MIN_SCENE_AABB_SIZE)
+			{
+				FVector Center = OctreeAABB.GetCenter();
+				float HalfSize = MIN_SCENE_AABB_SIZE * 0.5f;
+				OctreeAABB.Min = Center - FVector(HalfSize, HalfSize, HalfSize);
+				OctreeAABB.Max = Center + FVector(HalfSize, HalfSize, HalfSize);
+			}
+			RenderingContext.SceneAABB = OctreeAABB;
+		}
+	}
+
 	// 1. Sort visible primitive components
 	RenderingContext.AllPrimitives = FinalVisiblePrims;
 	for (auto& Prim : FinalVisiblePrims)
