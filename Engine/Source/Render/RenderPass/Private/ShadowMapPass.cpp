@@ -49,6 +49,8 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		return;
 	}
 
+	FCascadeShadowConstants TempCascadeData;
+
 	D3D11_VIEWPORT OriginalViewport = {};
 	UINT NumViewports = 1;
 	DeviceContext->RSGetViewports(&NumViewports, &OriginalViewport);
@@ -63,6 +65,11 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
 		ID3D11RenderTargetView* NullRTV = nullptr;
 		Pipeline->SetRenderTargets(1, &NullRTV, InDSV);
+
+		FCascadeShadowConstants CascadeData;
+		CascadeData.bIsCSM = FVector4::Zero();
+		FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, CascadeData);
+		Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
 
 		D3D11_VIEWPORT ShadowViewport = {};
 		ShadowViewport.TopLeftX = 0.0f;
@@ -141,9 +148,11 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 				CSMShadowMapResolution,
 				1.0f / CSMShadowMapResolution
 			);
+			CascadeData.bIsCSM = FVector4(1.0f, 0.0f, 0.0f, 0.0f);
 
 			uint32 CascadeCount = FCSMBuilder::BuildCascadeData(DirLight, Context.CurrentCamera, CascadeData);
 			CascadeData.CascadeParams.X = static_cast<float>(CascadeCount);
+			TempCascadeData = CascadeData;
 
 			TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
 
@@ -278,6 +287,9 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 	}
 
 	DeviceContext->RSSetViewports(1, &OriginalViewport);
+
+	FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, TempCascadeData);
+	Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
 }
 
 void FShadowMapPass::Release()

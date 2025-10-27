@@ -54,6 +54,7 @@ cbuffer CSMLightViewProj : register(b7)
     float4 CascadeSplits;
     float4 CascadeScaleOffsets[CSM_MAX_CASCADES];
     float4 CascadeParams;
+    float4 bIsCSM;
 };
 
 cbuffer GlobalLightConstant : register(b3)
@@ -716,8 +717,17 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
         specularColor *= SpecularTexture.Sample(SamplerWrap, UV);
     }
     
-    //float shadowFactor = CalculateShadow(Input.LightSpacePos);
-    float shadowFactor = CalculateCSMShadow(Input.WorldPosition);
+    float shadowFactor;
+    
+    if (bIsCSM.x < 0.5f)
+    {
+        
+        shadowFactor = CalculateShadow(Input.LightSpacePos);
+    }
+    else
+    {
+        shadowFactor = CalculateCSMShadow(Input.WorldPosition);
+    }
     
 #if LIGHTING_MODEL_GOURAUD
     // Use pre-calculated vertex lighting; apply diffuse material/texture per-pixel
@@ -768,7 +778,7 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     
 #else
     // Fallback: simple textured rendering (like current TexturePS.hlsl)
-    finalPixel.rgb = diffuseColor.rgb + ambientColor.rgb;
+        finalPixel.rgb = diffuseColor.rgb + ambientColor.rgb;
 #endif
     
     // Alpha handling
@@ -776,22 +786,22 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     finalPixel.a = 1.0f;
 #else
     // 1. Diffuse Map 있으면 그 alpha 사용, 없으면 1.0
-    float alpha = (MaterialFlags & HAS_DIFFUSE_MAP) ? diffuseColor.a : 1.0f;
+        float alpha = (MaterialFlags & HAS_DIFFUSE_MAP) ? diffuseColor.a : 1.0f;
     
     // 2. Alpha Map 따로 있으면 곱해줌.
-    if (MaterialFlags & HAS_ALPHA_MAP)
-    {
-        alpha *= AlphaTexture.Sample(SamplerWrap, UV).r;
-    }
+        if (MaterialFlags & HAS_ALPHA_MAP)
+        {
+            alpha *= AlphaTexture.Sample(SamplerWrap, UV).r;
+        }
     
     // 3. D 곱해서 최종 alpha 결정
-    finalPixel.a = D * alpha;
+        finalPixel.a = D * alpha;
 #endif
-    Output.SceneColor = finalPixel;
+        Output.SceneColor = finalPixel;
     
     // Encode normal for deferred rendering
-    float3 encodedNormal = SafeNormalize3(ShadedWorldNormal) * 0.5f + 0.5f;
-    Output.NormalData = float4(encodedNormal, 1.0f);
+        float3 encodedNormal = SafeNormalize3(ShadedWorldNormal) * 0.5f + 0.5f;
+        Output.NormalData = float4(encodedNormal, 1.0f);
     
-    return Output;
-}
+        return Output;
+    }

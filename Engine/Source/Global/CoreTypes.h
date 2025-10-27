@@ -62,6 +62,7 @@ struct FCascadeShadowConstants
 	FVector4 CascadeSplits = FVector4(0, 0, 0, 0);
 	FVector4 CascadeScaleOffsets[CSM_MAX_CASCADES];
 	FVector4 CascadeParams;
+	FVector4 bIsCSM;
 };
 
 
