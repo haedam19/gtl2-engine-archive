@@ -70,6 +70,9 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 		FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);
 		Pipeline->SetConstantBuffer(6, EShaderType::VS, ConstantBufferLightViewProj);  // UberLit.hlsl의 b6
 
+		ID3D11Buffer* ccb = URenderer::GetInstance().GetCascadeConstantBuffer();
+		Pipeline->SetConstantBuffer(7, EShaderType::PS, ccb);
+
 		// Shadow Map 텍스처 바인딩 (t10) - 모드에 따라 다른 텍스처 바인딩
 		ID3D11ShaderResourceView* shadowSRV = nullptr;
 		if (Renderer.GetShadowFilterMode() == EShadowFilterMode::VSM)

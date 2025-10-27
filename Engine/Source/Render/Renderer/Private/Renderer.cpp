@@ -69,7 +69,7 @@ void URenderer::Init(HWND InWindowHandle)
 	// Build render passes
 	// render pass order: Shadow Map -> Light -> Static Mesh -> Decal -> Billboard -> Text -> Fog -> SceneDepth (-> FXAA)
 	
-	ShadowMapPass = new FShadowMapPass(Pipeline, ConstantBufferLightViewProj, ConstantBufferModels,
+	ShadowMapPass = new FShadowMapPass(Pipeline, ConstantBufferLightViewProj, ConstantBufferCascadeShadow, ConstantBufferModels,
 		ShadowDepthVertexShader, ShadowDepthPixelShader, ShadowDepthInputLayout, DefaultDepthStencilState);
 	RenderPasses.push_back(ShadowMapPass);
 

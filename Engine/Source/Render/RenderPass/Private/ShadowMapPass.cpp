@@ -10,11 +10,12 @@
 #include "Render/Renderer/Public/Renderer.h"
 #include "Utility/Public/CSMBuilder.h"
 
-FShadowMapPass::FShadowMapPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferLightViewProj, ID3D11Buffer* InConstantBufferModel,
+FShadowMapPass::FShadowMapPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferLightViewProj, ID3D11Buffer* InConstantBufferCascadeShadow, ID3D11Buffer* InConstantBufferModel,
     ID3D11VertexShader* InVS, ID3D11PixelShader* InPS, ID3D11InputLayout* InLayout, ID3D11DepthStencilState* InDS)
     : FRenderPass(InPipeline, InConstantBufferLightViewProj, InConstantBufferModel)
     , VS(InVS), PS(InPS), InputLayout(InLayout), DS(InDS)
     , ConstantBufferLightViewProj(InConstantBufferLightViewProj)
+	, ConstantBufferCascadeShadow(InConstantBufferCascadeShadow)
 {
 	// VSM 리소스 생성
 	bool resourcesCreated = CreateVSMResources();
@@ -112,19 +113,17 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		Pipeline->SetRenderTargets(1, &NullRT, NullDSV);
 	};
 
-	auto RenderShadowForLightWithCSM = [&](UDirectionalLightComponent* DirLight,
-		ID3D11DepthStencilView* InDSV, float InSlopeBias)
+	auto RenderShadowForLightWithCSM = [&](UDirectionalLightComponent* DirLight, ID3D11DepthStencilView* InDSV, float InSlopeBias)
 		{
 			if (!InDSV)
 			{
 				return;
 			}
 
-			//D3D11_VIEWPORT originalViewport = {};
-			//UINT viewportCount = 1;
-			//DeviceResources->GetDeviceContext()->RSGetViewports(&viewportCount, &originalViewport);
-			//
-			//DeviceResources->GetDeviceContext()->ClearDepthStencilView(ShadowDSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
+			D3D11_VIEWPORT originalViewport = {};
+			UINT viewportCount = 1;
+			DeviceResources->GetDeviceContext()->RSGetViewports(&viewportCount, &originalViewport);
+			DeviceResources->GetDeviceContext()->ClearDepthStencilView(InDSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
 			ID3D11RenderTargetView* NullRTV = nullptr;
 			Pipeline->SetRenderTargets(1, &NullRTV, InDSV);
@@ -147,7 +146,6 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 			CascadeData.CascadeParams.X = static_cast<float>(CascadeCount);
 
 			TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
-			FStaticMesh* CurrentMeshAsset = nullptr;
 
 			for (uint32 CascadeIndex = 0; CascadeIndex < CascadeCount; ++CascadeIndex)
 			{
@@ -193,6 +191,8 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 			ID3D11RenderTargetView* NullRT = nullptr;
 			ID3D11DepthStencilView* NullDSV = nullptr;
 			Pipeline->SetRenderTargets(1, &NullRT, NullDSV);
+
+			DeviceResources->GetDeviceContext()->RSSetViewports(1, &originalViewport);
 
 			//ID3D11DepthStencilView* nullDSV = nullptr;
 			//Pipeline->SetRenderTargets(1, &nullRTV, nullDSV);

@@ -15,7 +15,7 @@ cbuffer CSMLightViewProj : register(b7)
 {
     row_major float4x4 CascadeLightView[CSM_MAX_CASCADES];
     row_major float4x4 CascadeLightProjection[CSM_MAX_CASCADES];
-    float CascadeSplits[CSM_MAX_CASCADES];
+    float4 CascadeSplits;
     float4 CascadeScaleOffsets[CSM_MAX_CASCADES];
     float4 CascadeParams;
 };
@@ -36,16 +36,28 @@ struct PS_INPUT
 
 PS_INPUT mainVS(VS_INPUT input)
 {
-	PS_INPUT output;
+	//PS_INPUT output;
+	//
+	//float4 worldPos = mul(float4(input.position, 1.0f), World);
+	//float4 viewPos = mul(worldPos, LightView);
+	//output.position = mul(viewPos, LightProjection);
+	//
+	//// Store depth for pixel shader (optional, for debugging)
+	//output.depth = output.position.z / output.position.w;
+	//
+	//return output;
+	
+    PS_INPUT output;
 
-	float4 worldPos = mul(float4(input.position, 1.0f), World);
-	float4 viewPos = mul(worldPos, LightView);
-	output.position = mul(viewPos, LightProjection);
+    float4 worldPos = mul(float4(input.position, 1.0f), World);
+    uint cascadeIndex = (uint) CascadeParams.y;
+    float4 viewPos = mul(worldPos, CascadeLightView[cascadeIndex]);
+    output.position = mul(viewPos, CascadeLightProjection[cascadeIndex]);
 
 	// Store depth for pixel shader (optional, for debugging)
-	output.depth = output.position.z / output.position.w;
+    output.depth = output.position.z / output.position.w;
 
-	return output;
+    return output;
 }
 
 // Pixel shader는 depth만 출력하므로 비워둠
