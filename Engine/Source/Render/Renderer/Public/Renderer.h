@@ -15,6 +15,7 @@ class FViewportClient;
 class FFXAAPass;
 class FLightPass;
 class FClusteredRenderingGridPass;
+class FShadowAtlasManager;
 struct FShadowMapData;
 class FShadowMapPass;
 
@@ -31,7 +32,8 @@ enum class ShaderUsage: uint8
 	GIZMO,
 	CLUSTERED_RENDERING_GRID,
 	SHADOW_MAPPING,
-	SHADOW_PREVIEW
+	SHADOW_PREVIEW,
+	SHADOW_DEPTH
 };
 
 
@@ -93,6 +95,7 @@ public:
 	IDXGISwapChain* GetSwapChain() const { return DeviceResources->GetSwapChain(); }
 	
 	ID3D11SamplerState* GetDefaultSampler() const { return DefaultSampler; }
+	ID3D11SamplerState* GetShadowSampler() const { return ShadowSampler; }
 	ID3D11ShaderResourceView* GetDepthSRV() const { return DeviceResources->GetDepthStencilSRV(); }
 	
 	ID3D11RenderTargetView* GetRenderTargetView() const { return DeviceResources->GetRenderTargetView(); }
@@ -120,6 +123,7 @@ public:
 
 	FLightPass* GetLightPass() { return LightPass; }
 	FClusteredRenderingGridPass* GetClusteredRenderingGridPass() { return ClusteredRenderingGridPass; }
+	FShadowAtlasManager* GetShadowAtlasManager() const { return ShadowAtlasManager; }
 	FShadowMapPass* GetShadowMapPass() { return ShadowMapPass; }
 
 	ID3D11ShaderResourceView* RenderShadowPreview(ID3D11ShaderResourceView* ShadowMapSRV,
@@ -231,6 +235,7 @@ private:
 	FLightPass* LightPass = nullptr;
 	FClusteredRenderingGridPass* ClusteredRenderingGridPass = nullptr;
 	FShadowMapPass* ShadowMapPass = nullptr;
+	FShadowAtlasManager* ShadowAtlasManager = nullptr;
 
 	// For Hot Reloading Shaders
 	TMap<std::wstring, TSet<ShaderUsage>> ShaderFileUsageMap;

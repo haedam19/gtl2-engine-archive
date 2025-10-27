@@ -192,8 +192,9 @@ struct alignas(16) FSpotLightInfo
 	float ShadowBias;
 	float ShadowSharpen;
 	uint32 ShadowMapIndex;
+	uint32 ShadowRegionIndex;  // ShadowRegions 버퍼의 인덱스
 	FVector2 ShadowMapInvSize;
-	FVector2 Padding;
+	float Padding;
 
 	FMatrix LightViewMatrix;
 	FMatrix LightProjectionMatrix;
@@ -204,3 +205,8 @@ struct FGlobalLightConstant
 	FAmbientLightInfo Ambient;
 	FDirectionalLightInfo Directional;
 };
+
+// 구조체 크기 검증 (HLSL과 동일해야 함)
+static_assert(sizeof(FAmbientLightInfo) == 32, "FAmbientLightInfo size must be 32 bytes");
+static_assert(sizeof(FDirectionalLightInfo) == 48, "FDirectionalLightInfo size must be 48 bytes");
+static_assert(sizeof(FGlobalLightConstant) == 80, "FGlobalLightConstant size must be 80 bytes");

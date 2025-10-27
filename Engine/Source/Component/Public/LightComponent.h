@@ -63,7 +63,7 @@ public:
     /** @note Sets the light intensity and clamps it to the same range as Unreal Engine (0.0 - 20.0). */
     void SetIntensity(float InIntensity) override;
     void SetLightColor(FVector InLightColor) override;
-	void SetShadowResolutionScale(float InShadowResolutionScale) { ShadowResolutionScale = InShadowResolutionScale; }
+	void SetShadowResolutionScale(float InShadowResolutionScale) { ShadowResolutionScale = InShadowResolutionScale; MarkShadowDirty(); }
 	void SetShadowBias(float InShadowBias) { ShadowBias = InShadowBias; }
 	void SetShadowSlopeBias(float InShadowSlopeBias) { ShadowSlopeBias = InShadowSlopeBias; }
 	void SetShadowSharpen(float InShadowSharpen) { ShadowSharpen = InShadowSharpen; }
@@ -87,7 +87,12 @@ public:
 
     void RefreshVisualizationBillboardBinding();
 
-    
+    // --- Shadow Dirty Flag ---
+    bool IsShadowDirty() const { return bShadowDirty; }
+    void MarkShadowDirty() { bShadowDirty = true; }
+    void ClearShadowDirty() { bShadowDirty = false; }
+
+
 protected:
     void UpdateVisualizationBillboardTint();
 
@@ -98,4 +103,7 @@ private:
 	float ShadowBias = 1e-3f; // NOTE: Rasterizer state에 입력되는 bias가 아닌 SampleCmp 연산시 추가되는 ref bias
 	float ShadowSlopeBias = 0.0f; // Scaling factor of slope-sclaed bias
 	float ShadowSharpen = 0.0f;
+
+	// Shadow Map 재할당이 필요한지 나타내는 플래그
+	bool bShadowDirty = true; // 초기에는 true (첫 할당 필요)
 };

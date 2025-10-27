@@ -52,9 +52,9 @@ public:
     float GetAttenuationRadius() const { return AttenuationRadius;}
     
     /** @note Sets the light falloff exponent and clamps it to the same range as Unreal Engine (2.0 - 16.0). */
-    void SetDistanceFalloffExponent(float InDistanceFalloffExponent) { DistanceFalloffExponent = std::clamp(InDistanceFalloffExponent, 0.0f, 16.0f); } // 이지만, 최소 0이 되도록 해보자
-    
-    void SetAttenuationRadius(float InAttenuationRadius) { AttenuationRadius = InAttenuationRadius; }
+    void SetDistanceFalloffExponent(float InDistanceFalloffExponent) { DistanceFalloffExponent = std::clamp(InDistanceFalloffExponent, 0.0f, 16.0f); MarkShadowDirty(); } // 이지만, 최소 0이 되도록 해보자
+
+    void SetAttenuationRadius(float InAttenuationRadius) { AttenuationRadius = InAttenuationRadius; MarkShadowDirty(); }
 
     FPointLightInfo GetPointlightInfo() const;
 
