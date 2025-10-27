@@ -89,6 +89,7 @@ public:
 	IDXGISwapChain* GetSwapChain() const { return DeviceResources->GetSwapChain(); }
 	
 	ID3D11SamplerState* GetDefaultSampler() const { return DefaultSampler; }
+	ID3D11SamplerState* GetShadowSampler() const { return ShadowSampler; }
 	ID3D11ShaderResourceView* GetDepthSRV() const { return DeviceResources->GetDepthStencilSRV(); }
 	
 	ID3D11RenderTargetView* GetRenderTargetView() const { return DeviceResources->GetRenderTargetView(); }

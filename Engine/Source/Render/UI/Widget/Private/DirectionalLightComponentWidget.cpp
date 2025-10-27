@@ -115,34 +115,10 @@ void UDirectionalLightComponentWidget::RenderWidget()
 
     ImGui::Separator();
 
-    // Shadow Map 미리보기 (기존)
-    ImGui::Text("Shadow Depth Map Preview");
-
-    const auto& Renderer = URenderer::GetInstance();
-    const auto& DeviceResources = Renderer.GetDeviceResources();
-    ID3D11ShaderResourceView* ShadowMapSRV = DeviceResources->GetShadowMapSRV();
-
-    if (ShadowMapSRV)
-    {
-        // Shadow Map을 ImGui 이미지로 표시 (256x256 크기로 미리보기)
-        ImVec2 previewSize(256.0f, 256.0f);
-        ImGui::Image((void*)ShadowMapSRV, previewSize);
-
-        if (ImGui::IsItemHovered())
-        {
-            ImGui::SetTooltip("현재 라이트의 Shadow Depth Map\n흰색에 가까울수록 빛에 가깝고\n검은색에 가까울수록 빛에서 멀어요");
-        }
-    }
-    else
-    {
-        ImGui::TextDisabled("Shadow Map이 생성되지 않았습니다");
-    }
-
-    ImGui::Separator();
-
-    // Shadow Atlas 미리보기 (추가)
+    // Shadow Atlas 미리보기
     ImGui::Text("Shadow Atlas Preview");
 
+    const auto& Renderer = URenderer::GetInstance();
     FShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
 
     if (AtlasManager)

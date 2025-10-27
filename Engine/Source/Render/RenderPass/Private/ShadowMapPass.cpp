@@ -147,6 +147,11 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
     // Viewport를 원래대로 복원
     DeviceResources->GetDeviceContext()->RSSetViewports(1, &originalViewport);
+
+    // ===========================================================================
+    // NOTE: CopyAtlasToArray 제거됨
+    // 이제 Texture2DArray의 슬라이스에 직접 렌더링하므로 복사 불필요
+    // ===========================================================================
 }
 
 void FShadowMapPass::Release()

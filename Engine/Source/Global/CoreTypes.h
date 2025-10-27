@@ -187,3 +187,8 @@ struct FGlobalLightConstant
 	FAmbientLightInfo Ambient;
 	FDirectionalLightInfo Directional;
 };
+
+// 구조체 크기 검증 (HLSL과 동일해야 함)
+static_assert(sizeof(FAmbientLightInfo) == 32, "FAmbientLightInfo size must be 32 bytes");
+static_assert(sizeof(FDirectionalLightInfo) == 48, "FDirectionalLightInfo size must be 48 bytes");
+static_assert(sizeof(FGlobalLightConstant) == 80, "FGlobalLightConstant size must be 80 bytes");

@@ -72,7 +72,22 @@ StructuredBuffer<int> PointLightIndices : register(t6);
 StructuredBuffer<int> SpotLightIndices : register(t7);
 StructuredBuffer<FPointLightInfo> PointLightInfos : register(t8);
 StructuredBuffer<FSpotLightInfo> SpotLightInfos : register(t9);
-Texture2D ShadowMap : register(t10);			// Shadow Map
+
+// Shadow Atlas Texture Arrays (동적 확장 지원)
+Texture2DArray DirectionalAtlases : register(t10);  // DirectionalCSM Atlas 배열
+Texture2DArray PointSpotAtlases : register(t11);    // PointSpot Atlas 배열
+
+// Shadow Atlas Region 정보
+struct FShadowAtlasRegionInfo
+{
+    float4 UVTransform;     // (UMin, VMin, UScale, VScale)
+    uint AtlasType;         // 0: DirectionalCSM, 1: PointSpot
+    uint AtlasIndex;        // 몇 번째 Atlas인지
+    uint CascadeIndex;      // DirectionalLight CSM의 Cascade 번호
+    uint CubeFaceIndex;     // PointLight의 Cube Face 번호 (0-5)
+};
+StructuredBuffer<FShadowAtlasRegionInfo> ShadowRegions : register(t12);
+
 SamplerState ShadowSampler : register(s1);
 
 
@@ -399,7 +414,7 @@ float3 ComputeNormalMappedWorldNormal(float2 UV, float3 WorldNormal, float4 Worl
     return SafeNormalize3(mul(TangentSpaceNormal, TBN));
 
 }
-// Shadow Calculation (LVP-based shadow mapping with PCF)
+// Shadow Calculation (Shadow Atlas-based shadow mapping with PCF)
 float CalculateShadow(float4 LightSpacePos)
 {
     // Perspective divide
@@ -409,13 +424,20 @@ float CalculateShadow(float4 LightSpacePos)
     projCoords.x = projCoords.x * 0.5f + 0.5f;
     projCoords.y = -projCoords.y * 0.5f + 0.5f;  // Flip Y
 
-    // Check if position is outside shadow map//uv 좌표로 변환 
+    // Check if position is outside shadow map//uv 좌표로 변환
     if (projCoords.x < 0.0f || projCoords.x > 1.0f ||
         projCoords.y < 0.0f || projCoords.y > 1.0f ||
         projCoords.z < 0.0f || projCoords.z > 1.0f)
     {
         return 1.0f;  // No shadow
     }
+
+    // Shadow Atlas Region 정보 가져오기 (현재는 DirectionalLight Index 0)
+    FShadowAtlasRegionInfo region = ShadowRegions[0];
+
+    // Shadow Map UV를 Atlas UV로 변환
+    // atlasUV = originalUV * UVScale + UVOffset
+    float2 atlasUV = projCoords.xy * region.UVTransform.zw + region.UVTransform.xy;
 
     float currentDepth = projCoords.z;
 
@@ -424,7 +446,7 @@ float CalculateShadow(float4 LightSpacePos)
 
     // PCF (Percentage Closer Filtering) for soft shadows
     float shadow = 0.0f;
-    float2 texelSize = 1.0f / float2(2048.0f, 2048.0f);  // Shadow map size
+    float2 texelSize = 1.0f / float2(4096.0f, 4096.0f);  // Shadow Atlas size (4096x4096)
 
     // 3x3 PCF kernel
     for (int x = -1; x <= 1; ++x)
@@ -432,7 +454,18 @@ float CalculateShadow(float4 LightSpacePos)
         for (int y = -1; y <= 1; ++y)
         {
             float2 offset = float2(x, y) * texelSize;
-            float shadowMapDepth = ShadowMap.Sample(ShadowSampler, projCoords.xy + offset).r;
+
+            // Atlas Type에 따라 적절한 Texture2DArray에서 샘플링
+            float shadowMapDepth = 0.0f;
+            if (region.AtlasType == 0) // DirectionalCSM
+            {
+                shadowMapDepth = DirectionalAtlases.Sample(ShadowSampler, float3(atlasUV + offset, region.AtlasIndex)).r;
+            }
+            else // PointSpot
+            {
+                shadowMapDepth = PointSpotAtlases.Sample(ShadowSampler, float3(atlasUV + offset, region.AtlasIndex)).r;
+            }
+
             shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
         }
     }
