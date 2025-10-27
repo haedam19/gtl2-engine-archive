@@ -467,6 +467,4 @@ void FShadowMapPass::ExecuteVSMFilter()
 	DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
 	DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
 	DeviceContext->CSSetShader(nullptr, nullptr, 0);  // Unbind compute shader
-
-	UE_LOG("[VSM] Filter executed successfully");
 }

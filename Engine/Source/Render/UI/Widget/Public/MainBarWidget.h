@@ -33,7 +33,6 @@ private:
 	// FutureEngine 스타일: 필수 메뉴만 유지
 	void RenderWindowsMenu() const;
 	static void RenderFileMenu();
-	static void RenderViewMenu();
 	static void RenderShowFlagsMenu();
 	static void RenderToolsMenu();
 	void RenderHelpMenu();
