@@ -351,10 +351,10 @@ uint32 FShadowAtlasManager::GetDefaultAtlasSize(EShadowAtlasType Type) const
 
 void FShadowAtlasManager::SetPointSpotAtlasSize(uint32 NewSize)
 {
-    // 유효한 크기만 허용 (2048 or 4096)
-    if (NewSize != 2048 && NewSize != 4096)
+    // 유효한 크기만 허용 (2048, 4096, 8192)
+    if (NewSize != 2048 && NewSize != 4096 && NewSize != 8192)
     {
-        UE_LOG_WARNING("ShadowAtlasManager: Invalid atlas size %d. Must be 2048 or 4096.", NewSize);
+        UE_LOG_WARNING("ShadowAtlasManager: Invalid atlas size %d. Must be 2048, 4096, or 8192.", NewSize);
         return;
     }
 
@@ -920,7 +920,7 @@ bool FShadowAtlasManager::ExpandAtlasArray(EShadowAtlasType Type)
         if (Atlas.DSV)
         {
             Atlas.DSV->Release();
-            Atlas.DSV = nullptr;
+            Atlas.DSV = nullptr;    
         }
     }
 

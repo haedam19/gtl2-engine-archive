@@ -12,7 +12,9 @@ void UShadowAtlasWidget::Initialize()
 	if (AtlasManager)
 	{
 		uint32 CurrentSize = AtlasManager->GetPointSpotAtlasSize();
-		SelectedAtlasSize = (CurrentSize == 4096) ? 1 : 0;
+		if (CurrentSize == 2048) SelectedAtlasSize = 0;
+		else if (CurrentSize == 4096) SelectedAtlasSize = 1;
+		else if (CurrentSize == 8192) SelectedAtlasSize = 2;
 	}
 
 	UE_LOG("ShadowAtlasWidget: Successfully Initialized");
@@ -49,15 +51,19 @@ void UShadowAtlasWidget::RenderWidget()
 		ImGui::Spacing();
 
 		// Atlas 크기 선택
-		ImGui::Text("Atlas Size:");
+		ImGui::Text("Point/Spot Atlas Size:");
 
-		const char* SizeOptions[] = { "2048 x 2048", "4096 x 4096" };
+		const char* SizeOptions[] = { "2048 x 2048", "4096 x 4096", "8192 x 8192" };
 		int32 PreviousSelection = SelectedAtlasSize;
 
 		if (ImGui::Combo("##AtlasSize", &SelectedAtlasSize, SizeOptions, IM_ARRAYSIZE(SizeOptions)))
 		{
 			// 크기 변경
-			uint32 NewSize = (SelectedAtlasSize == 0) ? 2048 : 4096;
+			uint32 NewSize = 4096;
+			if (SelectedAtlasSize == 0) NewSize = 2048;
+			else if (SelectedAtlasSize == 1) NewSize = 4096;
+			else if (SelectedAtlasSize == 2) NewSize = 8192;
+
 			AtlasManager->SetPointSpotAtlasSize(NewSize);
 
 			UE_LOG("ShadowAtlasWidget: Atlas size changed to %d", NewSize);
@@ -72,12 +78,20 @@ void UShadowAtlasWidget::RenderWidget()
 			ImGui::BulletText("Max 16 lights (512x512) per slice");
 			ImGui::BulletText("Suitable for low-end GPUs");
 		}
-		else // 4096
+		else if (SelectedAtlasSize == 1) // 4096
 		{
 			ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "4096x4096:");
-			ImGui::BulletText("Higher quality shadows");
+			ImGui::BulletText("Balanced quality and performance");
 			ImGui::BulletText("Max 64 lights (512x512) per slice");
 			ImGui::BulletText("64 MB VRAM per slice");
+		}
+		else // 8192
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.0f, 1.0f, 1.0f), "8192x8192:");
+			ImGui::BulletText("Highest quality shadows");
+			ImGui::BulletText("Max 256 lights (512x512) per slice");
+			ImGui::BulletText("256 MB VRAM per slice");
+			ImGui::BulletText("WARNING: High VRAM usage!");
 		}
 
 		ImGui::Spacing();
