@@ -1,9 +1,13 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "Render/UI/Widget/Public/ConsoleWidget.h"
 #include "Render/UI/Overlay/Public/StatOverlay.h"
 #include "Utility/Public/UELogParser.h"
 #include "Utility/Public/ScopeCycleCounter.h"
 #include "Render/Renderer/Public/Renderer.h"
+#include "Component/Public/LightComponent.h"
+#include "Component/Public/DirectionalLightComponent.h"
+#include "Level/Public/Level.h"
+#include "Level/Public/World.h"
 
 IMPLEMENT_SINGLETON_CLASS(UConsoleWidget, UWidget)
 
@@ -477,7 +481,60 @@ void UConsoleWidget::ProcessCommand(const char* InCommand)
 		}
 	}
 
-	// Help 명령어 입력
+	// Shadow map type command
+	else if (FString CommandLower = InCommand;
+		std::transform(CommandLower.begin(), CommandLower.end(), CommandLower.begin(), ::tolower),
+		CommandLower.length() > 11 && CommandLower.substr(0, 11) == "shadow_map ")
+	{
+		FString mode = CommandLower.substr(11);
+
+		UDirectionalLightComponent* DirLight = nullptr;
+		ULevel* CurrentLevel = GWorld ? GWorld->GetLevel() : nullptr;
+		if (CurrentLevel)
+		{
+			for (ULightComponent* LightComponent : CurrentLevel->GetLightComponents())
+			{
+				if (!LightComponent)
+				{
+					continue;
+				}
+
+				if (LightComponent->GetLightType() == ELightComponentType::LightType_Directional)
+				{
+					DirLight = static_cast<UDirectionalLightComponent*>(LightComponent);
+					break;
+				}
+			}
+		}
+
+		if (!DirLight)
+		{
+			AddLog(ELogType::Error, "No directional light found.");
+			return;
+		}
+
+		if (mode == "csm")
+		{
+			DirLight->SetShadowMapType(EShadowMapType::CSM);
+			AddLog(ELogType::Success, "Shadow map type set to CSM.");
+		}
+		else if (mode == "lvp")
+		{
+			DirLight->SetShadowMapType(EShadowMapType::LVP);
+			AddLog(ELogType::Success, "Shadow map type set to LVP.");
+		}
+		else if (mode == "psm")
+		{
+			DirLight->SetShadowMapType(EShadowMapType::PSM);
+			AddLog(ELogType::Success, "Shadow map type set to PSM.");
+		}
+		else
+		{
+			AddLog(ELogType::Error, "Usage: shadow_map [CSM|LVP|PSM]");
+		}
+	}
+
+	// Help 紐낅졊???낅젰
 	else if (FString CommandLower = InCommand;
 		std::transform(CommandLower.begin(), CommandLower.end(), CommandLower.begin(), ::tolower),
 		CommandLower == "help")
@@ -492,6 +549,9 @@ void UConsoleWidget::ProcessCommand(const char* InCommand)
 		AddLog(ELogType::Info, "  STAT NONE - Hide all overlays");
 		AddLog(ELogType::Info, "  SHADOW_FILTER PCF - Use PCF shadow filtering (hard shadows)");
 		AddLog(ELogType::Info, "  SHADOW_FILTER VSM - Use VSM shadow filtering (soft shadows)");
+		AddLog(ELogType::Info, "  SHADOW_MAP CSM - Switch directional light shadow map to CSM");
+		AddLog(ELogType::Info, "  SHADOW_MAP LVP - Switch directional light shadow map to LVP");
+		AddLog(ELogType::Info, "  SHADOW_MAP PSM - Switch directional light shadow map to PSM");
 		AddLog(ELogType::Info, "  UE_LOG(\"String with format\", Args...) - Enhanced printf Formatting");
 		AddLog(ELogType::Debug, "    기본 예제: UE_LOG(\"Hello World %%d\", 2025)");
 		AddLog(ELogType::Debug, "    문자열: UE_LOG(\"User: %%s\", \"John\")");
@@ -843,3 +903,6 @@ void UConsoleWidget::CleanupSystemRedirect()
 		// Ignore Cleanup Errors
 	}
 }
+
+
+
