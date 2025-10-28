@@ -322,6 +322,23 @@ void UStatOverlay::RenderVRAM(ID2D1DeviceContext* d2dCtx)
             FString text = Buf;
             RenderText(d2dCtx, text, OverlayX, OverlayY + OffsetY, 0.7f, 0.9f, 1.0f);
             OffsetY += 20.0f;
+
+            // PointSpot Slice별 사용률
+            for (const auto& SliceUsage : Stats.PointSpotSliceUsage)
+            {
+                char SliceBuf[256];
+                sprintf_s(SliceBuf, sizeof(SliceBuf), "    Slice %u: %.1f%%",
+                    SliceUsage.SliceIndex, SliceUsage.UsagePercent);
+                FString sliceText = SliceBuf;
+
+                // 사용률에 따라 색상 변경
+                float r = 0.5f, g = 1.0f, b = 0.5f;
+                if (SliceUsage.UsagePercent > 90.0f) { r = 1.0f; g = 0.0f; b = 0.0f; }
+                else if (SliceUsage.UsagePercent > 75.0f) { r = 1.0f; g = 1.0f; b = 0.0f; }
+
+                RenderText(d2dCtx, sliceText, OverlayX, OverlayY + OffsetY, r, g, b);
+                OffsetY += 20.0f;
+            }
         }
 
         // 총 Shadow Atlas VRAM

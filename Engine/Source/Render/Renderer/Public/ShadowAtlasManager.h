@@ -106,6 +106,15 @@ public:
     ID3D11ShaderResourceView* GetSliceSRV(
         EShadowAtlasType type, uint32 sliceIndex);
 
+    // Slice별 사용률 정보
+    struct FSliceUsageInfo
+    {
+        uint32 SliceIndex = 0;
+        float UsagePercent = 0.0f;  // 0~100%
+        uint32 UsedArea = 0;        // 사용된 픽셀 면적
+        uint32 TotalArea = 0;       // 전체 면적
+    };
+
     // VRAM 통계 정보
     struct FAtlasStats
     {
@@ -118,6 +127,10 @@ public:
         float DirectionalVRAM_MB = 0.0f;       // 실제 할당된 VRAM (Capacity 기준)
         float PointSpotVRAM_MB = 0.0f;         // 실제 할당된 VRAM (Capacity 기준)
         float TotalVRAM_MB = 0.0f;
+
+        // Slice별 사용률
+        TArray<FSliceUsageInfo> DirectionalSliceUsage;
+        TArray<FSliceUsageInfo> PointSpotSliceUsage;
     };
 
     FAtlasStats GetAtlasStats() const;

@@ -857,6 +857,33 @@ FShadowAtlasManager::FAtlasStats FShadowAtlasManager::GetAtlasStats() const
     Stats.PointSpotVRAM_MB = static_cast<float>(PointSpotVRAM) / (1024.0f * 1024.0f);
     Stats.TotalVRAM_MB = Stats.DirectionalVRAM_MB + Stats.PointSpotVRAM_MB;
 
+    // Slice별 사용률 계산
+    for (const auto& AtlasInfo : DirectionalCSMAtlases)
+    {
+        if (AtlasInfo.Atlas)
+        {
+            FSliceUsageInfo UsageInfo;
+            UsageInfo.SliceIndex = AtlasInfo.SliceIndex;
+            UsageInfo.UsedArea = AtlasInfo.Atlas->GetUsedArea();
+            UsageInfo.TotalArea = AtlasInfo.AtlasSize * AtlasInfo.AtlasSize;
+            UsageInfo.UsagePercent = AtlasInfo.Atlas->GetUsagePercentage();
+            Stats.DirectionalSliceUsage.push_back(UsageInfo);
+        }
+    }
+
+    for (const auto& AtlasInfo : PointSpotAtlases)
+    {
+        if (AtlasInfo.Atlas)
+        {
+            FSliceUsageInfo UsageInfo;
+            UsageInfo.SliceIndex = AtlasInfo.SliceIndex;
+            UsageInfo.UsedArea = AtlasInfo.Atlas->GetUsedArea();
+            UsageInfo.TotalArea = AtlasInfo.AtlasSize * AtlasInfo.AtlasSize;
+            UsageInfo.UsagePercent = AtlasInfo.Atlas->GetUsagePercentage();
+            Stats.PointSpotSliceUsage.push_back(UsageInfo);
+        }
+    }
+
     return Stats;
 }
 
