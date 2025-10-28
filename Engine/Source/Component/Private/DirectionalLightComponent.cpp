@@ -236,8 +236,8 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera) 
 
     // PSM without SceneAABB - fallback to default scene bounds
     FAABB DefaultAABB;
-    DefaultAABB.Min = FVector(-ShadowDistance * 0.5f, -ShadowDistance * 0.5f, -ShadowDistance * 0.5f);
-    DefaultAABB.Max = FVector(ShadowDistance * 0.5f, ShadowDistance * 0.5f, ShadowDistance * 0.5f);
+    DefaultAABB.Min = FVector(-PSMCoverageDistance * 0.5f, -PSMCoverageDistance * 0.5f, -PSMCoverageDistance * 0.5f);
+    DefaultAABB.Max = FVector(PSMCoverageDistance * 0.5f, PSMCoverageDistance * 0.5f, PSMCoverageDistance * 0.5f);
 
     return GetLightProjectionMatrix(InCamera, DefaultAABB);
 }
@@ -274,12 +274,12 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera, 
     FMatrix CameraProj = InCamera->GetProjectionMatrix();
 
     // 2. Compute virtual camera near/far
-    // Use ShadowDistance to limit shadow range around camera (better resolution)
+    // Use PSMCoverageDistance to limit shadow range around camera (better resolution)
     // PSM trade-off: High resolution near camera vs coverage of distant objects
     float ZNear = InCamera->GetNearZ();
-    float ZFar = std::min(ShadowDistance, InCamera->GetFarZ());  // Clamp to ShadowDistance
+    float ZFar = std::min(PSMCoverageDistance, InCamera->GetFarZ());  // Clamp to PSMCoverageDistance
 
-    // Optional: Also consider scene AABB but clamp to ShadowDistance
+    // Optional: Also consider scene AABB but clamp to PSMCoverageDistance
     FAABB EyeSpaceAABB = SceneAABB.Transform(CameraView, false);
     if (EyeSpaceAABB.Min.Z > ZNear && EyeSpaceAABB.Min.Z < ZFar)
     {
@@ -314,8 +314,8 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera, 
         UE_LOG("[PSM DirectionalLight Frame %d] Virtual Camera Z-Precision:", FrameCounter);
         UE_LOG("  ZNear: %.4f, ZFar: %.4f, Ratio: %.2f:1", ZNear, ZFar, VirtualCameraRatio);
         UE_LOG("  Infinity: %.4f (Target: %.2f), SlideBack: %.4f", Infinity, MIN_INFINITY_Z, SlideBack);
-        UE_LOG("  ShadowDistance: %.2f, EyeAABB: [%.2f, %.2f]",
-               ShadowDistance, EyeSpaceAABB.Min.Z, EyeSpaceAABB.Max.Z);
+        UE_LOG("  PSMCoverageDistance: %.2f, EyeAABB: [%.2f, %.2f]",
+               PSMCoverageDistance, EyeSpaceAABB.Min.Z, EyeSpaceAABB.Max.Z);
     }
 
     // 4. Create virtual camera matrices

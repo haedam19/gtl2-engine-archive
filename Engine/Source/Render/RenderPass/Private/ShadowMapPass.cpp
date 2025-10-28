@@ -9,7 +9,9 @@
 #include "Render/Renderer/Public/RenderResourceFactory.h"
 #include "Render/Renderer/Public/Renderer.h"
 #include "Render/Renderer/Public/ShadowAtlasManager.h"
+#include "Render/RenderPass/Public/LightPass.h"
 #include "Utility/Public/CSMBuilder.h"
+#include "Editor/Public/Camera.h"
 
 FShadowMapPass::FShadowMapPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferLightViewProj, ID3D11Buffer* InConstantBufferCascadeShadow, ID3D11Buffer* InConstantBufferModel,
     ID3D11VertexShader* InVS, ID3D11PixelShader* InPS, ID3D11InputLayout* InLayout, ID3D11DepthStencilState* InDS)
@@ -297,8 +299,29 @@ RENDER_SPOTLIGHT:
 			SpotLightsAsPointLights.push_back(SpotLight);
 	}
 
-	// Atlas에서 영역/슬라이스 할당
-	TArray<FLightAllocationPair> AllocatedSpotLights = AtlasManager->AllocatePointSpotLights(SpotLightsAsPointLights);
+	// 2) LOD를 위한 클러스터 영향도 수집 및 Atlas에서 영역/슬라이스 할당
+	TArray<FLightAllocationPair> AllocatedSpotLights;
+
+	// 카메라 위치와 클러스터 정보 수집 (LOD 적용)
+	if (Context.CurrentCamera && Renderer.GetLightPass())
+	{
+		FVector CameraPos = Context.CurrentCamera->GetLocation();
+		TArray<FLightClusterInfluence> ClusterInfluences = Renderer.GetLightPass()->GetSpotLightClusterInfluences();
+
+		// 배열 인덱스 기반 Map 생성
+		TMap<uint32, uint32> InfluenceMap;
+		for (const FLightClusterInfluence& Influence : ClusterInfluences)
+		{
+			InfluenceMap[Influence.LightIndex] = Influence.AffectedClusterCount;
+		}
+
+		AllocatedSpotLights = AtlasManager->AllocatePointSpotLights(SpotLightsAsPointLights, CameraPos, &InfluenceMap);
+	}
+	else
+	{
+		// LOD 없이 기존 방식으로 할당
+		AllocatedSpotLights = AtlasManager->AllocatePointSpotLights(SpotLightsAsPointLights);
+	}
 
 	// 슬라이스별로 라이트를 묶는다 (AtlasIndex 기준)
 	std::unordered_map<uint32, std::vector<const FLightAllocationPair*>> spotBySlice;
