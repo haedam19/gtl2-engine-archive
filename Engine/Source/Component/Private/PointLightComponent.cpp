@@ -79,5 +79,15 @@ void UPointLightComponent::EnsureVisualizationBillboard()
 }
 FPointLightInfo UPointLightComponent::GetPointlightInfo() const
 {
-	return FPointLightInfo{ FVector4(LightColor, 1.0f), GetWorldLocation(), Intensity, AttenuationRadius, DistanceFalloffExponent };
+	FPointLightInfo Info{};
+	Info.Color = FVector4(LightColor, 1.0f);
+	Info.Position = GetWorldLocation();
+	Info.Intensity = Intensity;
+	Info.Range = AttenuationRadius;
+	Info.DistanceFalloffExponent = DistanceFalloffExponent;
+	Info.AtlasIndex = 0;
+	Info.ShadowEnabled = 0;
+	Info.ShadowBias = GetShadowBias();
+	Info.Padding = FVector::ZeroVector();
+	return Info;
 }
