@@ -4,6 +4,7 @@
 #include "Manager/Time/Public/TimeManager.h"
 #include "Global/Memory.h"
 #include "Render/Renderer/Public/Renderer.h"
+#include "Render/Renderer/Public/ShadowAtlasManager.h"
 
 IMPLEMENT_SINGLETON_CLASS(UStatOverlay, UObject)
 
@@ -261,7 +262,8 @@ void UStatOverlay::RecordDecalStats(uint32 InRenderedDecal, uint32 InCollidedCom
 
 void UStatOverlay::RenderVRAM(ID2D1DeviceContext* d2dCtx)
 {
-    auto* DeviceResources = URenderer::GetInstance().GetDeviceResources();
+    auto& Renderer = URenderer::GetInstance();
+    auto* DeviceResources = Renderer.GetDeviceResources();
 
     size_t UsedVRAM = 0;
     size_t TotalVRAM = 0;
@@ -270,10 +272,6 @@ void UStatOverlay::RenderVRAM(ID2D1DeviceContext* d2dCtx)
     float UsedVRAMMB = static_cast<float>(UsedVRAM) / (1024.0f * 1024.0f);
     float TotalVRAMMB = static_cast<float>(TotalVRAM) / (1024.0f * 1024.0f);
     float UsagePercent = TotalVRAM > 0 ? (static_cast<float>(UsedVRAM) / static_cast<float>(TotalVRAM)) * 100.0f : 0.0f;
-
-    char Buf[128];
-    sprintf_s(Buf, sizeof(Buf), "VRAM: %.1f / %.1f MB (%.1f%%)", UsedVRAMMB, TotalVRAMMB, UsagePercent);
-    FString text = Buf;
 
     float OffsetY = 0.0f;
     if (IsStatEnabled(EStatType::FPS))     OffsetY += 20.0f;
@@ -286,9 +284,52 @@ void UStatOverlay::RenderVRAM(ID2D1DeviceContext* d2dCtx)
         OffsetY += ProfileKeys.size() * 20.0f;
     }
 
-    float r = 0.5f, g = 1.0f, b = 1.0f;
-    if (UsagePercent > 90.0f) { r = 1.0f; g = 0.0f; b = 0.0f; }
-    else if (UsagePercent > 75.0f) { r = 1.0f; g = 1.0f; b = 0.0f; }
+    // VRAM 총 사용량
+    {
+        char Buf[128];
+        sprintf_s(Buf, sizeof(Buf), "VRAM: %.1f / %.1f MB (%.1f%%)", UsedVRAMMB, TotalVRAMMB, UsagePercent);
+        FString text = Buf;
 
-    RenderText(d2dCtx, text, OverlayX, OverlayY + OffsetY, r, g, b);
+        float r = 0.5f, g = 1.0f, b = 1.0f;
+        if (UsagePercent > 90.0f) { r = 1.0f; g = 0.0f; b = 0.0f; }
+        else if (UsagePercent > 75.0f) { r = 1.0f; g = 1.0f; b = 0.0f; }
+
+        RenderText(d2dCtx, text, OverlayX, OverlayY + OffsetY, r, g, b);
+        OffsetY += 20.0f;
+    }
+
+    // Shadow Atlas 통계
+    auto* AtlasManager = Renderer.GetShadowAtlasManager();
+    if (AtlasManager)
+    {
+        auto Stats = AtlasManager->GetAtlasStats();
+
+        // Directional Atlas
+        {
+            char Buf[256];
+            sprintf_s(Buf, sizeof(Buf), "  Shadow Atlas (Dir): %u / %u Slices (%.1f MB)",
+                Stats.DirectionalSliceCount, Stats.DirectionalCapacity, Stats.DirectionalVRAM_MB);
+            FString text = Buf;
+            RenderText(d2dCtx, text, OverlayX, OverlayY + OffsetY, 0.7f, 0.9f, 1.0f);
+            OffsetY += 20.0f;
+        }
+
+        // PointSpot Atlas
+        {
+            char Buf[256];
+            sprintf_s(Buf, sizeof(Buf), "  Shadow Atlas (P/S): %u / %u Slices (%.1f MB)",
+                Stats.PointSpotSliceCount, Stats.PointSpotCapacity, Stats.PointSpotVRAM_MB);
+            FString text = Buf;
+            RenderText(d2dCtx, text, OverlayX, OverlayY + OffsetY, 0.7f, 0.9f, 1.0f);
+            OffsetY += 20.0f;
+        }
+
+        // 총 Shadow Atlas VRAM
+        {
+            char Buf[256];
+            sprintf_s(Buf, sizeof(Buf), "  Shadow Atlas Total: %.1f MB", Stats.TotalVRAM_MB);
+            FString text = Buf;
+            RenderText(d2dCtx, text, OverlayX, OverlayY + OffsetY, 0.9f, 1.0f, 0.5f);
+        }
+    }
 }

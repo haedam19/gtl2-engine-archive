@@ -372,6 +372,29 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocateDirectionalLights(cons
     }
 
     // ===========================================================================
+    // 1-1단계: 필요한 총 Slice 개수를 미리 계산하여 한 번에 확장
+    // ===========================================================================
+    if (!SortEntries.empty())
+    {
+        // DirectionalLight는 보통 1~2개지만 안전하게 처리
+        uint32 AtlasSize = GetDefaultAtlasSize(EShadowAtlasType::DirectionalCSM);
+        uint32 RequiredSlices = (uint32)SortEntries.size(); // DirectionalLight는 1개당 1 Slice (CSM 포함)
+
+        // 현재 Capacity가 부족하면 미리 확장
+        while (DirectionalArrayCapacity < RequiredSlices)
+        {
+            UE_LOG_INFO("ShadowAtlasManager: DirectionalCSM Atlas 사전 확장 필요 (%d lights, capacity: %d)",
+                (uint32)SortEntries.size(), DirectionalArrayCapacity);
+
+            if (!ExpandAtlasArray(EShadowAtlasType::DirectionalCSM))
+            {
+                UE_LOG_ERROR("ShadowAtlasManager: DirectionalCSM Atlas 사전 확장 실패");
+                break;
+            }
+        }
+    }
+
+    // ===========================================================================
     // 2단계: Sorting (First-Fit Decreasing)
     // ===========================================================================
     std::sort(SortEntries.begin(), SortEntries.end());
@@ -436,7 +459,56 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(const 
     TArray<FLightAllocationPair> Result;
 
     // ===========================================================================
-    // 0단계: CurrentLightAllocations에서 기존 PointSpot 할당 정보 제거
+    // 0-1단계: 필요한 총 Slice 개수를 미리 계산하여 한 번에 확장
+    // ===========================================================================
+    uint32 TotalLights = 0;
+    for (UPointLightComponent* Light : Lights)
+    {
+        if (Light && Light->GetLightEnabled())
+        {
+            TotalLights++;
+        }
+    }
+
+    if (TotalLights > 0)
+    {
+        // 실제 해상도를 기반으로 필요한 면적 계산 (더 정확하게)
+        uint32 AtlasSize = GetDefaultAtlasSize(EShadowAtlasType::PointSpotLight);
+        uint64 TotalRequiredArea = 0; // uint64로 오버플로우 방지
+
+        for (UPointLightComponent* Light : Lights)
+        {
+            if (Light && Light->GetLightEnabled())
+            {
+                uint32 Resolution = CalculatePointSpotLightResolution(Light);
+                TotalRequiredArea += (uint64)Resolution * Resolution;
+            }
+        }
+
+        // Atlas 면적 기준으로 필요한 Slice 개수 계산 (70% 효율 가정, Packing 손실)
+        uint64 AtlasArea = (uint64)AtlasSize * AtlasSize;
+        uint64 EffectiveAtlasArea = (AtlasArea * 70) / 100; // 70% 효율
+        uint32 RequiredSlices = (uint32)((TotalRequiredArea + EffectiveAtlasArea - 1) / EffectiveAtlasArea);
+
+        // 최소 1개는 필요
+        if (RequiredSlices < 1) RequiredSlices = 1;
+
+        // 현재 Capacity가 부족하면 미리 확장
+        while (PointSpotArrayCapacity < RequiredSlices)
+        {
+            UE_LOG_INFO("ShadowAtlasManager: PointSpot Atlas 사전 확장 필요 (%d lights, %d slices needed, capacity: %d)",
+                TotalLights, RequiredSlices, PointSpotArrayCapacity);
+
+            if (!ExpandAtlasArray(EShadowAtlasType::PointSpotLight))
+            {
+                UE_LOG_ERROR("ShadowAtlasManager: PointSpot Atlas 사전 확장 실패");
+                break;
+            }
+        }
+    }
+
+    // ===========================================================================
+    // 0-2단계: CurrentLightAllocations에서 기존 PointSpot 할당 정보 제거
     // (DirectionalLight 할당 정보는 유지)
     // ===========================================================================
     // PointSpot Light 할당 정보만 선택적으로 제거
@@ -689,6 +761,34 @@ bool FShadowAtlasManager::CreateAtlasArray(EShadowAtlasType Type, uint32 Capacit
     return true;
 }
 
+FShadowAtlasManager::FAtlasStats FShadowAtlasManager::GetAtlasStats() const
+{
+    FAtlasStats Stats;
+
+    // Directional Atlas 통계
+    Stats.DirectionalSliceCount = static_cast<uint32>(DirectionalCSMAtlases.size());
+    Stats.DirectionalCapacity = DirectionalArrayCapacity;
+
+    // PointSpot Atlas 통계
+    Stats.PointSpotSliceCount = static_cast<uint32>(PointSpotAtlases.size());
+    Stats.PointSpotCapacity = PointSpotArrayCapacity;
+
+    // VRAM 계산 (Capacity 기준)
+    // D24_UNORM_S8_UINT = 4 bytes per pixel
+    const uint32 BytesPerPixel = 4;
+    const uint32 DirectionalAtlasSize = GetDefaultAtlasSize(EShadowAtlasType::DirectionalCSM);
+    const uint32 PointSpotAtlasSize = GetDefaultAtlasSize(EShadowAtlasType::PointSpotLight);
+
+    uint64 DirectionalVRAM = (uint64)DirectionalAtlasSize * DirectionalAtlasSize * BytesPerPixel * DirectionalArrayCapacity;
+    uint64 PointSpotVRAM = (uint64)PointSpotAtlasSize * PointSpotAtlasSize * BytesPerPixel * PointSpotArrayCapacity;
+
+    Stats.DirectionalVRAM_MB = static_cast<float>(DirectionalVRAM) / (1024.0f * 1024.0f);
+    Stats.PointSpotVRAM_MB = static_cast<float>(PointSpotVRAM) / (1024.0f * 1024.0f);
+    Stats.TotalVRAM_MB = Stats.DirectionalVRAM_MB + Stats.PointSpotVRAM_MB;
+
+    return Stats;
+}
+
 bool FShadowAtlasManager::ExpandAtlasArray(EShadowAtlasType Type)
 {
     // 현재 용량 가져오기
@@ -700,13 +800,13 @@ bool FShadowAtlasManager::ExpandAtlasArray(EShadowAtlasType Type)
     {
     case EShadowAtlasType::DirectionalCSM:
         OldCapacity = DirectionalArrayCapacity;
-        NewCapacity = OldCapacity * 2;  // 2배 확장
+        NewCapacity = OldCapacity + 1;  // 1개씩 증가 (1→2→3→4...)
         DirectionalArrayCapacity = NewCapacity;
         Atlases = &DirectionalCSMAtlases;
         break;
     case EShadowAtlasType::PointSpotLight:
         OldCapacity = PointSpotArrayCapacity;
-        NewCapacity = OldCapacity * 2;
+        NewCapacity = OldCapacity + 1;  // 1개씩 증가
         PointSpotArrayCapacity = NewCapacity;
         Atlases = &PointSpotAtlases;
         break;

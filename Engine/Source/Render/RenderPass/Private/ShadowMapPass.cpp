@@ -159,7 +159,19 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 					}
 				}
 
-				// CSM 렌더링 후 RenderTarget Unbind
+				// CSM 렌더링 후 즉시 모든 리소스 Unbind (Resource Hazard 방지)
+				ID3D11ShaderResourceView* NullSRVs[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT] = { nullptr };
+				ID3D11UnorderedAccessView* NullUAVs[D3D11_1_UAV_SLOT_COUNT] = { nullptr };
+
+				DeviceContext->VSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+				DeviceContext->PSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+				DeviceContext->CSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+				DeviceContext->CSSetUnorderedAccessViews(0, D3D11_1_UAV_SLOT_COUNT, NullUAVs, nullptr);
+				DeviceContext->GSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+				DeviceContext->HSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+				DeviceContext->DSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+
+				// RenderTarget Unbind
 				 NullRTV = nullptr;
 				ID3D11DepthStencilView* NullDSV = nullptr;
 				Pipeline->SetRenderTargets(1, &NullRTV, NullDSV);
@@ -252,6 +264,23 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 					// Draw
 					Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
 				}
+
+				// 라이트별 렌더링 후 즉시 모든 리소스 Unbind (Resource Hazard 방지)
+				ID3D11ShaderResourceView* NullSRVs[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT] = { nullptr };
+				ID3D11UnorderedAccessView* NullUAVs[D3D11_1_UAV_SLOT_COUNT] = { nullptr };
+
+				DeviceContext->VSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+				DeviceContext->PSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+				DeviceContext->CSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+				DeviceContext->CSSetUnorderedAccessViews(0, D3D11_1_UAV_SLOT_COUNT, NullUAVs, nullptr);
+				DeviceContext->GSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+				DeviceContext->HSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+				DeviceContext->DSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+
+				// RenderTarget Unbind
+				ID3D11RenderTargetView* LightNullRTV = nullptr;
+				ID3D11DepthStencilView* LightNullDSV = nullptr;
+				Pipeline->SetRenderTargets(1, &LightNullRTV, LightNullDSV);
 			}
 		}
 	}
@@ -384,10 +413,33 @@ RENDER_SPOTLIGHT:
 				Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
 			}
 
+			// 🔥 Draw 직후 즉시 모든 리소스 Unbind (Resource Hazard 방지)
+			// DSV로 렌더링 중인 Texture2DArray가 다른 라이트에서 SRV로 바인딩되는 것을 방지
+			ID3D11ShaderResourceView* NullSRVs[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT] = { nullptr };
+			ID3D11UnorderedAccessView* NullUAVs[D3D11_1_UAV_SLOT_COUNT] = { nullptr };
+
+			// Vertex Shader
+			DeviceContext->VSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+			// Pixel Shader
+			DeviceContext->PSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+			// Compute Shader
+			DeviceContext->CSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+			DeviceContext->CSSetUnorderedAccessViews(0, D3D11_1_UAV_SLOT_COUNT, NullUAVs, nullptr);
+
+			// Geometry/Hull/Domain Shaders (혹시 사용될 경우 대비)
+			DeviceContext->GSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+			DeviceContext->HSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+			DeviceContext->DSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
+
 			// Optional: 라이트에 LVP/해상도 캐시
 			SpotLight->UpdateLVP(LightView, LightProj);
 			SpotLight->UpdateShadowMapSize(Region.Width, Region.Height);
 		}
+
+		// 🔥 슬라이스 렌더링 완료 후 DSV Unbind
+		ID3D11RenderTargetView* SliceNullRTV = nullptr;
+		ID3D11DepthStencilView* SliceNullDSV = nullptr;
+		Pipeline->SetRenderTargets(1, &SliceNullRTV, SliceNullDSV);
 	}
 
 

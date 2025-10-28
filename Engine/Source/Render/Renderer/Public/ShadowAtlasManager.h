@@ -103,6 +103,20 @@ public:
     ID3D11ShaderResourceView* GetSliceSRV(
         EShadowAtlasType type, uint32 sliceIndex);
 
+    // VRAM 통계 정보
+    struct FAtlasStats
+    {
+        uint32 DirectionalSliceCount = 0;
+        uint32 DirectionalCapacity = 0;
+        uint32 PointSpotSliceCount = 0;
+        uint32 PointSpotCapacity = 0;
+        float DirectionalVRAM_MB = 0.0f;
+        float PointSpotVRAM_MB = 0.0f;
+        float TotalVRAM_MB = 0.0f;
+    };
+
+    FAtlasStats GetAtlasStats() const;
+
 private:
     // 새 Atlas Slice 생성 (Texture2DArray의 다음 슬라이스)
     bool CreateNewAtlasSlice(EShadowAtlasType Type, uint32 AtlasSize);
