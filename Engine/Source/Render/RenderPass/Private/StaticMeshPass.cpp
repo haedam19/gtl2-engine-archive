@@ -80,6 +80,10 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 		FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);
 		Pipeline->SetConstantBuffer(6, EShaderType::VS, ConstantBufferLightViewProj);  // UberLit.hlsl의 b6
 
+		// Cascade Shadow Constant Buffer 바인딩 (b7)
+		ID3D11Buffer* ccb = URenderer::GetInstance().GetCascadeConstantBuffer();
+		Pipeline->SetConstantBuffer(7, EShaderType::PS, ccb);
+
 		// Shadow Atlas Region 정보 수집
 		if (AtlasManager)
 		{

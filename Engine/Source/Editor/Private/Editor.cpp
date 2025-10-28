@@ -256,7 +256,18 @@ void UEditor::ProcessMouseInput()
 	}
 	else
 	{
-		if (GetSelectedActor() && Gizmo.HasComponent())
+		AActor* Overrider = CurrentCamera->GetOverrider();
+		AActor* SelectedActor = GetSelectedActor();
+		const bool bIsOverriderSelected = (Overrider && SelectedActor == Overrider);
+
+		// Camera Overriding 중이고 Overrider가 선택된 상태면 기즈모 반응 안 하도록 처리
+		if (bIsOverriderSelected && Gizmo.IsDragging())
+		{
+			Gizmo.EndDrag();
+			Gizmo.SetGizmoDirection(EGizmoDirection::None);
+		}
+
+		if (!bIsOverriderSelected && SelectedActor && Gizmo.HasComponent())
 		{
 			ObjectPicker.PickGizmo(CurrentCamera, WorldRay, Gizmo, CollisionPoint);
 		}
@@ -280,7 +291,18 @@ void UEditor::ProcessMouseInput()
 					Candidate.insert(Candidate.end(), DynamicCandidates.begin(), DynamicCandidates.end());
 				}
 				
-
+				// 카메라의 Overrider는 피킹 대상으로 제외
+				// 안 그러면 오버라이드 중엔 자기 자신 밖에 피킹하지 못하게 됨
+				if (Overrider)
+				{
+					// Owner가 Overrider인 컴포넌트는 피킹 대상에서 제외
+					auto it = std::remove_if(Candidate.begin(), Candidate.end(),
+						[&](UPrimitiveComponent* pc) {
+							return pc && pc->GetOwner() == Overrider;
+						});
+					Candidate.erase(it, Candidate.end());
+				}
+				
 				TStatId StatId("Picking");
 				FScopeCycleCounter PickCounter(StatId);
 				UPrimitiveComponent* PrimitiveCollided = ObjectPicker.PickPrimitive(CurrentCamera, WorldRay, Candidate, &ActorDistance);

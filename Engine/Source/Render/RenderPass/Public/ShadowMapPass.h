@@ -4,7 +4,7 @@
 class FShadowMapPass : public FRenderPass
 {
 public:
-    FShadowMapPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferLightViewProj, ID3D11Buffer* InConstantBufferModel,
+    FShadowMapPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferLightViewProj, ID3D11Buffer* InConstantBufferCascadeShadow, ID3D11Buffer* InConstantBufferModel,
         ID3D11VertexShader* InVS, ID3D11PixelShader* InPS, ID3D11InputLayout* InLayout, ID3D11DepthStencilState* InDS);
 
     void Execute(FRenderingContext& Context) override;
@@ -16,6 +16,7 @@ public:
 
     // VSM 리소스 접근자
     ID3D11ShaderResourceView* GetVSMMomentMapSRV() const { return VSMMomentMapSRV; }
+    ID3D11ShaderResourceView* GetCSMShadowMapSRV() const { return CSMShadowMapSRV; }
 
 private:
     bool CreateVSMResources();
@@ -27,6 +28,7 @@ private:
     ID3D11DepthStencilState* DS = nullptr;
 
     ID3D11Buffer* ConstantBufferLightViewProj = nullptr;
+    ID3D11Buffer* ConstantBufferCascadeShadow = nullptr;
 
     // VSM Resources (FLightPass 패턴처럼 자체 관리)
     ID3D11Texture2D* VSMMomentMap = nullptr;
@@ -40,4 +42,7 @@ private:
     ID3D11ComputeShader* CSDepthToMoment = nullptr;
     ID3D11ComputeShader* CSBlurH = nullptr;
     ID3D11ComputeShader* CSBlurV = nullptr;
+
+    // CSM Resources
+    ID3D11ShaderResourceView* CSMShadowMapSRV = nullptr;
 };

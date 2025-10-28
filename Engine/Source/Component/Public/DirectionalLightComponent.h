@@ -85,7 +85,7 @@ private:
     FEditorPrimitive LightDirectionArrow;
 
     // Shadow parameters
-    float ShadowDistance = 100.0f;  // Shadow 렌더링 거리 (PSM 해상도 최적화: 1000→100)
+    float ShadowDistance = 128.0f;  // Shadow 렌더링 거리 (PSM 해상도 최적화: 1000→100)
     EShadowMapType ShadowMapType = EShadowMapType::LVP;  // Shadow Map 타입
 
     // Shadow Resolution

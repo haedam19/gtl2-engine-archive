@@ -74,7 +74,7 @@ void URenderer::Init(HWND InWindowHandle)
 	// Build render passes
 	// render pass order: Shadow Map -> Light -> Static Mesh -> Decal -> Billboard -> Text -> Fog -> SceneDepth (-> FXAA)
 
-	ShadowMapPass = new FShadowMapPass(Pipeline, ConstantBufferLightViewProj, ConstantBufferModels,
+	ShadowMapPass = new FShadowMapPass(Pipeline, ConstantBufferLightViewProj, ConstantBufferCascadeShadow, ConstantBufferModels,
 		ShadowDepthVertexShader, ShadowDepthPixelShader, ShadowDepthInputLayout, DefaultDepthStencilState);
 	RenderPasses.push_back(ShadowMapPass);
 
@@ -809,6 +809,9 @@ void URenderer::ReleaseDefaultShader()
 	SafeRelease(ShadowDepthPixelShader);
 	SafeRelease(ShadowDepthInputLayout);
 	SafeRelease(ShadowSampler);
+
+	SafeRelease(ShadowMapPreviewVertexShader);
+	SafeRelease(ShadowMapPreviewPixelShader);
 }
 
 void URenderer::ReleaseDepthStencilState()
@@ -985,43 +988,65 @@ void URenderer::RenderLevel(FViewport* InViewport)
 		{DeviceResources->GetViewportInfo().Width, DeviceResources->GetViewportInfo().Height}
 		);
 
-	// Compute SceneAABB for PSM using Octree
-	constexpr float MIN_SCENE_AABB_SIZE = 1.0f;  // Reduced from 100.0f for better shadow resolution
-	if (FOctree* StaticOctree = CurrentLevel->GetStaticOctree())
+	// Compute SceneAABB for PSM using frustum-culled primitives (PracticalPSM approach)
+	// This matches PracticalPSM's ComputeVirtualCameraParameters() which uses frustum-culled objects
+	constexpr float MIN_SCENE_AABB_SIZE = 1.0f;
+	FAABB SceneAABB;
+	SceneAABB.Min = FVector(FLT_MAX, FLT_MAX, FLT_MAX);
+	SceneAABB.Max = FVector(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+	bool bHasValidPrimitives = false;
+	for (auto* Prim : FinalVisiblePrims)
 	{
-		FOctree* EnclosingNode = StaticOctree->FindSmallestEnclosingNode();
-		if (EnclosingNode)
+		if (Prim && Prim->IsVisible())
 		{
-			FAABB OctreeAABB = EnclosingNode->GetBoundingBox();
-			FVector Size = OctreeAABB.Max - OctreeAABB.Min;
+			FVector Min, Max;
+			Prim->GetWorldAABB(Min, Max);
 
-			// Debug: Log actual scene size
-			static bool bLoggedOnce = false;
-			if (!bLoggedOnce)
-			{
-				UE_LOG("[PSM] Scene AABB: Min(%.2f, %.2f, %.2f) Max(%.2f, %.2f, %.2f) Size(%.2f, %.2f, %.2f)",
-					OctreeAABB.Min.X, OctreeAABB.Min.Y, OctreeAABB.Min.Z,
-					OctreeAABB.Max.X, OctreeAABB.Max.Y, OctreeAABB.Max.Z,
-					Size.X, Size.Y, Size.Z);
-				bLoggedOnce = true;
-			}
+			SceneAABB.Min.X = std::min(SceneAABB.Min.X, Min.X);
+			SceneAABB.Min.Y = std::min(SceneAABB.Min.Y, Min.Y);
+			SceneAABB.Min.Z = std::min(SceneAABB.Min.Z, Min.Z);
+			SceneAABB.Max.X = std::max(SceneAABB.Max.X, Max.X);
+			SceneAABB.Max.Y = std::max(SceneAABB.Max.Y, Max.Y);
+			SceneAABB.Max.Z = std::max(SceneAABB.Max.Z, Max.Z);
 
-			// Clamp to minimum size for numerical stability (very small scenes only)
-			if (Size.X < MIN_SCENE_AABB_SIZE || Size.Y < MIN_SCENE_AABB_SIZE || Size.Z < MIN_SCENE_AABB_SIZE)
-			{
-				FVector Center = OctreeAABB.GetCenter();
-				float HalfSize = MIN_SCENE_AABB_SIZE * 0.5f;
-				OctreeAABB.Min = Center - FVector(HalfSize, HalfSize, HalfSize);
-				OctreeAABB.Max = Center + FVector(HalfSize, HalfSize, HalfSize);
-
-				if (!bLoggedOnce)
-				{
-					UE_LOG("[PSM] Scene too small, clamped to MIN_SIZE: %.2f", MIN_SCENE_AABB_SIZE);
-				}
-			}
-			RenderingContext.SceneAABB = OctreeAABB;
+			bHasValidPrimitives = true;
 		}
 	}
+
+	// Clamp to minimum size for numerical stability
+	if (bHasValidPrimitives)
+	{
+		FVector Size = SceneAABB.Max - SceneAABB.Min;
+
+		// Debug: Log actual scene size
+		static bool bLoggedOnce = false;
+		if (!bLoggedOnce)
+		{
+			UE_LOG("[PSM] Scene AABB (frustum-culled): Min(%.2f, %.2f, %.2f) Max(%.2f, %.2f, %.2f) Size(%.2f, %.2f, %.2f)",
+				SceneAABB.Min.X, SceneAABB.Min.Y, SceneAABB.Min.Z,
+				SceneAABB.Max.X, SceneAABB.Max.Y, SceneAABB.Max.Z,
+				Size.X, Size.Y, Size.Z);
+			bLoggedOnce = true;
+		}
+
+		if (Size.X < MIN_SCENE_AABB_SIZE || Size.Y < MIN_SCENE_AABB_SIZE || Size.Z < MIN_SCENE_AABB_SIZE)
+		{
+			FVector Center = SceneAABB.GetCenter();
+			float HalfSize = MIN_SCENE_AABB_SIZE * 0.5f;
+			SceneAABB.Min = Center - FVector(HalfSize, HalfSize, HalfSize);
+			SceneAABB.Max = Center + FVector(HalfSize, HalfSize, HalfSize);
+		}
+	}
+	else
+	{
+		// No visible primitives - use default small box at origin
+		float HalfSize = MIN_SCENE_AABB_SIZE * 0.5f;
+		SceneAABB.Min = FVector(-HalfSize, -HalfSize, -HalfSize);
+		SceneAABB.Max = FVector(HalfSize, HalfSize, HalfSize);
+	}
+
+	RenderingContext.SceneAABB = SceneAABB;
 
 	// 1. Sort visible primitive components
 	RenderingContext.AllPrimitives = FinalVisiblePrims;
@@ -1215,6 +1240,7 @@ void URenderer::CreateConstantBuffers()
 	ConstantBufferViewProj = FRenderResourceFactory::CreateConstantBuffer<FCameraConstants>();
 	ConstantBufferLightViewProj = FRenderResourceFactory::CreateConstantBuffer<FLightViewProjConstants>();
 	ShadowPreviewConstantBuffer = FRenderResourceFactory::CreateConstantBuffer<FShadowPreviewParameters>();
+	ConstantBufferCascadeShadow = FRenderResourceFactory::CreateConstantBuffer<FCascadeShadowConstants>();
 }
 
 void URenderer::ReleaseConstantBuffers()
@@ -1224,4 +1250,5 @@ void URenderer::ReleaseConstantBuffers()
 	SafeRelease(ConstantBufferViewProj);
 	SafeRelease(ConstantBufferLightViewProj);
 	SafeRelease(ShadowPreviewConstantBuffer);
+	SafeRelease(ConstantBufferCascadeShadow);
 }

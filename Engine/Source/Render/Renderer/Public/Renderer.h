@@ -112,6 +112,7 @@ public:
 	ID3D11BlendState* GetAlphaBlendState() const { return AlphaBlendState; }
 	ID3D11Buffer* GetConstantBufferModels() const { return ConstantBufferModels; }
 	ID3D11Buffer* GetConstantBufferViewProj() const { return ConstantBufferViewProj; }
+	ID3D11Buffer* GetCascadeConstantBuffer() const { return ConstantBufferCascadeShadow; }
 
 	void SetIsResizing(bool isResizing) { bIsResizing = isResizing; }
 
@@ -156,6 +157,7 @@ private:
 	ID3D11Buffer* ConstantBufferColor = nullptr;
 	ID3D11Buffer* ConstantBufferLightViewProj = nullptr;
 	ID3D11Buffer* ShadowPreviewConstantBuffer = nullptr;
+	ID3D11Buffer* ConstantBufferCascadeShadow = nullptr;
 	FLOAT ClearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
 	// Default Shaders

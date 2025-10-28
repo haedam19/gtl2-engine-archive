@@ -267,8 +267,8 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera, 
 
     // 2. Compute virtual camera near/far
     // Use ShadowDistance to limit shadow range around camera (better resolution)
-    // Instead of using entire scene AABB which might be very far from camera
-    float ZNear = InCamera->GetNearZ();  // Use camera's near plane
+    // PSM trade-off: High resolution near camera vs coverage of distant objects
+    float ZNear = InCamera->GetNearZ();
     float ZFar = std::min(ShadowDistance, InCamera->GetFarZ());  // Clamp to ShadowDistance
 
     // Optional: Also consider scene AABB but clamp to ShadowDistance
