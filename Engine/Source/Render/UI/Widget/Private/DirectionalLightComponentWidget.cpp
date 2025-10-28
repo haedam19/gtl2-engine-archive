@@ -179,6 +179,39 @@ void UDirectionalLightComponentWidget::RenderWidget()
 
     ImGui::Separator();
 
+    if (DirectionalLightComponent->GetShadowMapType() == EShadowMapType::CSM)
+    {
+        ImGui::Text("CSM Settings");
+
+        ImGui::SetNextItemWidth(BoxWidth * 2.5f);
+        float ShadowDistanceValue = DirectionalLightComponent->GetShadowDistance();
+        if (ImGui::DragFloat("Shadow Distance", &ShadowDistanceValue, 10.0f, 100.0f, 20000.0f, "%.0f"))
+        {
+            if (ShadowDistanceValue < 1.0f)
+            {
+                ShadowDistanceValue = 1.0f;
+            }
+            DirectionalLightComponent->SetShadowDistance(ShadowDistanceValue);
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("CSM이 커버할 최대 거리입니다.\n값을 높일수록 더 넓은 영역을 덮지만 해상도가 분산됩니다.");
+        }
+
+        ImGui::SetNextItemWidth(BoxWidth * 2.5f);
+        float CascadeLambda = DirectionalLightComponent->GetShadowCascadeLambda();
+        if (ImGui::SliderFloat("Cascade Split Lambda", &CascadeLambda, 0.0f, 1.0f, "%.2f"))
+        {
+            DirectionalLightComponent->SetShadowCascadeLambda(CascadeLambda);
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("0은 균등 분할, 1은 로그 분할에 가깝습니다.\n씬에 맞춰 적절한 분포를 찾으세요.");
+        }
+
+        ImGui::Separator();
+    }
+
     // Shadow Property 조절
 
     ImGui::SetNextItemWidth(BoxWidth * 2.5f);

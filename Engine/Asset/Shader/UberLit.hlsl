@@ -629,7 +629,7 @@ float CalculateCSMShadow(float3 WorldPos)
 	{
 		float cascadeNear = (cascadeIndex == 0u) ? NearClip : CascadeSplits[cascadeIndex - 1u];
 		float cascadeFar = CascadeSplits[cascadeIndex];
-		const float BlendRatio = 0.1f;
+		const float BlendRatio = 0.10f; // Blend 10% of the cascade range
 		float blendRange = (cascadeFar - cascadeNear) * BlendRatio;
 		float distanceToFar = cascadeFar - viewDepth;
 

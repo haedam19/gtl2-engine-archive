@@ -81,6 +81,9 @@ public:
     // 모든 Atlas 할당 초기화 (매 프레임 시작 시 호출)
     void ClearAllAllocations();
 
+    // 레벨 전환 시 모든 할당 정보 완전 클리어 (댕글링 포인터 방지)
+    void ClearAllLightAllocations();
+
     // Light Sorting + Allocation (핵심 함수)
     // Directional Light들을 받아서 Sorting하고 Atlas에 할당
     TArray<FLightAllocationPair> AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights);
@@ -102,6 +105,39 @@ public:
 
     ID3D11ShaderResourceView* GetSliceSRV(
         EShadowAtlasType type, uint32 sliceIndex);
+
+    // Slice별 사용률 정보
+    struct FSliceUsageInfo
+    {
+        uint32 SliceIndex = 0;
+        float UsagePercent = 0.0f;  // 0~100%
+        uint32 UsedArea = 0;        // 사용된 픽셀 면적
+        uint32 TotalArea = 0;       // 전체 면적
+    };
+
+    // VRAM 통계 정보
+    struct FAtlasStats
+    {
+        uint32 DirectionalSliceCount = 0;      // 실제 생성된 Slice 개수
+        uint32 DirectionalCapacity = 0;        // Texture2DArray 최대 용량
+        uint32 DirectionalLightCount = 0;      // 할당된 라이트 개수
+        uint32 PointSpotSliceCount = 0;        // 실제 생성된 Slice 개수
+        uint32 PointSpotCapacity = 0;          // Texture2DArray 최대 용량
+        uint32 PointSpotLightCount = 0;        // 할당된 라이트 개수
+        float DirectionalVRAM_MB = 0.0f;       // 실제 할당된 VRAM (Capacity 기준)
+        float PointSpotVRAM_MB = 0.0f;         // 실제 할당된 VRAM (Capacity 기준)
+        float TotalVRAM_MB = 0.0f;
+
+        // Slice별 사용률
+        TArray<FSliceUsageInfo> DirectionalSliceUsage;
+        TArray<FSliceUsageInfo> PointSpotSliceUsage;
+    };
+
+    FAtlasStats GetAtlasStats() const;
+
+    // Atlas 크기 설정 (런타임 변경 가능)
+    void SetPointSpotAtlasSize(uint32 NewSize);
+    uint32 GetPointSpotAtlasSize() const { return PointSpotAtlasSize; }
 
 private:
     // 새 Atlas Slice 생성 (Texture2DArray의 다음 슬라이스)
@@ -140,6 +176,9 @@ private:
     ID3D11ShaderResourceView* PointSpotAtlasArraySRV = nullptr;
     uint32 DirectionalArrayCapacity = 1;  // Directional 4장 시작, 필요시 8, 16... 확장
     uint32 PointSpotArrayCapacity = 1;    // PointSpot 8장 시작, 필요시 16, 32... 확장
+
+    // 동적 Atlas 크기 설정
+    uint32 PointSpotAtlasSize = 4096;     // PointSpot Atlas 크기 (기본 4096, 변경 가능: 2048, 4096)
 
     // Release 중복 호출 방지
     bool bIsReleased = false;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include "LightComponent.h"
 #include "Editor/Public/EditorPrimitive.h"
 
@@ -62,6 +64,12 @@ public:
     void SetShadowDistance(float InDistance) { ShadowDistance = InDistance; }
     float GetShadowDistance() const { return ShadowDistance; }
 
+    void SetShadowCascadeLambda(float InLambda) { ShadowCascadeLambda = std::clamp(InLambda, 0.0f, 1.0f); }
+    float GetShadowCascadeLambda() const { return ShadowCascadeLambda; }
+
+    void SetShadowMapType(EShadowMapType InType) { ShadowMapType = InType; }
+    EShadowMapType GetShadowMapType() const { return ShadowMapType; }
+
     // Shadow Resolution
     void SetShadowResolutionScale(float InScale) { ShadowResolutionScale = InScale; }
     float GetShadowResolutionScale() const { return ShadowResolutionScale; }
@@ -82,6 +90,8 @@ private:
     FEditorPrimitive LightDirectionArrow;
 
     // Shadow parameters
+    EShadowMapType ShadowMapType = EShadowMapType::LVP;  // Shadow Map 타입
+    float ShadowCascadeLambda = 0.85f;
     float ShadowDistance = 128.0f;  // Shadow 렌더링 거리 (PSM 해상도 최적화: 1000→100)
 
     // Shadow Resolution

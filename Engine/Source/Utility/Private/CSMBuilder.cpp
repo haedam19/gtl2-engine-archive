@@ -174,22 +174,44 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
     float NearPlane = MinZ;
     float FarPlane = MaxZ;
 
+    //float Side = std::max(Width, Height);
+    //Side = std::max(Side, 1.0f);
+
+    float Side = std::max(2.0f * Radius, 1.0f);
+
+    const float TileSize = CSMShadowMapResolution / CascadesPerRow;
+    const float EffectiveSize = std::max(TileSize - AtlasBorder * 2.0f, 1.0f);
+    const float BaseWorldUnitsPerTexel = (EffectiveSize > 0.0f) ? (Side / EffectiveSize) : 0.0f;
+
+    const float StabilizationMargin = BaseWorldUnitsPerTexel * 2.0f;
+    Side += StabilizationMargin;
+
+    Width = Side;
+    Height = Side;
+
+    const float WorldUnitsPerTexelX = (EffectiveSize > 0.0f) ? (Width / EffectiveSize) : 0.0f;
+    const float WorldUnitsPerTexelY = (EffectiveSize > 0.0f) ? (Height / EffectiveSize) : 0.0f;
+
+    if (WorldUnitsPerTexelX > 0.0f && WorldUnitsPerTexelY > 0.0f)
     {
-        const float TileSize = CSMShadowMapResolution / CascadesPerRow;
-        const float EffectiveSize = std::max(TileSize - AtlasBorder * 2.0f, 1.0f);
-        const uint32 TileW = static_cast<uint32>(EffectiveSize);
-        const uint32 TileH = TileW;
+        const float invX = 1.0f / WorldUnitsPerTexelX;
+        const float invY = 1.0f / WorldUnitsPerTexelY;
 
-        const float WorldUnitsPerTexelX = Width / static_cast<float>(TileW);
-        const float WorldUnitsPerTexelY = Height / static_cast<float>(TileH);
+        float tx = OutView.Data[3][0] * invX;  // 라이트 공간 좌표 -> 텍셀 좌표로 변환
+        float ty = OutView.Data[3][1] * invY;
 
-        const float SnappedCenterX = std::round(CenterX / WorldUnitsPerTexelX) * WorldUnitsPerTexelX;
-        const float SnappedCenterY = std::round(CenterY / WorldUnitsPerTexelY) * WorldUnitsPerTexelY;
+        const float eps = 1e-6f;
 
-        const float DeltaX = SnappedCenterX - CenterX;
-        const float DeltaY = SnappedCenterY - CenterY;
-        const FMatrix SnapTranslation = FMatrix::TranslationMatrix(FVector(-DeltaX, -DeltaY, 0.0f));
-        OutView = OutView * SnapTranslation;
+        tx = std::floor(tx + 0.5f + eps);
+        ty = std::floor(ty + 0.5f + eps);
+
+        OutView.Data[3][0] = tx / invX;        // 다시 라이트 공간 좌표로 환산
+        OutView.Data[3][1] = ty / invY;
+
+        const float snappedWidthTexels = std::ceil(Width * invX);
+        const float snappedHeightTexels = std::ceil(Height * invY);
+        Width = snappedWidthTexels / invX;
+        Height = snappedHeightTexels / invY;
     }
 
     Width = std::max(Width, 1.0f);
@@ -222,9 +244,7 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
 
     // 실제로 CSM이 덮어야 하는 깊이 범위 계산
     const float NearClip = std::max(Camera->GetNearZ(), 0.1f);
-    const float FarClip = std::max(NearClip + 1.0f, std::min(Light->GetShadowDistance(), Camera->GetFarZ()));
-    const float Range = FarClip - NearClip;
-    const float Ratio = FarClip / NearClip;
+    const float MaxShadowDistance = std::min(Light->GetShadowDistance(), Camera->GetFarZ());
 
     // 디렉셔널 라이트의 방향 벡터
     FVector LightDirection = Light->GetForwardVector().GetNormalized();
@@ -232,6 +252,8 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
     FVector SceneMin(FLT_MAX, FLT_MAX, FLT_MAX);
     FVector SceneMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
     bool bHasSceneBounds = false;
+    float MaxCasterDistance = 0.0f;
+    bool bHasCasterDistance = false;
 
     if (!MeshComponents.empty())
     {
@@ -266,6 +288,15 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
             SceneMax.Z = std::max(SceneMax.Z, BoundsMax.Z);
 
             bHasSceneBounds = true;
+
+            const FVector BoundsExtents = (BoundsMax - BoundsMin) * 0.5f;
+            const float BoundingRadius = BoundsExtents.Length();
+            const float MeshMaxDistance = DistanceAlongForward + BoundingRadius;
+            if (MeshMaxDistance > MaxCasterDistance)
+            {
+                MaxCasterDistance = MeshMaxDistance;
+            }
+            bHasCasterDistance = true;
         }
     }
 
@@ -274,6 +305,15 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
         SceneMin = FVector::ZeroVector();
         SceneMax = FVector::ZeroVector();
     }
+
+    float DesiredFarClip = bHasCasterDistance ? MaxCasterDistance : MaxShadowDistance;
+    DesiredFarClip = std::min(DesiredFarClip, MaxShadowDistance);
+    float EffectiveFarClip = std::max(NearClip + 1.0f, DesiredFarClip);
+
+    const float FarClip = EffectiveFarClip;
+    const float Range = FarClip - NearClip;
+    const float Ratio = FarClip / NearClip;
+    const float CascadeLambda = Light ? Light->GetShadowCascadeLambda() : DefaultCascadeSplitLambda;
 
     // 나눠진 Cascade의 Far Z를 기록할 배열 선언
     float Splits[4] = {};
@@ -287,7 +327,7 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
         const float UniformSplit = NearClip + Range * P;
 
         // SplitLambda 값을 사용해 로그 분할 - 유니폼 분할을 볼록 결합
-        const float SplitDistance = CascadeSplitLambda * (LogSplit - UniformSplit) + UniformSplit;
+        const float SplitDistance = CascadeLambda * (LogSplit - UniformSplit) + UniformSplit;
 
         Splits[CascadeIndex] = SplitDistance;
 
@@ -314,5 +354,7 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
 
     return CSM_MAX_CASCADES;
 }
+
+
 
 

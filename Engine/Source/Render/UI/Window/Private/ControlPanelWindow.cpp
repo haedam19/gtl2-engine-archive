@@ -3,6 +3,7 @@
 
 #include "Render/UI/Widget/Public/FPSWidget.h"
 #include "Render/UI/Widget/Public/ActorSpawnWidget.h"
+#include "Render/UI/Widget/Public/ShadowAtlasWidget.h"
 
 IMPLEMENT_CLASS(UControlPanelWindow, UUIWindow)
 /**
@@ -36,6 +37,11 @@ UControlPanelWindow::UControlPanelWindow()
 	UWidget* ActorSpawnWidget = NewObject<UActorSpawnWidget>();
 	ActorSpawnWidget->Initialize();
 	AddWidget(ActorSpawnWidget);
+
+	UWidget* ShadowAtlasWidget = NewObject<UShadowAtlasWidget>();
+	ShadowAtlasWidget->Initialize();
+	AddWidget(ShadowAtlasWidget);
+
 	// 현재 ViewportMenuBarWidget.cpp 에서 사용 중
 	//AddWidget(new UCameraControlWidget);
 }
