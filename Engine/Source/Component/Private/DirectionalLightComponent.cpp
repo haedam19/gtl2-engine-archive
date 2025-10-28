@@ -261,8 +261,13 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera, 
     // World → Camera View → Virtual Camera (slideback) → Virtual Projection → Light View → Light Projection
 
     constexpr float Z_EPSILON = 0.0001f;
-    constexpr float W_EPSILON = 0.001f;  // If |w| < this, use orthographic
+    constexpr float W_EPSILON = 0.04f;  // If |w| < this, use orthographic (empirically: W < 0.04 causes shadow disappear due to coordinate explosion)
     constexpr float MIN_INFINITY_Z = 2.0f;  // Minimum distance from infinity plane
+
+    // Debug output every 100 frames to monitor w-division and z-precision issues
+    static int FrameCounter = 0;
+    static bool bEnableDebugOutput = true;  // Set to false to disable
+    FrameCounter++;
 
     // 1. Get camera matrices
     FMatrix CameraView = InCamera->GetViewMatrix();
@@ -289,15 +294,6 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera, 
     ZNear = std::max(0.1f, ZNear);
     ZFar = std::max(ZNear + 1.0f, ZFar);
 
-    // Debug: Log virtual camera parameters
-    static int logCount = 0;
-    if (logCount < 3)  // Log first 3 frames
-    {
-        UE_LOG("[PSM] Virtual Camera - ZNear: %.2f, ZFar: %.2f, ShadowDistance: %.2f", ZNear, ZFar, ShadowDistance);
-        UE_LOG("[PSM] Eye Space AABB - Min.Z: %.2f, Max.Z: %.2f", EyeSpaceAABB.Min.Z, EyeSpaceAABB.Max.Z);
-        logCount++;
-    }
-
     // 3. Compute slideback for numerical stability
     float Infinity = ZFar / (ZFar - ZNear);
     float SlideBack = 0.0f;
@@ -309,6 +305,17 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera, 
         SlideBack = AdditionalSlide;
         ZFar += AdditionalSlide;  // Update ZFar for projection
         ZNear += AdditionalSlide;
+    }
+
+    // Debug output: Virtual camera Z parameters
+    if (bEnableDebugOutput && (FrameCounter % 100 == 0))
+    {
+        float VirtualCameraRatio = ZFar / ZNear;
+        UE_LOG("[PSM DirectionalLight Frame %d] Virtual Camera Z-Precision:", FrameCounter);
+        UE_LOG("  ZNear: %.4f, ZFar: %.4f, Ratio: %.2f:1", ZNear, ZFar, VirtualCameraRatio);
+        UE_LOG("  Infinity: %.4f (Target: %.2f), SlideBack: %.4f", Infinity, MIN_INFINITY_Z, SlideBack);
+        UE_LOG("  ShadowDistance: %.2f, EyeAABB: [%.2f, %.2f]",
+               ShadowDistance, EyeSpaceAABB.Min.Z, EyeSpaceAABB.Max.Z);
     }
 
     // 4. Create virtual camera matrices
@@ -369,18 +376,52 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera, 
     FVector4 EyeLightDir4(EyeLightDir, 0.0f);
     FVector4 PPLight = FMatrix::VectorMultiply(EyeLightDir4, VirtualCameraProj);
 
-    // 6. Check for inverted shadow (light coming from behind the eye)
-    // PracticalPSM Line 227: m_bShadowTestInverted = (ppLight.w < 0.f)
-    bool bShadowTestInverted = (PPLight.W < 0.0f);
+    // Debug output: W-division monitoring for directional light
+    if (bEnableDebugOutput && (FrameCounter % 100 == 0))
+    {
+        UE_LOG("[PSM DirectionalLight Frame %d] W-Division:", FrameCounter);
+        UE_LOG("  PPLight (direction): (%.4f, %.4f, %.4f, W=%.6f)",
+               PPLight.X, PPLight.Y, PPLight.Z, PPLight.W);
 
-    // 7. Compute light position in post-perspective space
-    // Check if we should use orthographic (light nearly orthogonal to view OR inverted)
-    bool bUseOrthographic = (std::abs(PPLight.W) <= W_EPSILON) || bShadowTestInverted;
+        if (PPLight.W < 0.0f)
+            UE_LOG("  WARNING: Light behind camera (W < 0), shadow inverted!");
+        if (std::abs(PPLight.W) <= W_EPSILON)
+            UE_LOG("  INFO: W nearly zero (|W| <= %.4f), using orthographic projection", W_EPSILON);
+    }
+
+    // 6. Determine projection mode based on W value
+    // Three modes to handle different W ranges:
+    // - |W| < 0.1: Orthographic (safe, no W-division issues)
+    // - W < -0.1: Inverted Perspective (light behind camera, negate direction)
+    // - W > 0.1: Normal Perspective (standard PSM, best quality)
+
+    constexpr float W_THRESHOLD = 0.1f;  // Empirically determined threshold
+
+    enum class EPSMMode
+    {
+        Orthographic,       // |W| < 0.1
+        InvertedPerspective,  // W < -0.1
+        NormalPerspective    // W > 0.1
+    };
+
+    EPSMMode PSMMode;
+    if (std::abs(PPLight.W) < W_THRESHOLD)
+    {
+        PSMMode = EPSMMode::Orthographic;
+    }
+    else if (PPLight.W < 0.0f)
+    {
+        PSMMode = EPSMMode::InvertedPerspective;
+    }
+    else
+    {
+        PSMMode = EPSMMode::NormalPerspective;
+    }
 
     FMatrix LightView;
     FMatrix LightProj;
 
-    if (bUseOrthographic)
+    if (PSMMode == EPSMMode::Orthographic)
     {
         // Orthographic case: treat as standard shadow mapping
         FVector PPLightDir(PPLight.X, PPLight.Y, PPLight.Z);
@@ -416,11 +457,90 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera, 
             LightSpaceAABB.Min.Y, LightSpaceAABB.Max.Y,
             LightSpaceAABB.Min.Z, LightSpaceAABB.Max.Z
         );
+
+        // Debug output: Orthographic projection parameters
+        if (bEnableDebugOutput && (FrameCounter % 100 == 0))
+        {
+            UE_LOG("  Mode: ORTHOGRAPHIC (|W| < %.2f)", W_THRESHOLD);
+            UE_LOG("    LightSpaceAABB: [%.4f,%.4f] x [%.4f,%.4f] x [%.4f,%.4f]",
+                   LightSpaceAABB.Min.X, LightSpaceAABB.Max.X,
+                   LightSpaceAABB.Min.Y, LightSpaceAABB.Max.Y,
+                   LightSpaceAABB.Min.Z, LightSpaceAABB.Max.Z);
+        }
     }
-    else
+    else if (PSMMode == EPSMMode::InvertedPerspective)
     {
-        // Perspective case: true PSM
-        // Perspective divide to get light position
+        // Inverted Perspective case: W < -0.1 (light behind camera)
+        // Negate W to handle correctly
+        float WRecip = 1.0f / (-PPLight.W);  // Negate W!
+        FVector PPLightPos(
+            PPLight.X * WRecip,
+            PPLight.Y * WRecip,
+            PPLight.Z * WRecip
+        );
+
+        // Post-projective cube center (DirectX: z in [0,1])
+        // PracticalPSM Line 267, 305-322: Use unit cube instead of scene AABB
+        FVector PPCubeCenter(0.0f, 0.0f, 0.5f);
+        constexpr float PPCubeRadius = 1.5f;  // Radius of [-1,1]^2 x [0,1]
+
+        // PracticalPSM Line 305: lookAt = ppCubeCenter - ppLightPos
+        FVector LookAtDir = PPCubeCenter - PPLightPos;
+        float Distance = LookAtDir.Length();
+        LookAtDir.Normalize();
+
+        FVector PPUp = FVector::UpVector();
+        if (std::abs(LookAtDir.Dot(PPUp)) > 0.99f)
+        {
+            PPUp = FVector(0.0f, 0.0f, 1.0f);
+        }
+
+        // PracticalPSM Line 318: D3DXMatrixLookAtLH(&lightView, &ppLightPos, &ppCubeCenter, &axis)
+        LightView = FMatrix::LookAtLH(PPLightPos, PPCubeCenter, PPUp);
+
+        // PracticalPSM Line 319-322: Treat unit box as sphere
+        // "super-cheese... lots of problems, looks like hell, and requires that MinInfinityZ >= 2"
+        float FovY = 2.0f * std::atan(PPCubeRadius / Distance);
+        float Aspect = 1.0f;
+
+        float FNear = std::max(0.001f, Distance - 2.0f * PPCubeRadius);
+        float FFar = Distance + 2.0f * PPCubeRadius;
+
+        // Clamp near plane for numerical stability (hack from PracticalPSM)
+        FNear = std::max(0.001f, FNear * 0.6f);
+
+        // CRITICAL FIX: Prevent extreme Near/Far ratios that cause z-fighting on camera rotation
+        // When Distance < 3.0, FNear becomes 0.001, causing ratio > 1000:1
+        // Solution: Ensure FNear is at least FFar / MAX_RATIO to prevent z-fighting
+        // Conservative value (10:1) for maximum stability
+        // Trade-off: May clip some geometry if Light is very close to cube
+        constexpr float MAX_NEAR_FAR_RATIO = 10.0f;
+        float MinSafeFNear = FFar / MAX_NEAR_FAR_RATIO;
+        if (FNear < MinSafeFNear)
+        {
+            FNear = MinSafeFNear;
+        }
+
+        LightProj = FMatrix::PerspectiveFovLH(FovY, Aspect, FNear, FFar);
+
+        // Debug output: Inverted Perspective projection parameters
+        if (bEnableDebugOutput && (FrameCounter % 100 == 0))
+        {
+            float LightNearFarRatio = FFar / FNear;
+            float FovYDeg = FovY * (180.0f / PI);
+            UE_LOG("  Mode: INVERTED PERSPECTIVE (W < -%.2f)", W_THRESHOLD);
+            UE_LOG("    PPLightPos: (%.4f, %.4f, %.4f)", PPLightPos.X, PPLightPos.Y, PPLightPos.Z);
+            UE_LOG("    Distance to cube: %.4f, FovY: %.2f degrees", Distance, FovYDeg);
+            UE_LOG("    FNear: %.4f, FFar: %.4f, Ratio: %.2f:1 (Max: %.1f:1)",
+                   FNear, FFar, LightNearFarRatio, MAX_NEAR_FAR_RATIO);
+
+            if (LightNearFarRatio > MAX_NEAR_FAR_RATIO)
+                UE_LOG("  INFO: Near/Far ratio clamped to prevent z-fighting");
+        }
+    }
+    else  // PSMMode == EPSMMode::NormalPerspective
+    {
+        // Normal Perspective case: W > 0.1 (standard PSM, best quality)
         float WRecip = 1.0f / PPLight.W;
         FVector PPLightPos(
             PPLight.X * WRecip,
@@ -458,7 +578,40 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera, 
         // Clamp near plane for numerical stability (hack from PracticalPSM)
         FNear = std::max(0.001f, FNear * 0.6f);
 
+        // CRITICAL FIX: Prevent extreme Near/Far ratios that cause z-fighting on camera rotation
+        // When Distance < 3.0, FNear becomes 0.001, causing ratio > 1000:1
+        // Solution: Ensure FNear is at least FFar / MAX_RATIO to prevent z-fighting
+        // Conservative value (10:1) for maximum stability
+        // Trade-off: May clip some geometry if Light is very close to cube
+        constexpr float MAX_NEAR_FAR_RATIO = 10.0f;
+        float MinSafeFNear = FFar / MAX_NEAR_FAR_RATIO;
+        if (FNear < MinSafeFNear)
+        {
+            FNear = MinSafeFNear;
+        }
+
         LightProj = FMatrix::PerspectiveFovLH(FovY, Aspect, FNear, FFar);
+
+        // Debug output: Normal Perspective projection parameters
+        if (bEnableDebugOutput && (FrameCounter % 100 == 0))
+        {
+            float LightNearFarRatio = FFar / FNear;
+            float FovYDeg = FovY * (180.0f / PI);
+            UE_LOG("  Mode: NORMAL PERSPECTIVE (W > %.2f)", W_THRESHOLD);
+            UE_LOG("    PPLightPos: (%.4f, %.4f, %.4f)", PPLightPos.X, PPLightPos.Y, PPLightPos.Z);
+            UE_LOG("    Distance to cube: %.4f, FovY: %.2f degrees", Distance, FovYDeg);
+            UE_LOG("    FNear: %.4f, FFar: %.4f, Ratio: %.2f:1 (Max: %.1f:1)",
+                   FNear, FFar, LightNearFarRatio, MAX_NEAR_FAR_RATIO);
+
+            if (LightNearFarRatio > MAX_NEAR_FAR_RATIO)
+                UE_LOG("  INFO: Near/Far ratio clamped to prevent z-fighting");
+        }
+    }
+
+    // Debug output: End of frame
+    if (bEnableDebugOutput && (FrameCounter % 100 == 0))
+    {
+        UE_LOG("  --- End Frame %d Debug ---", FrameCounter);
     }
 
     // 7. Compose final transformation

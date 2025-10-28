@@ -290,6 +290,11 @@ FMatrix USpotLightComponent::GetLightProjectionMatrix(UCamera* InCamera, const F
     constexpr float Z_EPSILON = 0.0001f;
     constexpr float MIN_INFINITY_Z = 2.0f;
 
+    // Debug output every 100 frames to monitor w-division and z-precision issues
+    static int FrameCounter = 0;
+    static bool bEnableDebugOutput = true;  // Set to false to disable
+    FrameCounter++;
+
     // 1. Get camera matrices
     FMatrix CameraView = InCamera->GetViewMatrix();
     FMatrix CameraProj = InCamera->GetProjectionMatrix();
@@ -315,6 +320,15 @@ FMatrix USpotLightComponent::GetLightProjectionMatrix(UCamera* InCamera, const F
         SlideBack = AdditionalSlide;
         ZFar += AdditionalSlide;
         ZNear += AdditionalSlide;
+    }
+
+    // Debug output: Virtual camera Z parameters
+    if (bEnableDebugOutput && (FrameCounter % 100 == 0))
+    {
+        float VirtualCameraRatio = ZFar / ZNear;
+        UE_LOG("[PSM SpotLight Frame %d] Virtual Camera Z-Precision:", FrameCounter);
+        UE_LOG("  ZNear: %.4f, ZFar: %.4f, Ratio: %.2f:1", ZNear, ZFar, VirtualCameraRatio);
+        UE_LOG("  Infinity: %.4f (Target: %.2f), SlideBack: %.4f", Infinity, MIN_INFINITY_Z, SlideBack);
     }
 
     // 4. Create virtual camera matrices (using camera FOV like DirectionalLight)
@@ -377,10 +391,29 @@ FMatrix USpotLightComponent::GetLightProjectionMatrix(UCamera* InCamera, const F
     FVector4 PPLightPos4 = FMatrix::VectorMultiply(FVector4(EyeLightPos, 1.0f), VirtualTransform);
     FVector4 PPLightDir4 = FMatrix::VectorMultiply(FVector4(EyeLightDir, 0.0f), VirtualTransform);
 
+    // Debug output: W-division monitoring
+    if (bEnableDebugOutput && (FrameCounter % 100 == 0))
+    {
+        UE_LOG("[PSM SpotLight Frame %d] W-Division:", FrameCounter);
+        UE_LOG("  PPLightPos4: (%.4f, %.4f, %.4f, W=%.6f)",
+               PPLightPos4.X, PPLightPos4.Y, PPLightPos4.Z, PPLightPos4.W);
+        UE_LOG("  PPLightDir4: (%.4f, %.4f, %.4f, W=%.6f)",
+               PPLightDir4.X, PPLightDir4.Y, PPLightDir4.Z, PPLightDir4.W);
+
+        if (PPLightPos4.W < 0.0f)
+            UE_LOG("  WARNING: Light is behind camera (W < 0)!");
+        if (std::abs(PPLightPos4.W) < 0.001f)
+            UE_LOG("  WARNING: W too small (|W| < 0.001), division unstable!");
+        if (std::abs(PPLightPos4.W) > 100.0f)
+            UE_LOG("  WARNING: W too large (|W| > 100), precision loss!");
+    }
+
     // Perspective divide for light position
     if (std::abs(PPLightPos4.W) < 0.0001f)
     {
         // Fallback if light is too close to near plane
+        if (bEnableDebugOutput && (FrameCounter % 100 == 0))
+            UE_LOG("  FALLBACK: W too small, using standard projection");
         return GetLightProjectionMatrix();
     }
 
@@ -392,7 +425,20 @@ FMatrix USpotLightComponent::GetLightProjectionMatrix(UCamera* InCamera, const F
     );
 
     FVector PPLightDir(PPLightDir4.X, PPLightDir4.Y, PPLightDir4.Z);
+    float DirLength = PPLightDir.Length();
     PPLightDir.Normalize();
+
+    // Debug output: Post-perspective space coordinates
+    if (bEnableDebugOutput && (FrameCounter % 100 == 0))
+    {
+        UE_LOG("  After W-Division:");
+        UE_LOG("    PPLightPos: (%.4f, %.4f, %.4f)", PPLightPos.X, PPLightPos.Y, PPLightPos.Z);
+        UE_LOG("    PPLightDir: (%.4f, %.4f, %.4f), Length: %.6f",
+               PPLightDir.X, PPLightDir.Y, PPLightDir.Z, DirLength);
+
+        if (DirLength < 0.001f)
+            UE_LOG("  WARNING: Direction vector almost zero!");
+    }
 
     // 6. Create light view matrix in post-perspective space
     FVector PPTarget = PPLightPos + PPLightDir;
@@ -413,6 +459,25 @@ FMatrix USpotLightComponent::GetLightProjectionMatrix(UCamera* InCamera, const F
     float LightFar = AttenuationRadius;
 
     FMatrix LightProj = FMatrix::PerspectiveFovLH(LightFovY, LightAspect, LightNear, LightFar);
+
+    // Debug output: Light projection Z parameters
+    if (bEnableDebugOutput && (FrameCounter % 100 == 0))
+    {
+        float LightNearFarRatio = LightFar / LightNear;
+        float LightFovYDeg = LightFovY * (180.0f / PI);
+        UE_LOG("[PSM SpotLight Frame %d] Light Projection Z-Precision:", FrameCounter);
+        UE_LOG("  LightNear: %.4f, LightFar: %.4f, Ratio: %.2f:1",
+               LightNear, LightFar, LightNearFarRatio);
+        UE_LOG("  LightFovY: %.2f degrees (OuterCone: %.2f degrees)",
+               LightFovYDeg, OuterConeAngleRad * (180.0f / PI));
+
+        if (LightNearFarRatio > 1000.0f)
+            UE_LOG("  WARNING: Near/Far ratio > 1000:1, severe z-fighting risk!");
+        else if (LightNearFarRatio > 100.0f)
+            UE_LOG("  WARNING: Near/Far ratio > 100:1, moderate z-fighting risk!");
+
+        UE_LOG("  --- End Frame %d Debug ---", FrameCounter);
+    }
 
     // 8. Compose final transformation
     // World → Camera View → Virtual Camera → Virtual Proj → Light View → Light Proj
