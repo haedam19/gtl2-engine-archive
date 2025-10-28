@@ -431,35 +431,30 @@ void UMainBarWidget::RenderShowFlagsMenu()
 			}
 		}
 
-		if (DirLight)
+		// Shadow Map Type은 이제 Renderer의 전역 설정
+		URenderer& Renderer = URenderer::GetInstance();
+		EShadowMapType CurrentType = Renderer.GetShadowMapType();
+
+		bool bIsLVP = (CurrentType == EShadowMapType::LVP);
+		bool bIsPSM = (CurrentType == EShadowMapType::PSM);
+		bool bIsCSM = (CurrentType == EShadowMapType::CSM);
+
+		if (ImGui::MenuItem("LVP (Light View Projection)", nullptr, bIsLVP))
 		{
-			EShadowMapType CurrentType = DirLight->GetShadowMapType();
-
-			bool bIsLVP = (CurrentType == EShadowMapType::LVP);
-			bool bIsPSM = (CurrentType == EShadowMapType::PSM);
-			bool bIsCSM = (CurrentType == EShadowMapType::CSM);
-
-			if (ImGui::MenuItem("LVP (Light View Projection)", nullptr, bIsLVP))
-			{
-				DirLight->SetShadowMapType(EShadowMapType::LVP);
-				UE_LOG("MainBarWidget: Shadow Map 타입을 LVP로 변경");
-			}
-
-			if (ImGui::MenuItem("PSM (Perspective Shadow Maps)", nullptr, bIsPSM))
-			{
-				DirLight->SetShadowMapType(EShadowMapType::PSM);
-				UE_LOG("MainBarWidget: Shadow Map 타입을 PSM으로 변경");
-			}
-
-			if (ImGui::MenuItem("CSM (Cacade Shadow Maps)", nullptr, bIsCSM))
-			{
-				DirLight->SetShadowMapType(EShadowMapType::CSM);
-				UE_LOG("MainBarWidget: Shadow Map 타입을 CSM으로 변경");
-			}
+			Renderer.SetShadowMapType(EShadowMapType::LVP);
+			UE_LOG("MainBarWidget: Shadow Map 타입을 LVP로 변경");
 		}
-		else
+
+		if (ImGui::MenuItem("PSM (Perspective Shadow Maps)", nullptr, bIsPSM))
 		{
-			ImGui::TextDisabled("DirectionalLight가 없습니다");
+			Renderer.SetShadowMapType(EShadowMapType::PSM);
+			UE_LOG("MainBarWidget: Shadow Map 타입을 PSM으로 변경");
+		}
+
+		if (ImGui::MenuItem("CSM (Cacade Shadow Maps)", nullptr, bIsCSM))
+		{
+			Renderer.SetShadowMapType(EShadowMapType::CSM);
+			UE_LOG("MainBarWidget: Shadow Map 타입을 CSM으로 변경");
 		}
 
 		ImGui::Separator();
@@ -467,7 +462,6 @@ void UMainBarWidget::RenderShowFlagsMenu()
 		// Shadow Filter 모드 선택
 		ImGui::Text("Shadow Filter 모드");
 
-		URenderer& Renderer = URenderer::GetInstance();
 		EShadowFilterMode CurrentFilterMode = Renderer.GetShadowFilterMode();
 		bool bIsPCF = (CurrentFilterMode == EShadowFilterMode::PCF);
 		bool bIsVSM = (CurrentFilterMode == EShadowFilterMode::VSM);

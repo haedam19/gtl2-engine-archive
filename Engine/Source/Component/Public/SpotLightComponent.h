@@ -62,7 +62,7 @@ public:
     void CreateShadowMapResources();
     void ReleaseShadowMapResources();
     FShadowMapData& GetShadowMapData() { return ShadowMapData; }
-    
+
     float GetAngleFalloffExponent() const { return AngleFalloffExponent; }
     float GetOuterConeAngle() const { return OuterConeAngleRad; }
     float GetInnerConeAngle() const { return InnerConeAngleRad; }
@@ -77,6 +77,12 @@ public:
     void UpdateShadowMapSize(uint32 InWidth, uint32 InHeight);
     void SetShadowMapArrayIndex(uint32 InIndex) { ShadowMapArrayIndex = InIndex; }
     void ResetShadowMapArrayIndex() { ShadowMapArrayIndex = InvalidShadowMapIndex; }
+
+    // PSM (Perspective Shadow Maps) support
+    // NOTE: Spot light PSM is NOT recommended by the paper (03-PerspectiveSM.pdf Page 17-18)
+    // This is implemented for demonstration purposes only
+    FMatrix GetLightViewMatrix(class UCamera* InCamera) const;
+    FMatrix GetLightProjectionMatrix(class UCamera* InCamera, const struct FAABB& SceneAABB) const;
     
     void SetAngleFalloffExponent(float const InAngleFalloffExponent) { AngleFalloffExponent = std::clamp(InAngleFalloffExponent, 1.0f, 128.0f); MarkShadowDirty(); }
     void SetOuterAngle(float const InAttenuationAngleRad);
@@ -109,5 +115,4 @@ private:
     FVector2 ShadowMapInvSize;
     static constexpr uint32 InvalidShadowMapIndex = std::numeric_limits<uint32>::max();
     uint32 ShadowMapArrayIndex = InvalidShadowMapIndex;
-   
 };

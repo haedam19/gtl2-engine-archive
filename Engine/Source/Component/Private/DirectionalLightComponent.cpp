@@ -134,6 +134,8 @@ FVector UDirectionalLightComponent::GetForwardVector() const
 {
     FQuaternion LightRotation = GetWorldRotationAsQuaternion();
 
+    // TODO(QUATERNION): ArrowToNegZ 변환이 필요한 이유 확인 필요
+    // 쿼터니언 회전 계산 관련 RH/LH 좌표계 이슈로 인한 임시 보정일 가능성
     FQuaternion ArrowToNegZ = FQuaternion::FromAxisAngle(FVector::RightVector(), -90.0f * (PI / 180.0f));
     FQuaternion FinalRotation = ArrowToNegZ * LightRotation;
 
@@ -151,6 +153,7 @@ void UDirectionalLightComponent::RenderLightDirectionGizmo(UCamera* InCamera)
     float Scale = Distance * 0.2f;
     if (Distance < 7.0f) Scale = 7.0f * 0.2f;
 
+    // TODO(QUATERNION): ArrowToNegZ 변환이 필요한 이유 확인 필요 (GetForwardVector()와 동일한 이슈)
     FQuaternion ArrowToNegZ = FQuaternion::FromAxisAngle(FVector::RightVector(), -90.0f * (PI / 180.0f));
     FQuaternion FinalRotation = ArrowToNegZ * LightRotation;
 
@@ -348,9 +351,10 @@ FMatrix UDirectionalLightComponent::GetLightProjectionMatrix(UCamera* InCamera, 
     FMatrix EyeToPostProjVirtualCamera = VirtualCameraView * VirtualCameraProj;
 
     // 5. Transform light direction to post-perspective space
-    // NOTE: Negate direction due to internal quaternion-based rotation calculation
+    // TODO(QUATERNION): Negation이 필요한 이유 재검토 필요
     // GetForwardVector() returns "light pointing direction", but PSM needs "light source direction"
     // (LVP mode and shader use GetForwardVector() directly without negation and work correctly)
+    // 쿼터니언 회전 계산 관련 RH/LH 좌표계 이슈로 인한 임시 보정일 가능성
     FVector WorldLightDir = -GetForwardVector().GetNormalized();
 
     // Transform to eye space (direction vector, w=0)

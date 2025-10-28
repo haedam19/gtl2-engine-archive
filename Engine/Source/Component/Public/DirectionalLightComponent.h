@@ -62,9 +62,6 @@ public:
     void SetShadowDistance(float InDistance) { ShadowDistance = InDistance; }
     float GetShadowDistance() const { return ShadowDistance; }
 
-    void SetShadowMapType(EShadowMapType InType) { ShadowMapType = InType; }
-    EShadowMapType GetShadowMapType() const { return ShadowMapType; }
-
     // Shadow Resolution
     void SetShadowResolutionScale(float InScale) { ShadowResolutionScale = InScale; }
     float GetShadowResolutionScale() const { return ShadowResolutionScale; }
@@ -86,7 +83,6 @@ private:
 
     // Shadow parameters
     float ShadowDistance = 128.0f;  // Shadow 렌더링 거리 (PSM 해상도 최적화: 1000→100)
-    EShadowMapType ShadowMapType = EShadowMapType::LVP;  // Shadow Map 타입
 
     // Shadow Resolution
     static constexpr uint32 BaseShadowResolution = 2048;  // 기본 해상도

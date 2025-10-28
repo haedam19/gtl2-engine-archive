@@ -63,7 +63,7 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 
 		// Light View Projection 행렬 설정 (Shadow Map 타입에 따라 다르게 처리)
 		FLightViewProjConstants LightVP;
-		if (DirLight->GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
+		if (Renderer.GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
 		{
 			// PSM: Camera와 SceneAABB를 사용한 Perspective Shadow Mapping
 			LightVP.LightView = DirLight->GetLightViewMatrix(Context.CurrentCamera);
