@@ -458,9 +458,11 @@ void UViewportControlWidget::RenderViewportToolbar(int32 ViewportIndex)
 					ImGui::OpenPopup("##CameraSettingsPopup");
 				}
 
+				
 				// 카메라 설정 팝업
 				if (ImGui::BeginPopup("##CameraSettingsPopup"))
 				{
+					ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2.0f, 4.0f));
 					ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 					ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
 					ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
@@ -506,9 +508,40 @@ void UViewportControlWidget::RenderViewportToolbar(int32 ViewportIndex)
 						{
 							Camera->SetFarZ(farZ);
 						}
+
+						ImGui::Separator();
+						
+						// Editor로부터 현재 선택된 액터를 불러와 카메라에 오버라이드
+						ImGui::Text("Camera Override");
+						if (AActor* Overrider = Camera->GetOverrider())
+						{
+							ImGui::Text("Overriding Actor: %s(UUID: %u)", Overrider->GetName().ToString().data(), Overrider->GetUUID());
+							ImGui::SameLine();
+							if (ImGui::SmallButton("Clear"))
+							{
+								Camera->ClearOverride();
+							}
+						}
+						else
+						{
+							if (AActor* SelectedActor = GEditor->GetEditorModule()->GetSelectedActor())
+							{
+								ImGui::Text("Selected Actor: %s(UUID: %u)", SelectedActor->GetName().ToString().data(), SelectedActor->GetUUID());
+								ImGui::SameLine();
+								if (ImGui::SmallButton("Override Camera"))
+								{
+									Camera->OverrideCamera(SelectedActor);
+								}
+							}
+							else
+							{
+								ImGui::Text("No Actor Selected");
+							}
+						}
 					}
 
 					ImGui::PopStyleColor(3);
+					ImGui::PopStyleVar();
 					ImGui::EndPopup();
 				}
 			}
