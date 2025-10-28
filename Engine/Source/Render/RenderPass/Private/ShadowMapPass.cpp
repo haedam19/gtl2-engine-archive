@@ -483,6 +483,11 @@ void FShadowMapPass::ReleaseVSMResources()
 	if (VSMTempMapUAV) { VSMTempMapUAV->Release(); VSMTempMapUAV = nullptr; }
 	if (VSMMomentMap) { VSMMomentMap->Release(); VSMMomentMap = nullptr; }
 	if (VSMTempMap) { VSMTempMap->Release(); VSMTempMap = nullptr; }
+
+	// VSM Compute Shaders Release
+	if (CSDepthToMoment) { CSDepthToMoment->Release(); CSDepthToMoment = nullptr; }
+	if (CSBlurH) { CSBlurH->Release(); CSBlurH = nullptr; }
+	if (CSBlurV) { CSBlurV->Release(); CSBlurV = nullptr; }
 }
 
 void FShadowMapPass::ExecuteVSMFilter()

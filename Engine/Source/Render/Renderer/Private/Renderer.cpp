@@ -809,6 +809,9 @@ void URenderer::ReleaseDefaultShader()
 	SafeRelease(ShadowDepthPixelShader);
 	SafeRelease(ShadowDepthInputLayout);
 	SafeRelease(ShadowSampler);
+
+	SafeRelease(ShadowMapPreviewVertexShader);
+	SafeRelease(ShadowMapPreviewPixelShader);
 }
 
 void URenderer::ReleaseDepthStencilState()
