@@ -317,13 +317,9 @@ FMatrix USpotLightComponent::GetLightProjectionMatrix(UCamera* InCamera, const F
         ZNear += AdditionalSlide;
     }
 
-    // 4. Create virtual camera matrices with spot light FOV
+    // 4. Create virtual camera matrices (using camera FOV like DirectionalLight)
     FMatrix VirtualCameraView;
     FMatrix VirtualCameraProj;
-
-    // Use spot light's outer cone angle * 2 for virtual camera FOV
-    float SpotLightFovY = std::clamp(OuterConeAngleRad * 2.0f, 0.01f, PI - 0.01f);
-    float Aspect = 1.0f;  // Spot light uses 1:1 aspect ratio
 
     if (SlideBack > 0.0f)
     {
@@ -332,18 +328,27 @@ FMatrix USpotLightComponent::GetLightProjectionMatrix(UCamera* InCamera, const F
         VirtualCameraView.Data[3][2] = SlideBack;
 
         // Adjust FOV to see the same world space after slideback
-        float HalfFovY = SpotLightFovY * 0.5f;
+        // This is critical for numerical stability (PracticalPSM)
+        float OriginalFovY = InCamera->GetFovY();
+        float HalfFovY = OriginalFovY * 0.5f;
+
+        // Compute view frustum height at ORIGINAL far plane (before slideback)
         float ViewHeightAtFar = OriginalZFar * std::tan(HalfFovY);
+
+        // Compute new FOV to see the same height from slid-back position
         float NewHalfFovY = std::atan(ViewHeightAtFar / (OriginalZFar + SlideBack));
         float NewFovY = 2.0f * NewHalfFovY;
 
+        float Aspect = InCamera->GetAspect();
         VirtualCameraProj = FMatrix::PerspectiveFovLH(NewFovY, Aspect, ZNear, ZFar);
     }
     else
     {
-        // No slideback
+        // No slideback: use original camera projection with adjusted near/far
         VirtualCameraView = FMatrix::Identity();
-        VirtualCameraProj = FMatrix::PerspectiveFovLH(SpotLightFovY, Aspect, ZNear, ZFar);
+        float OriginalFovY = InCamera->GetFovY();
+        float Aspect = InCamera->GetAspect();
+        VirtualCameraProj = FMatrix::PerspectiveFovLH(OriginalFovY, Aspect, ZNear, ZFar);
     }
 
     // Compose: Eye space → Virtual camera space → Post-perspective space
@@ -400,12 +405,14 @@ FMatrix USpotLightComponent::GetLightProjectionMatrix(UCamera* InCamera, const F
 
     FMatrix LightView = FMatrix::LookAtLH(PPLightPos, PPTarget, PPUp);
 
-    // 7. Create light projection matrix (using spot light parameters)
-    float LightFovY = SpotLightFovY;
+    // 7. Create light projection matrix (using spot light's own FOV)
+    // Use actual spot light parameters for the final projection
+    float LightFovY = std::clamp(OuterConeAngleRad * 2.0f, 0.01f, PI - 0.01f);
+    float LightAspect = 1.0f;  // Spot light uses 1:1 aspect ratio
     float LightNear = 0.01f;
     float LightFar = AttenuationRadius;
 
-    FMatrix LightProj = FMatrix::PerspectiveFovLH(LightFovY, Aspect, LightNear, LightFar);
+    FMatrix LightProj = FMatrix::PerspectiveFovLH(LightFovY, LightAspect, LightNear, LightFar);
 
     // 8. Compose final transformation
     // World → Camera View → Virtual Camera → Virtual Proj → Light View → Light Proj
