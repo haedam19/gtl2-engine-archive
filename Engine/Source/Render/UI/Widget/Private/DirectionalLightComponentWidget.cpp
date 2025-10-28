@@ -185,7 +185,7 @@ void UDirectionalLightComponentWidget::RenderWidget()
 
         ImGui::SetNextItemWidth(BoxWidth * 2.5f);
         float ShadowDistanceValue = DirectionalLightComponent->GetShadowDistance();
-        if (ImGui::DragFloat("Shadow Distance", &ShadowDistanceValue, 10.0f, 100.0f, 20000.0f, "%.0f"))
+        if (ImGui::DragFloat("Shadow Distance", &ShadowDistanceValue, 1.0f, 1.0f, 2000.0f, "%.0f"))
         {
             if (ShadowDistanceValue < 1.0f)
             {
