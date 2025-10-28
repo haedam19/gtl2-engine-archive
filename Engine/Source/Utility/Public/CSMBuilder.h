@@ -7,7 +7,7 @@ class UStaticMeshComponent;
 
 constexpr float CSMShadowMapResolution = 4096.0f;
 constexpr uint32 CascadesPerRow = 2;
-constexpr float CascadeSplitLambda = 0.85f;
+constexpr float DefaultCascadeSplitLambda = 0.85f;
 constexpr float AtlasBorder = 1.0f;
 
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include "LightComponent.h"
 #include "Editor/Public/EditorPrimitive.h"
 
@@ -61,6 +63,9 @@ public:
     void SetShadowDistance(float InDistance) { ShadowDistance = InDistance; }
     float GetShadowDistance() const { return ShadowDistance; }
 
+    void SetShadowCascadeLambda(float InLambda) { ShadowCascadeLambda = std::clamp(InLambda, 0.0f, 1.0f); }
+    float GetShadowCascadeLambda() const { return ShadowCascadeLambda; }
+
     void SetShadowMapType(EShadowMapType InType) { ShadowMapType = InType; }
     EShadowMapType GetShadowMapType() const { return ShadowMapType; }
 
@@ -86,6 +91,7 @@ private:
     // Shadow parameters
     float ShadowDistance = 1000.0f;  // Shadow 렌더링 거리
     EShadowMapType ShadowMapType = EShadowMapType::LVP;  // Shadow Map 타입
+    float ShadowCascadeLambda = 0.85f;
 
     // Shadow Resolution
     static constexpr uint32 BaseShadowResolution = 2048;  // 기본 해상도
