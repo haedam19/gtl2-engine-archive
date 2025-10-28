@@ -56,12 +56,12 @@ namespace
 		};
 
 		static const FVector Ups[6] = {
-			FVector(0.0f, 1.0f, 0.0f),
-			FVector(0.0f, 1.0f, 0.0f),
-			FVector(0.0f, 0.0f, -1.0f),
 			FVector(0.0f, 0.0f, 1.0f),
-			FVector(0.0f, 1.0f, 0.0f),
-			FVector(0.0f, 1.0f, 0.0f)
+			FVector(0.0f, 0.0f, 1.0f),
+			FVector(0.0f, 0.0f, 1.0f),
+			FVector(0.0f, 0.0f, 1.0f),
+			FVector(-1.0f, 0.0f, 0.0f),
+			FVector(1.0f, 0.0f, 0.0f)
 		};
 
 		const uint32 FaceIndex = std::min<uint32>(Face, 5);
@@ -369,8 +369,8 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		InfluenceMapPtr = &SpotInfluenceMap;
 	}
 
-	FShadowAtlasManager::FPointSpotAllocationResult PointSpotAllocations =
-		AtlasManager->AllocatePointSpotLights(Context.PointLights, SpotLightsForAllocation, CameraPosPtr, InfluenceMapPtr);
+	FPointSpotAllocationResult PointSpotAllocations = AtlasManager->AllocatePointSpotLights(Context.PointLights, 
+														SpotLightsForAllocation, CameraPosPtr, InfluenceMapPtr);
 
 
 	// 렌더링 시 각 Atlas Slice를 한 번만 Clear하기 위한 집합

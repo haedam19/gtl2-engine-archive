@@ -657,7 +657,7 @@ uint32 FShadowAtlasManager::CalculatePointSpotLightResolutionLOD(
     else return 2048;
 }
 
-FShadowAtlasManager::FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
+FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
     const TArray<UPointLightComponent*>& PointLights,
     const TArray<USpotLightComponent*>& SpotLights,
     const FVector* CameraPos,
@@ -1089,8 +1089,8 @@ FShadowAtlasManager::FPointSpotAllocationResult FShadowAtlasManager::AllocatePoi
         PreviousPointAllocations.clear();
     }
 
-    UE_LOG_INFO("ShadowAtlasManager: Point/Spot 재할당 완료 (PointFaces: %d, SpotLights: %d)",
-        Result.PointLights.size(), Result.SpotLights.size());
+    /*UE_LOG_INFO("ShadowAtlasManager: Point/Spot 재할당 완료 (PointFaces: %d, SpotLights: %d)",
+        Result.PointLights.size(), Result.SpotLights.size());*/
 
     return Result;
 }
@@ -1127,7 +1127,9 @@ void FShadowAtlasManager::ClearPointSpotAtlas()
 }
 
 
-bool FShadowAtlasManager::GetPointLightFaceAllocation(UPointLightComponent* Light, uint32 FaceIndex, FShadowAtlasAllocation& OutAllocation, uint32& OutResolution) const
+bool FShadowAtlasManager::GetPointLightFaceAllocation(UPointLightComponent* Light
+    , uint32 FaceIndex, FShadowAtlasAllocation& OutAllocation
+    , uint32& OutResolution) const
 {
     OutResolution = 0;
     if (!Light || FaceIndex >= 6)

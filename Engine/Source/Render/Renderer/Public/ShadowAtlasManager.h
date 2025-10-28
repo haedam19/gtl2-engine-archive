@@ -65,6 +65,13 @@ struct FLightAllocationPair
     bool IsValid() const { return Light && Allocation.IsValid(); }
 };
 
+// Spot/Point Light Allocation 결과 반환용 구조체
+struct FPointSpotAllocationResult
+{
+    TArray<FLightAllocationPair> PointLights;
+    TArray<FLightAllocationPair> SpotLights;
+};
+
 // Shadow Atlas 통합 관리 클래스 (동적 확장 지원)
 class FShadowAtlasManager
 {
@@ -87,23 +94,25 @@ public:
     // 레벨 전환 시 모든 할당 정보 완전 클리어 (댕글링 포인터 방지)
     void ClearAllLightAllocations();
 
+
+    // ============================================================
     // Light Sorting + Allocation (핵심 함수)
+    // ============================================================
+    
     // Directional Light들을 받아서 Sorting하고 Atlas에 할당
     TArray<FLightAllocationPair> AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights);
-
-    struct FPointSpotAllocationResult
-    {
-        TArray<FLightAllocationPair> PointLights;
-        TArray<FLightAllocationPair> SpotLights;
-    };
-
+	// Point/Spot Light들을 받아서 Sorting하고 Atlas에 할당
     FPointSpotAllocationResult AllocatePointSpotLights(
         const TArray<UPointLightComponent*>& PointLights,
         const TArray<USpotLightComponent*>& SpotLights,
         const FVector* CameraPos = nullptr,
         const TMap<uint32, uint32>* LightClusterInfluences = nullptr);
-    bool GetPointLightFaceAllocation(UPointLightComponent* Light, uint32 FaceIndex, FShadowAtlasAllocation& OutAllocation, uint32& OutResolution) const;
+    
 
+    // ============================================================
+    // Atlas Info & SRV Getters
+    // ============================================================
+    
     // Atlas 배열 접근
     const TArray<FShadowAtlasInfo>& GetAtlases(EShadowAtlasType Type) const;
 
@@ -112,13 +121,18 @@ public:
 
     // Light별 할당 정보 조회 (DetailWindow에서 사용)
     const FShadowAtlasAllocation* GetLightAllocation(ULightComponentBase* Light) const;
+    // Point Light의 경우 특정 Face의 할당 정보 조회할 수 있도록 별도 API 제공
+    bool GetPointLightFaceAllocation(UPointLightComponent* Light, uint32 FaceIndex, FShadowAtlasAllocation& OutAllocation, uint32& OutResolution) const;
 
     // Texture2DArray SRV 접근
     ID3D11ShaderResourceView* GetDirectionalAtlasArraySRV() const { return DirectionalAtlasArraySRV; }
     ID3D11ShaderResourceView* GetPointSpotAtlasArraySRV() const { return PointSpotAtlasArraySRV; }
+    ID3D11ShaderResourceView* GetSliceSRV(EShadowAtlasType type, uint32 sliceIndex);
 
-    ID3D11ShaderResourceView* GetSliceSRV(
-        EShadowAtlasType type, uint32 sliceIndex);
+
+    // ============================================================
+    // Atlas Stats
+    // ============================================================
 
     // Slice별 사용률 정보
     struct FSliceUsageInfo
@@ -148,6 +162,11 @@ public:
     };
 
     FAtlasStats GetAtlasStats() const;
+
+
+    // ============================================================
+	// Atlas Size Management
+    // ============================================================
 
     // Atlas 크기 설정 (런타임 변경 가능)
     void SetPointSpotAtlasSize(uint32 NewSize);
