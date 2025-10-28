@@ -306,20 +306,14 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
         SceneMax = FVector::ZeroVector();
     }
 
-    constexpr float MinCascadeShadowDistance = 500.0f;
-
     float DesiredFarClip = bHasCasterDistance ? MaxCasterDistance : MaxShadowDistance;
-    if (MaxShadowDistance >= MinCascadeShadowDistance)
-    {
-        DesiredFarClip = std::max(DesiredFarClip, MinCascadeShadowDistance);
-    }
-
     DesiredFarClip = std::min(DesiredFarClip, MaxShadowDistance);
     float EffectiveFarClip = std::max(NearClip + 1.0f, DesiredFarClip);
 
     const float FarClip = EffectiveFarClip;
     const float Range = FarClip - NearClip;
     const float Ratio = FarClip / NearClip;
+    const float CascadeLambda = Light ? Light->GetShadowCascadeLambda() : DefaultCascadeSplitLambda;
 
     // 나눠진 Cascade의 Far Z를 기록할 배열 선언
     float Splits[4] = {};
@@ -333,7 +327,7 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
         const float UniformSplit = NearClip + Range * P;
 
         // SplitLambda 값을 사용해 로그 분할 - 유니폼 분할을 볼록 결합
-        const float SplitDistance = CascadeSplitLambda * (LogSplit - UniformSplit) + UniformSplit;
+        const float SplitDistance = CascadeLambda * (LogSplit - UniformSplit) + UniformSplit;
 
         Splits[CascadeIndex] = SplitDistance;
 
