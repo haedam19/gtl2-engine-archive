@@ -174,6 +174,14 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
     float NearPlane = MinZ;
     float FarPlane = MaxZ;
 
+    //float Side = std::max(Width, Height);
+    //Side = std::max(Side, 1.0f);
+
+    float Side = std::max(2.0f * Radius, 1.0f);
+
+    Width = Side;
+    Height = Side;
+
     {
         const float TileSize = CSMShadowMapResolution / CascadesPerRow;
         const float EffectiveSize = std::max(TileSize - AtlasBorder * 2.0f, 1.0f);
