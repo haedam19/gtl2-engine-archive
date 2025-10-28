@@ -4,6 +4,8 @@
 #include "Utility/Public/JsonSerializer.h"
 #include "Manager/Config/Public/ConfigManager.h"
 #include "Manager/Path/Public/PathManager.h"
+#include "Render/Renderer/Public/Renderer.h"
+#include "Render/Renderer/Public/ShadowAtlasManager.h"
 
 IMPLEMENT_CLASS(UWorld, UObject)
 
@@ -283,6 +285,13 @@ void UWorld::SwitchToLevel(ULevel* InNewLevel)
 		ULevel* OldLevel = Level;
 		SafeDelete(OldLevel);
 		Level = nullptr;
+	}
+
+	// Shadow Atlas의 라이트 할당 정보 클리어 (댕글링 포인터 방지)
+	auto& Renderer = URenderer::GetInstance();
+	if (auto* AtlasManager = Renderer.GetShadowAtlasManager())
+	{
+		AtlasManager->ClearAllLightAllocations();
 	}
 
 	Level = InNewLevel;

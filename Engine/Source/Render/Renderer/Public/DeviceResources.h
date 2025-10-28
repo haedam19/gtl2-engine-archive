@@ -50,6 +50,9 @@ public:
 	// Direct2D/DirectWrite factory getters
 	IDWriteFactory* GetDWriteFactory() const { return DWriteFactory; }
 
+	// VRAM info
+	void GetVRAMInfo(size_t& OutUsedVRAM, size_t& OutTotalVRAM) const;
+
 private:
 	ID3D11Device* Device = nullptr;
 	ID3D11DeviceContext* DeviceContext = nullptr;

@@ -487,6 +487,7 @@ void UConsoleWidget::ProcessCommand(const char* InCommand)
 		AddLog(ELogType::Info, "  HELP - Show This Help");
 		AddLog(ELogType::Info, "  STAT FPS - Show FPS overlay");
 		AddLog(ELogType::Info, "  STAT MEMORY - Show memory overlay");
+		AddLog(ELogType::Info, "  STAT VRAM - Show VRAM usage overlay");
 		AddLog(ELogType::Info, "  STAT PICK - Show picking performance overlay");
 		AddLog(ELogType::Info, "  STAT NONE - Hide all overlays");
 		AddLog(ELogType::Info, "  SHADOW_FILTER PCF - Use PCF shadow filtering (hard shadows)");
@@ -530,6 +531,11 @@ void UConsoleWidget::HandleStatCommand(const FString& StatCommand)
 		StatOverlay.ShowMemory();
 		AddLog(ELogType::Success, "Memory overlay");
 	}
+	else if (StatCommand == "vram")
+	{
+		StatOverlay.ShowVRAM();
+		AddLog(ELogType::Success, "VRAM overlay");
+	}
 	else if (StatCommand == "pick" || StatCommand == "picking")
 	{
 		StatOverlay .ShowPicking();
@@ -558,7 +564,7 @@ void UConsoleWidget::HandleStatCommand(const FString& StatCommand)
 	else
 	{
 		AddLog(ELogType::Error, "Unknown stat command: %s", StatCommand.c_str());
-		AddLog(ELogType::Info, "Available: fps, memory, pick, decal, none");
+		AddLog(ELogType::Info, "Available: fps, memory, vram, pick, decal, none");
 	}
 }
 

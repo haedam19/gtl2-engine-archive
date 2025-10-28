@@ -49,6 +49,8 @@
     <FxCompile Include="Asset\Shader\ViewClusterCS.hlsl">
       <Filter>Asset\Shader</Filter>
     </FxCompile>
+    <FxCompile Include="Asset\Shader\ShadowPreviewShader.hlsl" />
+    <FxCompile Include="Asset\Shader\VarianceShadowMappingCS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Source\Utility\Private\ScopeCycleCounter.cpp">
@@ -502,6 +504,13 @@
     </ClCompile>
     <ClCompile Include="Source\Optimization\Private\ViewVolumeCuller.cpp">
       <Filter>Source\Optimization\Private</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Utility\Private\CSMBuilder.cpp" />
+    <ClCompile Include="Source\Render\Renderer\Private\ShadowAtlas.cpp" />
+    <ClCompile Include="Source\Render\Renderer\Private\ShadowAtlasManager.cpp" />
+    <ClCompile Include="Source\Render\RenderPass\Private\ShadowMapPass.cpp" />
+    <ClCompile Include="Source\Render\UI\Widget\Private\ShadowAtlasWidget.cpp">
+      <Filter>Source\Render\UI\Widget\Private</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -1006,6 +1015,14 @@
     </ClInclude>
     <ClInclude Include="Source\Optimization\Public\ViewVolumeCuller.h">
       <Filter>Source\Optimization\Public</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Utility\Public\CSMBuilder.h" />
+    <ClInclude Include="Source\Render\Renderer\Public\ShadowAtlas.h" />
+    <ClInclude Include="Source\Render\Renderer\Public\ShadowAtlasManager.h" />
+    <ClInclude Include="Source\Render\Renderer\Public\ShadowMapData.h" />
+    <ClInclude Include="Source\Render\RenderPass\Public\ShadowMapPass.h" />
+    <ClInclude Include="Source\Render\UI\Widget\Public\ShadowAtlasWidget.h">
+      <Filter>Source\Render\UI\Widget\Public</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
