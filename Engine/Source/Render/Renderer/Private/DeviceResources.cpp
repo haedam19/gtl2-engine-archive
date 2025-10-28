@@ -386,3 +386,56 @@ void UDeviceResources::ReleaseFactories()
 		DWriteFactory = nullptr;
 	}
 }
+
+void UDeviceResources::GetVRAMInfo(size_t& OutUsedVRAM, size_t& OutTotalVRAM) const
+{
+	OutUsedVRAM = 0;
+	OutTotalVRAM = 0;
+
+	if (!Device)
+	{
+		return;
+	}
+
+	// Get DXGI Device
+	IDXGIDevice* DXGIDevice = nullptr;
+	if (FAILED(Device->QueryInterface(__uuidof(IDXGIDevice), (void**)&DXGIDevice)))
+	{
+		return;
+	}
+
+	// Get DXGI Adapter
+	IDXGIAdapter* Adapter = nullptr;
+	if (FAILED(DXGIDevice->GetAdapter(&Adapter)))
+	{
+		DXGIDevice->Release();
+		return;
+	}
+
+	// Try to get IDXGIAdapter3 for QueryVideoMemoryInfo
+	IDXGIAdapter3* Adapter3 = nullptr;
+	if (SUCCEEDED(Adapter->QueryInterface(__uuidof(IDXGIAdapter3), (void**)&Adapter3)))
+	{
+		DXGI_QUERY_VIDEO_MEMORY_INFO MemoryInfo = {};
+		if (SUCCEEDED(Adapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &MemoryInfo)))
+		{
+			OutUsedVRAM = MemoryInfo.CurrentUsage;
+			OutTotalVRAM = MemoryInfo.Budget;
+		}
+		Adapter3->Release();
+	}
+	else
+	{
+		// Fallback to DXGI_ADAPTER_DESC for older systems
+		DXGI_ADAPTER_DESC AdapterDesc = {};
+		if (SUCCEEDED(Adapter->GetDesc(&AdapterDesc)))
+		{
+			OutTotalVRAM = AdapterDesc.DedicatedVideoMemory;
+			// Cannot get current usage with older API
+			OutUsedVRAM = 0;
+		}
+	}
+
+	Adapter->Release();
+	DXGIDevice->Release();
+}

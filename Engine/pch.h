@@ -15,7 +15,7 @@
 #include <d2d1.h>
 #include <d2d1_1.h>
 #include <dwrite.h>
-#include <dxgi1_3.h>
+#include <dxgi1_4.h>
 
 // Standard Library
 #include <cmath>
