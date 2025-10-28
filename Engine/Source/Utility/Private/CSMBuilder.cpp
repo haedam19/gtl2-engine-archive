@@ -177,19 +177,38 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
     {
         const float TileSize = CSMShadowMapResolution / CascadesPerRow;
         const float EffectiveSize = std::max(TileSize - AtlasBorder * 2.0f, 1.0f);
-        const uint32 TileW = static_cast<uint32>(EffectiveSize);
-        const uint32 TileH = TileW;
+        const float WorldUnitsPerTexelX = (EffectiveSize > 0.0f) ? (Width / EffectiveSize) : 0.0f;
+        const float WorldUnitsPerTexelY = (EffectiveSize > 0.0f) ? (Height / EffectiveSize) : 0.0f;
 
-        const float WorldUnitsPerTexelX = Width / static_cast<float>(TileW);
-        const float WorldUnitsPerTexelY = Height / static_cast<float>(TileH);
+        //if (WorldUnitsPerTexelX > 0.0f && WorldUnitsPerTexelY > 0.0f)
+        //{
+        //    const float InvWorldUnitsPerTexelX = 1.0f / WorldUnitsPerTexelX;
+        //    const float InvWorldUnitsPerTexelY = 1.0f / WorldUnitsPerTexelY;
+        //
+        //    // Snap the light-space translation onto the shadow-map texel grid to reduce shimmering.
+        //    const float SnappedTranslationX = std::round(OutView.Data[3][0] * InvWorldUnitsPerTexelX) / InvWorldUnitsPerTexelX;
+        //    const float SnappedTranslationY = std::round(OutView.Data[3][1] * InvWorldUnitsPerTexelY) / InvWorldUnitsPerTexelY;
+        //
+        //    OutView.Data[3][0] = SnappedTranslationX;
+        //    OutView.Data[3][1] = SnappedTranslationY;
+        //}
+        if (WorldUnitsPerTexelX > 0.0f && WorldUnitsPerTexelY > 0.0f)
+        {
+            const float invX = 1.0f / WorldUnitsPerTexelX;
+            const float invY = 1.0f / WorldUnitsPerTexelY;
 
-        const float SnappedCenterX = std::round(CenterX / WorldUnitsPerTexelX) * WorldUnitsPerTexelX;
-        const float SnappedCenterY = std::round(CenterY / WorldUnitsPerTexelY) * WorldUnitsPerTexelY;
+            float tx = OutView.Data[3][0] * invX;  // 텍셀 좌표계로 변환
+            float ty = OutView.Data[3][1] * invY;
 
-        const float DeltaX = SnappedCenterX - CenterX;
-        const float DeltaY = SnappedCenterY - CenterY;
-        const FMatrix SnapTranslation = FMatrix::TranslationMatrix(FVector(-DeltaX, -DeltaY, 0.0f));
-        OutView = OutView * SnapTranslation;
+            // 경계 흔들림 방지용 아주 작은 바이어스(선택 사항)
+            const float eps = 1e-6f;
+
+            tx = std::floor(tx + 0.5f + eps);
+            ty = std::floor(ty + 0.5f + eps);
+
+            OutView.Data[3][0] = tx / invX;        // 월드 단위로 복원
+            OutView.Data[3][1] = ty / invY;
+        }
     }
 
     Width = std::max(Width, 1.0f);
