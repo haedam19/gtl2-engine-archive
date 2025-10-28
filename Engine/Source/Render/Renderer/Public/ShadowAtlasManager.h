@@ -106,12 +106,14 @@ public:
     // VRAM 통계 정보
     struct FAtlasStats
     {
-        uint32 DirectionalSliceCount = 0;
-        uint32 DirectionalCapacity = 0;
-        uint32 PointSpotSliceCount = 0;
-        uint32 PointSpotCapacity = 0;
-        float DirectionalVRAM_MB = 0.0f;
-        float PointSpotVRAM_MB = 0.0f;
+        uint32 DirectionalSliceCount = 0;      // 실제 생성된 Slice 개수
+        uint32 DirectionalCapacity = 0;        // Texture2DArray 최대 용량
+        uint32 DirectionalLightCount = 0;      // 할당된 라이트 개수
+        uint32 PointSpotSliceCount = 0;        // 실제 생성된 Slice 개수
+        uint32 PointSpotCapacity = 0;          // Texture2DArray 최대 용량
+        uint32 PointSpotLightCount = 0;        // 할당된 라이트 개수
+        float DirectionalVRAM_MB = 0.0f;       // 실제 할당된 VRAM (Capacity 기준)
+        float PointSpotVRAM_MB = 0.0f;         // 실제 할당된 VRAM (Capacity 기준)
         float TotalVRAM_MB = 0.0f;
     };
 

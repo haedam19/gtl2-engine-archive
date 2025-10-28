@@ -485,9 +485,10 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(const 
             }
         }
 
-        // Atlas 면적 기준으로 필요한 Slice 개수 계산 (70% 효율 가정, Packing 손실)
+        // Atlas 면적 기준으로 필요한 Slice 개수 계산 (85% 효율 가정, Packing 손실)
+        // MaxRects BSSF 알고리즘은 일반적으로 80~90% 효율을 보임
         uint64 AtlasArea = (uint64)AtlasSize * AtlasSize;
-        uint64 EffectiveAtlasArea = (AtlasArea * 70) / 100; // 70% 효율
+        uint64 EffectiveAtlasArea = (AtlasArea * 85) / 100; // 85% 효율
         uint32 RequiredSlices = (uint32)((TotalRequiredArea + EffectiveAtlasArea - 1) / EffectiveAtlasArea);
 
         // 최소 1개는 필요
@@ -772,6 +773,21 @@ FShadowAtlasManager::FAtlasStats FShadowAtlasManager::GetAtlasStats() const
     // PointSpot Atlas 통계
     Stats.PointSpotSliceCount = static_cast<uint32>(PointSpotAtlases.size());
     Stats.PointSpotCapacity = PointSpotArrayCapacity;
+
+    // 할당된 라이트 개수 계산
+    Stats.DirectionalLightCount = 0;
+    Stats.PointSpotLightCount = 0;
+    for (const auto& Pair : CurrentLightAllocations)
+    {
+        if (Pair.second.AtlasType == EShadowAtlasType::DirectionalCSM)
+        {
+            Stats.DirectionalLightCount++;
+        }
+        else if (Pair.second.AtlasType == EShadowAtlasType::PointSpotLight)
+        {
+            Stats.PointSpotLightCount++;
+        }
+    }
 
     // VRAM 계산 (Capacity 기준)
     // D24_UNORM_S8_UINT = 4 bytes per pixel

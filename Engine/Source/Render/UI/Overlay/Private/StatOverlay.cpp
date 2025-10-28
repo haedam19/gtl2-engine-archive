@@ -307,8 +307,8 @@ void UStatOverlay::RenderVRAM(ID2D1DeviceContext* d2dCtx)
         // Directional Atlas
         {
             char Buf[256];
-            sprintf_s(Buf, sizeof(Buf), "  Shadow Atlas (Dir): %u / %u Slices (%.1f MB)",
-                Stats.DirectionalSliceCount, Stats.DirectionalCapacity, Stats.DirectionalVRAM_MB);
+            sprintf_s(Buf, sizeof(Buf), "  Shadow Atlas (Dir): %u Lights, %u / %u Slices (%.1f MB)",
+                Stats.DirectionalLightCount, Stats.DirectionalSliceCount, Stats.DirectionalCapacity, Stats.DirectionalVRAM_MB);
             FString text = Buf;
             RenderText(d2dCtx, text, OverlayX, OverlayY + OffsetY, 0.7f, 0.9f, 1.0f);
             OffsetY += 20.0f;
@@ -317,8 +317,8 @@ void UStatOverlay::RenderVRAM(ID2D1DeviceContext* d2dCtx)
         // PointSpot Atlas
         {
             char Buf[256];
-            sprintf_s(Buf, sizeof(Buf), "  Shadow Atlas (P/S): %u / %u Slices (%.1f MB)",
-                Stats.PointSpotSliceCount, Stats.PointSpotCapacity, Stats.PointSpotVRAM_MB);
+            sprintf_s(Buf, sizeof(Buf), "  Shadow Atlas (P/S): %u Lights, %u / %u Slices (%.1f MB)",
+                Stats.PointSpotLightCount, Stats.PointSpotSliceCount, Stats.PointSpotCapacity, Stats.PointSpotVRAM_MB);
             FString text = Buf;
             RenderText(d2dCtx, text, OverlayX, OverlayY + OffsetY, 0.7f, 0.9f, 1.0f);
             OffsetY += 20.0f;
