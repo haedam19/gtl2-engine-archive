@@ -88,7 +88,10 @@ public:
     // Directional Light들을 받아서 Sorting하고 Atlas에 할당
     TArray<FLightAllocationPair> AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights);
 
-    TArray<FLightAllocationPair> AllocatePointSpotLights(const TArray<UPointLightComponent*>& Lights);
+    TArray<FLightAllocationPair> AllocatePointSpotLights(
+        const TArray<UPointLightComponent*>& Lights,
+        const FVector& CameraPos = FVector(),
+        const TMap<uint32, uint32>* LightClusterInfluences = nullptr);
 
     // Atlas 배열 접근
     const TArray<FShadowAtlasInfo>& GetAtlases(EShadowAtlasType Type) const;
@@ -149,12 +152,22 @@ private:
     // 타입별 기본 Atlas 크기 반환
     uint32 GetDefaultAtlasSize(EShadowAtlasType Type) const;
 
-    // Point/Spot Light의 Shadow Map 해상도 계산
+    // Point/Spot Light의 Shadow Map 해상도 계산 (기존)
     uint32 CalculatePointSpotLightResolution(UPointLightComponent* Light) const;
 
-    // Texture2DArray 생성 및 확장
+    // Point/Spot Light의 Shadow Map 해상도 계산 (LOD 적용)
+    uint32 CalculatePointSpotLightResolutionLOD(
+        UPointLightComponent* Light,
+        const FVector& CameraPos,
+        uint32 AffectedClusterCount) const;
+
+    // Texture2DArray 생성 및 확장/축소
     bool CreateAtlasArray(EShadowAtlasType Type, uint32 Capacity);
     bool ExpandAtlasArray(EShadowAtlasType Type);
+    bool ShrinkAtlasArray(EShadowAtlasType Type, uint32 NewCapacity);
+
+    // 사용 중인 최대 슬라이스 인덱스 계산
+    uint32 GetMaxUsedSliceIndex(EShadowAtlasType Type) const;
 
 private:
     ID3D11Device* Device = nullptr;
@@ -179,6 +192,10 @@ private:
 
     // 동적 Atlas 크기 설정
     uint32 PointSpotAtlasSize = 4096;     // PointSpot Atlas 크기 (기본 4096, 변경 가능: 2048, 4096)
+
+    // Atlas 축소 관련 (랙 방지)
+    uint32 FramesSinceLastShrink = 0;     // 마지막 축소 이후 프레임 수
+    uint32 ShrinkCooldownFrames = 120;    // 축소 쿨다운 (120프레임 = 약 2초 @ 60fps)
 
     // Release 중복 호출 방지
     bool bIsReleased = false;

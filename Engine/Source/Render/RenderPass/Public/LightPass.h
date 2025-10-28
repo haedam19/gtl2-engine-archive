@@ -28,6 +28,13 @@ struct FLightCountInfo
 	uint32 SpotLightCount;
 	FVector2 padding;
 };
+
+// 라이트별 클러스터 영향 정보 (LOD 계산용)
+struct FLightClusterInfluence
+{
+	uint32 LightIndex = 0;
+	uint32 AffectedClusterCount = 0;
+};
 struct FGizmoVertex
 {
 	FVector Pos;
@@ -69,6 +76,11 @@ public:
 	void SetClusterSliceNumX(uint32 SliceNum) { ClusterSliceNumX = SliceNum; }
 	void SetClusterSliceNumY(uint32 SliceNum) { ClusterSliceNumY = SliceNum; }
 	void SetClusterSliceNumZ(uint32 SliceNum) { ClusterSliceNumZ = SliceNum; }
+
+	// 클러스터 컬링 결과 수집 (LOD 계산용)
+	TArray<FLightClusterInfluence> GetPointLightClusterInfluences() const;
+	TArray<FLightClusterInfluence> GetSpotLightClusterInfluences() const;
+
 private:
 	uint32 GetClusterCount() const { return ClusterSliceNumX * ClusterSliceNumY * ClusterSliceNumZ; }
 	bool IsChangeOption();
