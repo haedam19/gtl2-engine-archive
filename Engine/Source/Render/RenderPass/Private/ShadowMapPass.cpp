@@ -161,12 +161,12 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
 				// CSM 렌더링 후 즉시 모든 리소스 Unbind (Resource Hazard 방지)
 				ID3D11ShaderResourceView* NullSRVs[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT] = { nullptr };
-				ID3D11UnorderedAccessView* NullUAVs[D3D11_1_UAV_SLOT_COUNT] = { nullptr };
+				ID3D11UnorderedAccessView* NullUAVs[8] = { nullptr };  // Feature Level 11_0: 최대 8개
 
 				DeviceContext->VSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
 				DeviceContext->PSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
 				DeviceContext->CSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
-				DeviceContext->CSSetUnorderedAccessViews(0, D3D11_1_UAV_SLOT_COUNT, NullUAVs, nullptr);
+				DeviceContext->CSSetUnorderedAccessViews(0, 8, NullUAVs, nullptr);
 				DeviceContext->GSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
 				DeviceContext->HSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
 				DeviceContext->DSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
@@ -267,12 +267,12 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
 				// 라이트별 렌더링 후 즉시 모든 리소스 Unbind (Resource Hazard 방지)
 				ID3D11ShaderResourceView* NullSRVs[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT] = { nullptr };
-				ID3D11UnorderedAccessView* NullUAVs[D3D11_1_UAV_SLOT_COUNT] = { nullptr };
+				ID3D11UnorderedAccessView* NullUAVs[8] = { nullptr };  // Feature Level 11_0: 최대 8개
 
 				DeviceContext->VSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
 				DeviceContext->PSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
 				DeviceContext->CSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
-				DeviceContext->CSSetUnorderedAccessViews(0, D3D11_1_UAV_SLOT_COUNT, NullUAVs, nullptr);
+				DeviceContext->CSSetUnorderedAccessViews(0, 8, NullUAVs, nullptr);
 				DeviceContext->GSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
 				DeviceContext->HSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
 				DeviceContext->DSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
@@ -416,7 +416,7 @@ RENDER_SPOTLIGHT:
 			// 🔥 Draw 직후 즉시 모든 리소스 Unbind (Resource Hazard 방지)
 			// DSV로 렌더링 중인 Texture2DArray가 다른 라이트에서 SRV로 바인딩되는 것을 방지
 			ID3D11ShaderResourceView* NullSRVs[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT] = { nullptr };
-			ID3D11UnorderedAccessView* NullUAVs[D3D11_1_UAV_SLOT_COUNT] = { nullptr };
+			ID3D11UnorderedAccessView* NullUAVs[8] = { nullptr };  // Feature Level 11_0: 최대 8개
 
 			// Vertex Shader
 			DeviceContext->VSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
@@ -424,7 +424,7 @@ RENDER_SPOTLIGHT:
 			DeviceContext->PSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
 			// Compute Shader
 			DeviceContext->CSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);
-			DeviceContext->CSSetUnorderedAccessViews(0, D3D11_1_UAV_SLOT_COUNT, NullUAVs, nullptr);
+			DeviceContext->CSSetUnorderedAccessViews(0, 8, NullUAVs, nullptr);
 
 			// Geometry/Hull/Domain Shaders (혹시 사용될 경우 대비)
 			DeviceContext->GSSetShaderResources(0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, NullSRVs);

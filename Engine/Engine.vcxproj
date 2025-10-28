@@ -307,6 +307,7 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Source\Render\UI\Widget\Public\ShadowAtlasWidget.h" />
     <ClInclude Include="Source\Utility\Public\CSMBuilder.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Source\Actor\Public\Actor.h" />
@@ -571,6 +572,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ObjViewerDebug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
+    <ClCompile Include="Source\Render\UI\Widget\Private\ShadowAtlasWidget.cpp" />
     <ClCompile Include="Source\Utility\Private\CSMBuilder.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>

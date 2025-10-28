@@ -329,12 +329,55 @@ uint32 FShadowAtlasManager::GetDefaultAtlasSize(EShadowAtlasType Type) const
     switch (Type)
     {
     case EShadowAtlasType::DirectionalCSM:
-        return 4096;  // Directional Light CSM은 4096x4096
+        return 4096;  // Directional Light CSM은 고정 4096x4096
     case EShadowAtlasType::PointSpotLight:
-        return 4096;  // Point/Spot Light도 4096x4096
+        return PointSpotAtlasSize;  // 동적으로 변경 가능 (2048 or 4096)
     default:
         return 2048;
     }
+}
+
+void FShadowAtlasManager::SetPointSpotAtlasSize(uint32 NewSize)
+{
+    // 유효한 크기만 허용 (2048 or 4096)
+    if (NewSize != 2048 && NewSize != 4096)
+    {
+        UE_LOG_WARNING("ShadowAtlasManager: Invalid atlas size %d. Must be 2048 or 4096.", NewSize);
+        return;
+    }
+
+    // 이미 같은 크기면 무시
+    if (PointSpotAtlasSize == NewSize)
+    {
+        return;
+    }
+
+    UE_LOG_INFO("ShadowAtlasManager: Changing PointSpot Atlas size from %d to %d", PointSpotAtlasSize, NewSize);
+
+    PointSpotAtlasSize = NewSize;
+
+    // 기존 Atlas 모두 해제
+    for (auto& Atlas : PointSpotAtlases)
+    {
+        Atlas.Release();
+    }
+    PointSpotAtlases.clear();
+    PointSpotAtlases.shrink_to_fit();
+
+    // Texture2DArray 재생성
+    SafeRelease(PointSpotAtlasArraySRV);
+    SafeRelease(PointSpotAtlasArrayTexture);
+
+    PointSpotArrayCapacity = 1;  // 초기 Capacity로 리셋
+    CreateAtlasArray(EShadowAtlasType::PointSpotLight, PointSpotArrayCapacity);
+
+    // 첫 Atlas Slice 생성
+    CreateNewAtlasSlice(EShadowAtlasType::PointSpotLight, PointSpotAtlasSize);
+
+    // 이전 할당 정보 클리어
+    PreviousPointSpotAllocations.clear();
+
+    UE_LOG_INFO("ShadowAtlasManager: PointSpot Atlas size changed successfully");
 }
 
 TArray<FLightAllocationPair> FShadowAtlasManager::AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights)

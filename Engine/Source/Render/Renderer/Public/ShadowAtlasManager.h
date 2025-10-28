@@ -119,6 +119,10 @@ public:
 
     FAtlasStats GetAtlasStats() const;
 
+    // Atlas 크기 설정 (런타임 변경 가능)
+    void SetPointSpotAtlasSize(uint32 NewSize);
+    uint32 GetPointSpotAtlasSize() const { return PointSpotAtlasSize; }
+
 private:
     // 새 Atlas Slice 생성 (Texture2DArray의 다음 슬라이스)
     bool CreateNewAtlasSlice(EShadowAtlasType Type, uint32 AtlasSize);
@@ -156,6 +160,9 @@ private:
     ID3D11ShaderResourceView* PointSpotAtlasArraySRV = nullptr;
     uint32 DirectionalArrayCapacity = 1;  // Directional 4장 시작, 필요시 8, 16... 확장
     uint32 PointSpotArrayCapacity = 1;    // PointSpot 8장 시작, 필요시 16, 32... 확장
+
+    // 동적 Atlas 크기 설정
+    uint32 PointSpotAtlasSize = 4096;     // PointSpot Atlas 크기 (기본 4096, 변경 가능: 2048, 4096)
 
     // Release 중복 호출 방지
     bool bIsReleased = false;
