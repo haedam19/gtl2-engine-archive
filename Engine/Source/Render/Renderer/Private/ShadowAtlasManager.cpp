@@ -139,6 +139,18 @@ void FShadowAtlasManager::ClearAllAllocations()
     CurrentLightAllocations.clear();
 }
 
+void FShadowAtlasManager::ClearAllLightAllocations()
+{
+    // 레벨 전환 시 모든 라이트 할당 정보 완전 클리어 (댕글링 포인터 방지)
+    CurrentLightAllocations.clear();
+    PreviousPointSpotAllocations.clear();
+
+    // Atlas도 클리어
+    ClearAllAllocations();
+
+    UE_LOG_INFO("ShadowAtlasManager: All light allocations cleared (level transition)");
+}
+
 const std::vector<FShadowAtlasInfo>& FShadowAtlasManager::GetAtlases(EShadowAtlasType Type) const
 {
     switch (Type)

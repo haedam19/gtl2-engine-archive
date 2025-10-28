@@ -81,6 +81,9 @@ public:
     // 모든 Atlas 할당 초기화 (매 프레임 시작 시 호출)
     void ClearAllAllocations();
 
+    // 레벨 전환 시 모든 할당 정보 완전 클리어 (댕글링 포인터 방지)
+    void ClearAllLightAllocations();
+
     // Light Sorting + Allocation (핵심 함수)
     // Directional Light들을 받아서 Sorting하고 Atlas에 할당
     TArray<FLightAllocationPair> AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights);
