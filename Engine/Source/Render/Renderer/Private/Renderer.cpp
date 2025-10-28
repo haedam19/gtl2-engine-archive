@@ -74,7 +74,7 @@ void URenderer::Init(HWND InWindowHandle)
 	// Build render passes
 	// render pass order: Shadow Map -> Light -> Static Mesh -> Decal -> Billboard -> Text -> Fog -> SceneDepth (-> FXAA)
 
-	ShadowMapPass = new FShadowMapPass(Pipeline, ConstantBufferLightViewProj, ConstantBufferModels,
+	ShadowMapPass = new FShadowMapPass(Pipeline, ConstantBufferLightViewProj, ConstantBufferCascadeShadow, ConstantBufferModels,
 		ShadowDepthVertexShader, ShadowDepthPixelShader, ShadowDepthInputLayout, DefaultDepthStencilState);
 	RenderPasses.push_back(ShadowMapPass);
 
@@ -1176,6 +1176,7 @@ void URenderer::CreateConstantBuffers()
 	ConstantBufferViewProj = FRenderResourceFactory::CreateConstantBuffer<FCameraConstants>();
 	ConstantBufferLightViewProj = FRenderResourceFactory::CreateConstantBuffer<FLightViewProjConstants>();
 	ShadowPreviewConstantBuffer = FRenderResourceFactory::CreateConstantBuffer<FShadowPreviewParameters>();
+	ConstantBufferCascadeShadow = FRenderResourceFactory::CreateConstantBuffer<FCascadeShadowConstants>();
 }
 
 void URenderer::ReleaseConstantBuffers()
@@ -1185,4 +1186,5 @@ void URenderer::ReleaseConstantBuffers()
 	SafeRelease(ConstantBufferViewProj);
 	SafeRelease(ConstantBufferLightViewProj);
 	SafeRelease(ShadowPreviewConstantBuffer);
+	SafeRelease(ConstantBufferCascadeShadow);
 }

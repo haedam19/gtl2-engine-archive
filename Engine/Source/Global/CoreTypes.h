@@ -41,6 +41,31 @@ struct FLightViewProjConstants
 	FMatrix LightProjection;
 };
 
+constexpr uint32 CSM_MAX_CASCADES = 4;
+
+__declspec(align(16))
+struct FCascadeShadowConstants
+{
+	FCascadeShadowConstants()
+	{
+		for (uint32 Index = 0; Index < CSM_MAX_CASCADES; ++Index)
+		{
+			CascadesLightView[Index] = FMatrix();
+			CascadesLightProj[Index] = FMatrix();
+			CascadeScaleOffsets[Index] = FVector4(1.0f, 1.0f, 0.0f, 0.0f);
+		}
+		CascadeParams = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
+	}
+
+	FMatrix CascadesLightView[CSM_MAX_CASCADES];
+	FMatrix CascadesLightProj[CSM_MAX_CASCADES];
+	FVector4 CascadeSplits = FVector4(0, 0, 0, 0);
+	FVector4 CascadeScaleOffsets[CSM_MAX_CASCADES];
+	FVector4 CascadeParams;
+	FVector4 bIsCSM;
+};
+
+
 __declspec(align(16))
 struct FShadowPreviewParameters
 {
