@@ -106,7 +106,7 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		if (UDirectionalLightComponent* DirLight = Context.DirectionalLights[0])
 		{
 			// CSM 활성화 여부 확인
-			const bool bUseCSM = (DirLight->GetShadowMapType() == EShadowMapType::CSM && Context.CurrentCamera);
+			const bool bUseCSM = (Renderer.GetShadowMapType() == EShadowMapType::CSM && Context.CurrentCamera);
 
 			if (bUseCSM)
 			{
@@ -439,12 +439,12 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 			InfluenceMap[Influence.LightIndex] = Influence.AffectedClusterCount;
 		}
 
-		AllocatedSpotLights = AtlasManager->AllocatePointSpotLights(SpotLightsAsPointLights, CameraPos, &InfluenceMap);
+		AllocatedSpotLights = AtlasManager->AllocateSpotLights(SpotLightsForAllocation, &CameraPos, &InfluenceMap);
 	}
 	else
 	{
 		// LOD 없이 기존 방식으로 할당
-		AllocatedSpotLights = AtlasManager->AllocatePointSpotLights(SpotLightsAsPointLights);
+		AllocatedSpotLights = AtlasManager->AllocateSpotLights(SpotLightsForAllocation);
 	}
 
 	// 슬라이스별로 라이트를 묶는다 (AtlasIndex 기준)

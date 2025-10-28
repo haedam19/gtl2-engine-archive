@@ -95,7 +95,10 @@ public:
         const TArray<UPointLightComponent*>& Lights,
         const FVector& CameraPos = FVector(),
         const TMap<uint32, uint32>* LightClusterInfluences = nullptr);
-    TArray<FLightAllocationPair> AllocateSpotLights(const TArray<USpotLightComponent*>& Lights);
+    TArray<FLightAllocationPair> AllocateSpotLights(
+        const TArray<USpotLightComponent*>& Lights,
+        const FVector* CameraPos = nullptr,
+        const TMap<uint32, uint32>* LightClusterInfluences = nullptr);
     TArray<FLightAllocationPair> AllocatePointLights(const TArray<UPointLightComponent*>& Lights);
     bool GetPointLightFaceAllocation(UPointLightComponent* Light, uint32 FaceIndex, FShadowAtlasAllocation& OutAllocation, uint32& OutResolution) const;
 
@@ -160,7 +163,7 @@ private:
 
     // Point/Spot Light의 Shadow Map 해상도 계산 (기존)
     uint32 CalculatePointSpotLightResolution(UPointLightComponent* Light) const;
-    // Point/Spot Light의 Shadow Map 해상도 계산
+    // Spot/Point Light Shadow Map 해상도 계산
     uint32 CalculateSpotLightResolution(USpotLightComponent* Light) const;
     uint32 CalculatePointLightResolution(UPointLightComponent* Light) const;
 
