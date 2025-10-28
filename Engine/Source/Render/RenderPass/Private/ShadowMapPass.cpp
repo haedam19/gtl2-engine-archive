@@ -158,6 +158,11 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 						Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
 					}
 				}
+
+				// CSM 렌더링 후 RenderTarget Unbind
+				 NullRTV = nullptr;
+				ID3D11DepthStencilView* NullDSV = nullptr;
+				Pipeline->SetRenderTargets(1, &NullRTV, NullDSV);
 			}
 		}
 		else
@@ -273,6 +278,12 @@ RENDER_SPOTLIGHT:
 		if (!Pair.IsValid()) continue;
 		spotBySlice[Pair.Allocation.AtlasIndex].push_back(&Pair);
 	}
+
+	// SpotLight 렌더링 시작 전에 Cascade Shadow Constant Buffer 초기화 (CSM 데이터 제거)
+	FCascadeShadowConstants NonCSMData;
+	NonCSMData.bIsCSM = FVector4::Zero();
+	FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, NonCSMData);
+	Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
 
 	// 4) 🔥 슬라이스 단위 렌더링: 슬라이스 진입 시 "1회만" Clear
 	for (auto& kv : spotBySlice)
