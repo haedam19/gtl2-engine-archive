@@ -24,6 +24,10 @@ struct FAABB : public IBoundingVolume
 
 	float GetDistanceSquaredToPoint(const FVector& Point) const;
 
+	// Transform AABB by a matrix and return new AABB
+	// For post-perspective space, performs perspective divide
+	FAABB Transform(const struct FMatrix& InTransform, bool bPerspectiveDivide = true) const;
+
 	EBoundingVolumeType GetType() const override { return EBoundingVolumeType::AABB; }
 };
 

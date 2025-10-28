@@ -4,8 +4,8 @@
 
 class UPrimitiveComponent;
 
-constexpr int MAX_PRIMITIVES = 16; 
-constexpr int MAX_DEPTH = 5;      
+constexpr int MAX_PRIMITIVES = 16;
+constexpr int MAX_DEPTH = 13;  // Size 2500에서 시작, 최소 노드 크기 약 0.61 (5000 / 2^13)      
 
 class FOctree
 {
@@ -29,7 +29,10 @@ public:
 	bool IsLeafNode() const { return IsLeaf(); }
 	const TArray<UPrimitiveComponent*>& GetPrimitives() const { return Primitives; }
 	TArray<FOctree*>& GetChildren() { return Children; }
-	const TArray<FOctree*>& GetChildren() const { return Children; } 
+	const TArray<FOctree*>& GetChildren() const { return Children; }
+
+	// PSM을 위한 최소 포함 노드 찾기
+	FOctree* FindSmallestEnclosingNode() const; 
 
 private:
 	bool IsLeaf() const { return Children[0] == nullptr; }

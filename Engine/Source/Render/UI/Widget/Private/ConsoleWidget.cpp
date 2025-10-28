@@ -488,44 +488,22 @@ void UConsoleWidget::ProcessCommand(const char* InCommand)
 	{
 		FString mode = CommandLower.substr(11);
 
-		UDirectionalLightComponent* DirLight = nullptr;
-		ULevel* CurrentLevel = GWorld ? GWorld->GetLevel() : nullptr;
-		if (CurrentLevel)
-		{
-			for (ULightComponent* LightComponent : CurrentLevel->GetLightComponents())
-			{
-				if (!LightComponent)
-				{
-					continue;
-				}
-
-				if (LightComponent->GetLightType() == ELightComponentType::LightType_Directional)
-				{
-					DirLight = static_cast<UDirectionalLightComponent*>(LightComponent);
-					break;
-				}
-			}
-		}
-
-		if (!DirLight)
-		{
-			AddLog(ELogType::Error, "No directional light found.");
-			return;
-		}
+		// 전역 Renderer 설정 사용
+		auto& Renderer = URenderer::GetInstance();
 
 		if (mode == "csm")
 		{
-			DirLight->SetShadowMapType(EShadowMapType::CSM);
+			Renderer.SetShadowMapType(EShadowMapType::CSM);
 			AddLog(ELogType::Success, "Shadow map type set to CSM.");
 		}
 		else if (mode == "lvp")
 		{
-			DirLight->SetShadowMapType(EShadowMapType::LVP);
+			Renderer.SetShadowMapType(EShadowMapType::LVP);
 			AddLog(ELogType::Success, "Shadow map type set to LVP.");
 		}
 		else if (mode == "psm")
 		{
-			DirLight->SetShadowMapType(EShadowMapType::PSM);
+			Renderer.SetShadowMapType(EShadowMapType::PSM);
 			AddLog(ELogType::Success, "Shadow map type set to PSM.");
 		}
 		else

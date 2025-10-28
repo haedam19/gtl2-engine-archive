@@ -323,6 +323,172 @@ void FLightPass::Execute(FRenderingContext& Context)
 }
 
 
+TArray<FLightClusterInfluence> FLightPass::GetPointLightClusterInfluences() const
+{
+	TArray<FLightClusterInfluence> Result;
+
+	// StructuredBuffer 데이터를 CPU로 복사
+	ID3D11Device* Device = nullptr;
+	PointLightIndicesRWStructuredBuffer->GetDevice(&Device);
+	if (!Device)
+	{
+		return Result;
+	}
+
+	ID3D11DeviceContext* Context = nullptr;
+	Device->GetImmediateContext(&Context);
+	if (!Context)
+	{
+		Device->Release();
+		return Result;
+	}
+
+	// Staging Buffer 생성
+	D3D11_BUFFER_DESC desc;
+	PointLightIndicesRWStructuredBuffer->GetDesc(&desc);
+	desc.Usage = D3D11_USAGE_STAGING;
+	desc.BindFlags = 0;
+	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	desc.MiscFlags = 0;
+
+	ID3D11Buffer* StagingBuffer = nullptr;
+	HRESULT hr = Device->CreateBuffer(&desc, nullptr, &StagingBuffer);
+	if (FAILED(hr))
+	{
+		Context->Release();
+		Device->Release();
+		return Result;
+	}
+
+	// GPU -> Staging Buffer 복사
+	Context->CopyResource(StagingBuffer, PointLightIndicesRWStructuredBuffer);
+
+	// CPU로 데이터 읽기
+	D3D11_MAPPED_SUBRESOURCE mapped;
+	hr = Context->Map(StagingBuffer, 0, D3D11_MAP_READ, 0, &mapped);
+	if (SUCCEEDED(hr))
+	{
+		int* LightIndices = static_cast<int*>(mapped.pData);
+		uint32 ClusterCount = GetClusterCount();
+
+		// 라이트별 영향받는 클러스터 개수 계산
+		TMap<uint32, uint32> LightClusterCounts;
+
+		for (uint32 ClusterIdx = 0; ClusterIdx < ClusterCount; ++ClusterIdx)
+		{
+			uint32 Offset = ClusterIdx * LightMaxCountPerCluster;
+			for (uint32 i = 0; i < LightMaxCountPerCluster; ++i)
+			{
+				int LightIndex = LightIndices[Offset + i];
+				if (LightIndex >= 0)
+				{
+					LightClusterCounts[LightIndex]++;
+				}
+			}
+		}
+
+		// 결과 변환
+		for (const auto& Pair : LightClusterCounts)
+		{
+			FLightClusterInfluence Influence;
+			Influence.LightIndex = Pair.first;
+			Influence.AffectedClusterCount = Pair.second;
+			Result.push_back(Influence);
+		}
+
+		Context->Unmap(StagingBuffer, 0);
+	}
+
+	StagingBuffer->Release();
+	Context->Release();
+	Device->Release();
+
+	return Result;
+}
+
+TArray<FLightClusterInfluence> FLightPass::GetSpotLightClusterInfluences() const
+{
+	TArray<FLightClusterInfluence> Result;
+
+	// StructuredBuffer 데이터를 CPU로 복사
+	ID3D11Device* Device = nullptr;
+	SpotLightIndicesRWStructuredBuffer->GetDevice(&Device);
+	if (!Device)
+	{
+		return Result;
+	}
+
+	ID3D11DeviceContext* Context = nullptr;
+	Device->GetImmediateContext(&Context);
+	if (!Context)
+	{
+		Device->Release();
+		return Result;
+	}
+
+	// Staging Buffer 생성
+	D3D11_BUFFER_DESC desc;
+	SpotLightIndicesRWStructuredBuffer->GetDesc(&desc);
+	desc.Usage = D3D11_USAGE_STAGING;
+	desc.BindFlags = 0;
+	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	desc.MiscFlags = 0;
+
+	ID3D11Buffer* StagingBuffer = nullptr;
+	HRESULT hr = Device->CreateBuffer(&desc, nullptr, &StagingBuffer);
+	if (FAILED(hr))
+	{
+		Context->Release();
+		Device->Release();
+		return Result;
+	}
+
+	// GPU -> Staging Buffer 복사
+	Context->CopyResource(StagingBuffer, SpotLightIndicesRWStructuredBuffer);
+
+	// CPU로 데이터 읽기
+	D3D11_MAPPED_SUBRESOURCE mapped;
+	hr = Context->Map(StagingBuffer, 0, D3D11_MAP_READ, 0, &mapped);
+	if (SUCCEEDED(hr))
+	{
+		int* LightIndices = static_cast<int*>(mapped.pData);
+		uint32 ClusterCount = GetClusterCount();
+
+		// 라이트별 영향받는 클러스터 개수 계산
+		TMap<uint32, uint32> LightClusterCounts;
+
+		for (uint32 ClusterIdx = 0; ClusterIdx < ClusterCount; ++ClusterIdx)
+		{
+			uint32 Offset = ClusterIdx * LightMaxCountPerCluster;
+			for (uint32 i = 0; i < LightMaxCountPerCluster; ++i)
+			{
+				int LightIndex = LightIndices[Offset + i];
+				if (LightIndex >= 0)
+				{
+					LightClusterCounts[LightIndex]++;
+				}
+			}
+		}
+
+		// 결과 변환
+		for (const auto& Pair : LightClusterCounts)
+		{
+			FLightClusterInfluence Influence;
+			Influence.LightIndex = Pair.first;
+			Influence.AffectedClusterCount = Pair.second;
+			Result.push_back(Influence);
+		}
+
+		Context->Unmap(StagingBuffer, 0);
+	}
+
+	StagingBuffer->Release();
+	Context->Release();
+	Device->Release();
+
+	return Result;
+}
+
 void FLightPass::Release()
 {
 	SafeRelease(ViewClusterCS);

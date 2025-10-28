@@ -119,13 +119,16 @@ public:
 	void SetShadowFilterMode(EShadowFilterMode InMode) { ShadowFilterMode = InMode; }
 	EShadowFilterMode GetShadowFilterMode() const { return ShadowFilterMode; }
 
+	void SetShadowMapType(EShadowMapType InType) { ShadowMapType = InType; }
+	EShadowMapType GetShadowMapType() const { return ShadowMapType; }
+
 	ID3D11VertexShader* GetVertexShader(EViewModeIndex ViewModeIndex) const;
 	ID3D11PixelShader* GetPixelShader(EViewModeIndex ViewModeIndex) const;
 
-	FLightPass* GetLightPass() { return LightPass; }
-	FClusteredRenderingGridPass* GetClusteredRenderingGridPass() { return ClusteredRenderingGridPass; }
+	FLightPass* GetLightPass() const { return LightPass; }
+	FClusteredRenderingGridPass* GetClusteredRenderingGridPass() const { return ClusteredRenderingGridPass; }
 	FShadowAtlasManager* GetShadowAtlasManager() const { return ShadowAtlasManager; }
-	FShadowMapPass* GetShadowMapPass() { return ShadowMapPass; }
+	FShadowMapPass* GetShadowMapPass() const { return ShadowMapPass; }
 
 	ID3D11ShaderResourceView* RenderShadowPreview(ID3D11ShaderResourceView* ShadowMapSRV,
 		ID3D11RenderTargetView* PreviewRTV,
@@ -230,6 +233,9 @@ private:
 
 	// Shadow Filtering
 	EShadowFilterMode ShadowFilterMode = EShadowFilterMode::PCF;
+
+	// Shadow Map Type (PSM/CSM/LVP)
+	EShadowMapType ShadowMapType = EShadowMapType::LVP;
 
 	TArray<class FRenderPass*> RenderPasses;
 

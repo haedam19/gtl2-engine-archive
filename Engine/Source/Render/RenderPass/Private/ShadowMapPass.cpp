@@ -1,4 +1,4 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
@@ -11,7 +11,9 @@
 #include "Render/Renderer/Public/RenderResourceFactory.h"
 #include "Render/Renderer/Public/Renderer.h"
 #include "Render/Renderer/Public/ShadowAtlasManager.h"
+#include "Render/RenderPass/Public/LightPass.h"
 #include "Utility/Public/CSMBuilder.h"
+#include "Editor/Public/Camera.h"
 
 static FMatrix CalculateCubeFaceViewMatrix(const FVector& LightPos, uint32 Face)
 {
@@ -239,19 +241,19 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 						DeviceContext->RSSetViewports(1, &ShadowViewport);
 
 						// Light View Projection 행렬 계산
-						FLightViewProjConstants LightVP;
-						if (Light->GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
-						{
-							// PSM: Camera 정보를 사용한 Perspective Shadow Mapping
-							LightVP.LightView = Light->GetLightViewMatrix(Context.CurrentCamera);
-							LightVP.LightProjection = Light->GetLightProjectionMatrix(Context.CurrentCamera);
-						}
-						else
-						{
-							// LVP: 기본 Orthographic Shadow Mapping
-							LightVP.LightView = Light->GetLightViewMatrix();
-							LightVP.LightProjection = Light->GetLightProjectionMatrix();
-						}
+				        FLightViewProjConstants LightVP;
+				        if (Renderer.GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
+				        {
+					        // PSM: Camera 정보와 SceneAABB를 사용한 Perspective Shadow Mapping
+        					LightVP.LightView = Light->GetLightViewMatrix(Context.CurrentCamera);
+		        			LightVP.LightProjection = Light->GetLightProjectionMatrix(Context.CurrentCamera, Context.SceneAABB);
+		        		}
+	        			else
+			        	{
+			        		// LVP: 기본 Orthographic Shadow Mapping
+			        		LightVP.LightView = Light->GetLightViewMatrix();
+			        		LightVP.LightProjection = Light->GetLightProjectionMatrix();
+                        }
 
 						// Slope Bias 설정
 						RenderState.SlopeScaledDepthBias = Light->GetShadowSlopeBias();
@@ -341,6 +343,7 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		ID3D11RasterizerState* RS_scissor = FRenderResourceFactory::GetRasterizerState(RSState);
 		FPipelineInfo PipeInfo = { InputLayout, VS, RS_scissor, DS, PS, nullptr, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST };
 		Pipeline->UpdatePipeline(PipeInfo);
+				
 
 		FStaticMesh* CurrentMeshAsset = nullptr;
 
@@ -420,10 +423,31 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 			SpotLightsForAllocation.push_back(SpotLight);
 	}
 
-	// 2) Atlas에서 영역/슬라이스 할당
-	TArray<FLightAllocationPair> AllocatedSpotLights = AtlasManager->AllocateSpotLights(SpotLightsForAllocation);
+	// 2) LOD를 위한 클러스터 영향도 수집 및 Atlas에서 영역/슬라이스 할당
+	TArray<FLightAllocationPair> AllocatedSpotLights;
 
-	// 3) 🔥 슬라이스별로 라이트를 묶는다 (AtlasIndex 기준)
+	// 카메라 위치와 클러스터 정보 수집 (LOD 적용)
+	if (Context.CurrentCamera && Renderer.GetLightPass())
+	{
+		FVector CameraPos = Context.CurrentCamera->GetLocation();
+		TArray<FLightClusterInfluence> ClusterInfluences = Renderer.GetLightPass()->GetSpotLightClusterInfluences();
+
+		// 배열 인덱스 기반 Map 생성
+		TMap<uint32, uint32> InfluenceMap;
+		for (const FLightClusterInfluence& Influence : ClusterInfluences)
+		{
+			InfluenceMap[Influence.LightIndex] = Influence.AffectedClusterCount;
+		}
+
+		AllocatedSpotLights = AtlasManager->AllocatePointSpotLights(SpotLightsAsPointLights, CameraPos, &InfluenceMap);
+	}
+	else
+	{
+		// LOD 없이 기존 방식으로 할당
+		AllocatedSpotLights = AtlasManager->AllocatePointSpotLights(SpotLightsAsPointLights);
+	}
+
+	// 슬라이스별로 라이트를 묶는다 (AtlasIndex 기준)
 	std::unordered_map<uint32, std::vector<const FLightAllocationPair*>> spotBySlice;
 	for (const FLightAllocationPair& Pair : AllocatedSpotLights)
 	{
@@ -437,7 +461,7 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 	FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, NonCSMData);
 	Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
 
-	// 4) 🔥 슬라이스 단위 렌더링: 슬라이스 진입 시 "1회만" Clear
+	// 슬라이스 단위 렌더링: 슬라이스 진입 시 "1회만" Clear
 	for (auto& kv : spotBySlice)
 	{
 		const uint32 sliceIndex = kv.first;
@@ -493,20 +517,34 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 			Pipeline->UpdatePipeline(PipeInfo);
 
 			// Spot Light View/Projection 만들기
-			const FVector LightPos = SpotLight->GetWorldLocation();
-			const FVector LightDir = SpotLight->GetForwardVector().GetNormalized();
+			FMatrix LightView, LightProj;
 
-			FVector Up = FVector::UpVector();
-			if (fabs(LightDir.Dot(Up)) > 0.99f) Up = FVector::RightVector();
+			// PSM 모드 확인 (Perspective Shadow Maps)
+			// NOTE: Spot light PSM is NOT recommended - see SpotLightComponent.cpp comments
+			if (Renderer.GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
+			{
+				// PSM: Transform to camera view space
+				LightView = SpotLight->GetLightViewMatrix(Context.CurrentCamera);
+				LightProj = SpotLight->GetLightProjectionMatrix(Context.CurrentCamera, Context.SceneAABB);
+			}
+			else
+			{
+				// Standard LVP mode
+				const FVector LightPos = SpotLight->GetWorldLocation();
+				const FVector LightDir = SpotLight->GetForwardVector().GetNormalized();
 
-			FMatrix LightView = FMatrix::LookAtLH(LightPos, LightPos + LightDir, Up);
+				FVector Up = FVector::UpVector();
+				if (fabs(LightDir.Dot(Up)) > 0.99f) Up = FVector::RightVector();
 
-			const float OuterAngle = max(SpotLight->GetOuterConeAngle(), 0.01f);
-			const float FovY = clamp(OuterAngle * 2.0f, 0.01f, PI - 0.01f);
-			const float NearZ = 0.01f;
-			const float FarZ = max(SpotLight->GetAttenuationRadius(), 0.5f);
+				LightView = FMatrix::LookAtLH(LightPos, LightPos + LightDir, Up);
 
-			FMatrix LightProj = FMatrix::PerspectiveFovLH(FovY, 1.0f, NearZ, FarZ);
+				const float OuterAngle = max(SpotLight->GetOuterConeAngle(), 0.01f);
+				const float FovY = clamp(OuterAngle * 2.0f, 0.01f, PI - 0.01f);
+				const float NearZ = 0.01f;
+				const float FarZ = max(SpotLight->GetAttenuationRadius(), 0.5f);
+
+				LightProj = FMatrix::PerspectiveFovLH(FovY, 1.0f, NearZ, FarZ);
+			}
 
 			// VS 상수 버퍼 갱신
 			FLightViewProjConstants LightVP{};
@@ -575,6 +613,8 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
 	DeviceContext->RSSetViewports(1, &OriginalViewport);
 
+	// CSM 데이터를 StaticMeshPass에서 사용할 수 있도록 Constant Buffer 업데이트
+	// (CSM을 사용한 경우 TempCascadeData에 저장된 데이터가 있음)
 	FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, TempCascadeData);
 	Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
 }
@@ -658,11 +698,6 @@ void FShadowMapPass::ReleaseVSMResources()
 	if (VSMTempMapUAV) { VSMTempMapUAV->Release(); VSMTempMapUAV = nullptr; }
 	if (VSMMomentMap) { VSMMomentMap->Release(); VSMMomentMap = nullptr; }
 	if (VSMTempMap) { VSMTempMap->Release(); VSMTempMap = nullptr; }
-
-	// VSM Compute Shaders Release
-	if (CSDepthToMoment) { CSDepthToMoment->Release(); CSDepthToMoment = nullptr; }
-	if (CSBlurH) { CSBlurH->Release(); CSBlurH = nullptr; }
-	if (CSBlurV) { CSBlurV->Release(); CSBlurV = nullptr; }
 }
 
 void FShadowMapPass::ExecuteVSMFilter()
@@ -739,4 +774,6 @@ void FShadowMapPass::ExecuteVSMFilter()
 	DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
 	DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
 	DeviceContext->CSSetShader(nullptr, nullptr, 0);  // Unbind compute shader
+
+	UE_LOG("[VSM] Filter executed successfully");
 }

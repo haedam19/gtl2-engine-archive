@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "Physics/Public/AABB.h"
+#include "Global/Matrix.h"
 
 float FAABB::GetCenterDistanceSquared(const FVector& Point) const
 {
@@ -113,4 +114,49 @@ float FAABB::GetDistanceSquaredToPoint(const FVector& Point) const
     }
 
     return SquaredDistance;
+}
+
+FAABB FAABB::Transform(const FMatrix& InTransform, bool bPerspectiveDivide) const
+{
+    // Get all 8 corners of the AABB
+    FVector Corners[8] = {
+        FVector(Min.X, Min.Y, Min.Z),
+        FVector(Max.X, Min.Y, Min.Z),
+        FVector(Min.X, Max.Y, Min.Z),
+        FVector(Max.X, Max.Y, Min.Z),
+        FVector(Min.X, Min.Y, Max.Z),
+        FVector(Max.X, Min.Y, Max.Z),
+        FVector(Min.X, Max.Y, Max.Z),
+        FVector(Max.X, Max.Y, Max.Z),
+    };
+
+    // Transform all corners and find new min/max
+    FAABB Result;
+    Result.Min = FVector(FLT_MAX, FLT_MAX, FLT_MAX);
+    Result.Max = FVector(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+    for (int i = 0; i < 8; ++i)
+    {
+        // Transform: FVector4(position, 1.0) * Matrix
+        FVector4 HomogeneousPos(Corners[i], 1.0f);
+        FVector4 TransformedPos = FMatrix::VectorMultiply(HomogeneousPos, InTransform);
+
+        // Perspective divide for post-perspective space
+        if (bPerspectiveDivide && std::abs(TransformedPos.W) > 1e-6f)
+        {
+            TransformedPos.X /= TransformedPos.W;
+            TransformedPos.Y /= TransformedPos.W;
+            TransformedPos.Z /= TransformedPos.W;
+        }
+
+        FVector Pos(TransformedPos.X, TransformedPos.Y, TransformedPos.Z);
+        Result.Min.X = std::min(Result.Min.X, Pos.X);
+        Result.Min.Y = std::min(Result.Min.Y, Pos.Y);
+        Result.Min.Z = std::min(Result.Min.Z, Pos.Z);
+        Result.Max.X = std::max(Result.Max.X, Pos.X);
+        Result.Max.Y = std::max(Result.Max.Y, Pos.Y);
+        Result.Max.Z = std::max(Result.Max.Z, Pos.Z);
+    }
+
+    return Result;
 }
