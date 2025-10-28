@@ -3,6 +3,7 @@
 #include "Optimization/Public/ViewVolumeCuller.h"
 
 class UConfigManager;
+class AActor;
 
 enum class ECameraType
 {
@@ -14,7 +15,7 @@ class UCamera : public UObject
 {
 public:
 	// Camera Speed Constants
-	static constexpr float MIN_SPEED = 1.0f;
+	static constexpr float MIN_SPEED = 0.01f;
 	static constexpr float MAX_SPEED = 70.0f;
 	static constexpr float DEFAULT_SPEED = 20.0f;
 	static constexpr float SPEED_ADJUST_STEP = 1.0f;
@@ -49,6 +50,9 @@ public:
 	 */
 	const FCameraConstants& GetFViewProjConstants() const { return CameraConstants; }
 	const FCameraConstants GetFViewProjConstantsInverse() const;
+
+	FMatrix GetViewMatrix() const;
+	FMatrix GetProjectionMatrix() const;
 
 	FRay ConvertToWorldRay(float NdcX, float NdcY) const;
 
@@ -94,7 +98,15 @@ public:
 		return Result;
 	}
 
+	// Camera Override methods
+	void OverrideCamera(AActor* InActor);
+	void ClearOverride();
+	AActor* GetOverrider() const { return Overrider; }
+
 private:
+	FVector GetEffectiveLocation() const;
+	FVector GetEffectiveRotation() const;
+
 	FCameraConstants CameraConstants = {};
 	FVector RelativeLocation = {};
 	FVector RelativeRotation = {};
@@ -117,4 +129,10 @@ private:
 	
 	// Dynamic Movement Speed
 	float CurrentMoveSpeed = DEFAULT_SPEED;
+
+	// Override Properties
+	AActor* Overrider = nullptr;
+	FVector CachedRelativeLocation = {};
+	FVector CachedRelativeRotation = {};
+	bool bHasCachedRelativeTransform = false;
 };

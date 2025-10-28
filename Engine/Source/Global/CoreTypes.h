@@ -23,9 +23,56 @@ struct FCameraConstants
 
 	FMatrix View;
 	FMatrix Projection;
-	FVector ViewWorldLocation;    
+	FVector ViewWorldLocation;
 	float NearClip;
 	float FarClip;
+};
+
+__declspec(align(16))
+struct FLightViewProjConstants
+{
+	FLightViewProjConstants()
+	{
+		LightView = FMatrix::Identity();
+		LightProjection = FMatrix::Identity();
+	}
+
+	FMatrix LightView;
+	FMatrix LightProjection;
+};
+
+constexpr uint32 CSM_MAX_CASCADES = 4;
+
+__declspec(align(16))
+struct FCascadeShadowConstants
+{
+	FCascadeShadowConstants()
+	{
+		for (uint32 Index = 0; Index < CSM_MAX_CASCADES; ++Index)
+		{
+			CascadesLightView[Index] = FMatrix();
+			CascadesLightProj[Index] = FMatrix();
+			CascadeScaleOffsets[Index] = FVector4(1.0f, 1.0f, 0.0f, 0.0f);
+		}
+		CascadeParams = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
+	}
+
+	FMatrix CascadesLightView[CSM_MAX_CASCADES];
+	FMatrix CascadesLightProj[CSM_MAX_CASCADES];
+	FVector4 CascadeSplits = FVector4(0, 0, 0, 0);
+	FVector4 CascadeScaleOffsets[CSM_MAX_CASCADES];
+	FVector4 CascadeParams;
+	FVector4 bIsCSM;
+};
+
+
+__declspec(align(16))
+struct FShadowPreviewParameters
+{
+	float NearPlane = 0.1f;
+	float FarPlane = 1000.0f;
+	float DepthGamma = 1.0f;
+	float Padding = 0.0f;
 };
 
 #define HAS_DIFFUSE_MAP	 (1 << 0)
@@ -75,6 +122,9 @@ struct FRenderState
 {
 	ECullMode CullMode = ECullMode::None;
 	EFillMode FillMode = EFillMode::Solid;
+	INT DepthBias = 0;
+	float SlopeScaledDepthBias = 0.0f;
+	float DepthBiasClamp = 0.0f;
 };
 
 /**
@@ -133,6 +183,9 @@ struct FDirectionalLightInfo
 	FVector4 Color;
 	FVector Direction;
 	float Intensity;
+	float ShadowBias;
+	float ShadowSharpen;
+	FVector2 Padding;
 };
 
 //StructuredBuffer padding 없어도됨
@@ -147,12 +200,13 @@ struct FPointLightInfo
 };
 
 //StructuredBuffer padding 없어도됨
-struct FSpotLightInfo
+struct alignas(16) FSpotLightInfo
 {
 	// Point Light와 공유하는 속성 (필드 순서 맞춤)
 	FVector4 Color;
 	FVector Position;
 	float Intensity;
+	FVector4 Direction; // W unused
 	float Range;
 	float DistanceFalloffExponent;
 
@@ -160,7 +214,15 @@ struct FSpotLightInfo
 	float InnerConeAngle;
 	float OuterConeAngle;
 	float AngleFalloffExponent;
-	FVector Direction;
+	float ShadowBias;
+	float ShadowSharpen;
+	uint32 ShadowMapIndex;
+	uint32 ShadowRegionIndex;  // ShadowRegions 버퍼의 인덱스
+	FVector2 ShadowMapInvSize;
+	float Padding;
+
+	FMatrix LightViewMatrix;
+	FMatrix LightProjectionMatrix;
 };
 
 struct FGlobalLightConstant
@@ -168,3 +230,8 @@ struct FGlobalLightConstant
 	FAmbientLightInfo Ambient;
 	FDirectionalLightInfo Directional;
 };
+
+// 구조체 크기 검증 (HLSL과 동일해야 함)
+static_assert(sizeof(FAmbientLightInfo) == 32, "FAmbientLightInfo size must be 32 bytes");
+static_assert(sizeof(FDirectionalLightInfo) == 48, "FDirectionalLightInfo size must be 48 bytes");
+static_assert(sizeof(FGlobalLightConstant) == 80, "FGlobalLightConstant size must be 80 bytes");

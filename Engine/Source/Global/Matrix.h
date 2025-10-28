@@ -115,4 +115,19 @@ struct FMatrix
 	FVector GetRotation() const;
 	FVector GetScale() const;
 	FVector TransformPosition(const FVector& V) const;
+
+	/**
+	* @brief Left-handed LookAt 행렬 생성 (Shadow Mapping용)
+	*/
+	static FMatrix LookAtLH(const FVector& Eye, const FVector& Target, const FVector& Up);
+
+	/**
+	* @brief Left-handed Orthographic Projection 행렬 생성 (Shadow Mapping용)
+	*/
+	static FMatrix OrthographicLH(float Width, float Height, float NearZ, float FarZ);
+
+	/**
+	* @brief Left-handed Perspective Projection 행렬 생성 (FOV 기반, PSM용)
+	*/
+	static FMatrix PerspectiveFovLH(float FovY, float AspectRatio, float NearZ, float FarZ);
 };

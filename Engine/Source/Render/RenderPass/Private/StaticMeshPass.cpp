@@ -1,21 +1,33 @@
-﻿#include "pch.h"
+#include "pch.h"
+#include <algorithm>
 #include "Render/RenderPass/Public/StaticMeshPass.h"
+#include "Render/RenderPass/Public/ShadowMapPass.h"
 #include "Component/Mesh/Public/StaticMeshComponent.h"
+#include "Component/Public/DirectionalLightComponent.h"
+#include "Component/Public/SpotLightComponent.h"
 #include "Render/Renderer/Public/Pipeline.h"
 #include "Render/Renderer/Public/RenderResourceFactory.h"
+#include "Render/Renderer/Public/Renderer.h"
+#include "Render/Renderer/Public/ShadowAtlasManager.h"
 #include "Texture/Public/Texture.h"
 
 FStaticMeshPass::FStaticMeshPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferCamera, ID3D11Buffer* InConstantBufferModel,
+	ID3D11Buffer* InConstantBufferLightViewProj,
 	ID3D11VertexShader* InVS, ID3D11PixelShader* InPS, ID3D11InputLayout* InLayout, ID3D11DepthStencilState* InDS)
 	: FRenderPass(InPipeline, InConstantBufferCamera, InConstantBufferModel), VS(InVS), PS(InPS), InputLayout(InLayout), DS(InDS)
+	, ConstantBufferLightViewProj(InConstantBufferLightViewProj)
 {
 	ConstantBufferMaterial = FRenderResourceFactory::CreateConstantBuffer<FMaterialConstants>();
+
+	// Shadow Region Structured Buffer 생성 (초기 크기 64개)
+	ShadowRegionStructuredBuffer = FRenderResourceFactory::CreateStructuredBuffer<FShadowAtlasRegionInfo>(ShadowRegionBufferCount);
+	FRenderResourceFactory::CreateStructuredShaderResourceView(ShadowRegionStructuredBuffer, &ShadowRegionStructuredBufferSRV);
 }
 
 void FStaticMeshPass::Execute(FRenderingContext& Context)
 {
 
-	const auto& Renderer = URenderer::GetInstance();
+	auto& Renderer = URenderer::GetInstance();
 	FRenderState RenderState = UStaticMeshComponent::GetClassDefaultRenderState();
 	if (Context.ViewMode == EViewModeIndex::VMI_Wireframe)
 	{
@@ -38,8 +50,166 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 	Pipeline->SetConstantBuffer(0, EShaderType::VS, ConstantBufferModel);
 	Pipeline->SetConstantBuffer(1, EShaderType::VS, ConstantBufferCamera);
 	Pipeline->SetConstantBuffer(1, EShaderType::PS, ConstantBufferCamera);
-	
-	if (!(Context.ShowFlags & EEngineShowFlags::SF_StaticMesh)) { return; }
+
+	// Shadow Atlas와 LVP/PSM 설정
+	const auto& DeviceRes = Renderer.GetDeviceResources();
+	FShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
+
+	TArray<FShadowAtlasRegionInfo> ShadowRegions;
+
+	if (!Context.DirectionalLights.empty() && Context.DirectionalLights[0])
+	{
+		UDirectionalLightComponent* DirLight = Context.DirectionalLights[0];
+
+		// Light View Projection 행렬 설정 (Shadow Map 타입에 따라 다르게 처리)
+		FLightViewProjConstants LightVP;
+		if (DirLight->GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
+		{
+			// PSM: Camera 정보를 사용한 Perspective Shadow Mapping
+			LightVP.LightView = DirLight->GetLightViewMatrix(Context.CurrentCamera);
+			LightVP.LightProjection = DirLight->GetLightProjectionMatrix(Context.CurrentCamera);
+		}
+		else
+		{
+			// LVP: 기본 Orthographic Shadow Mapping
+			LightVP.LightView = DirLight->GetLightViewMatrix();
+			LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
+		}
+
+		// 기존 버퍼 재사용 (매 프레임 생성하지 않음)
+		FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);
+		Pipeline->SetConstantBuffer(6, EShaderType::VS, ConstantBufferLightViewProj);  // UberLit.hlsl의 b6
+
+		// Cascade Shadow Constant Buffer 바인딩 (b7)
+		ID3D11Buffer* ccb = URenderer::GetInstance().GetCascadeConstantBuffer();
+		Pipeline->SetConstantBuffer(7, EShaderType::PS, ccb);
+
+		// Shadow Atlas Region 정보 수집
+		if (AtlasManager)
+		{
+			const FShadowAtlasAllocation* Allocation = AtlasManager->GetLightAllocation(DirLight);
+			if (Allocation && Allocation->IsValid())
+			{
+				FShadowAtlasRegionInfo RegionInfo;
+				RegionInfo.UVTransform = FVector4(
+					Allocation->Region.UMin,
+					Allocation->Region.VMin,
+					Allocation->Region.UMax - Allocation->Region.UMin,  // UScale
+					Allocation->Region.VMax - Allocation->Region.VMin   // VScale
+				);
+				RegionInfo.AtlasType = static_cast<uint32>(Allocation->AtlasType);
+				RegionInfo.AtlasIndex = Allocation->AtlasIndex;
+				RegionInfo.CascadeIndex = 0;  // 현재는 CSM 미지원, 나중에 추가
+				RegionInfo.CubeFaceIndex = 0; // DirectionalLight는 Cube Face 사용 안 함
+
+				ShadowRegions.push_back(RegionInfo);
+			}
+
+			// Shadow Atlas Texture2DArray SRV 바인딩 (t10, t11)
+			Pipeline->SetShaderResourceView(10, EShaderType::PS, AtlasManager->GetDirectionalAtlasArraySRV());
+			Pipeline->SetShaderResourceView(11, EShaderType::PS, AtlasManager->GetPointSpotAtlasArraySRV());
+		}
+
+		// Shadow Sampler 바인딩 (s1)
+		Pipeline->SetSamplerState(1, EShaderType::PS, Renderer.GetShadowSampler());
+	}
+
+	// SpotLight Shadow Atlas Region 정보 수집
+	if (AtlasManager)
+	{
+		for (USpotLightComponent* SpotLight : Context.SpotLights)
+		{
+			if (!SpotLight || !SpotLight->GetLightEnabled())
+			{
+				continue;
+			}
+
+			const FShadowAtlasAllocation* Allocation = AtlasManager->GetLightAllocation(SpotLight);
+			if (Allocation && Allocation->IsValid())
+			{
+				// SpotLight에게 ShadowRegionIndex 알려주기
+				SpotLight->ShadowRegionIndex = static_cast<uint32>(ShadowRegions.size());
+
+				FShadowAtlasRegionInfo RegionInfo;
+				RegionInfo.UVTransform = FVector4(
+					Allocation->Region.UMin,
+					Allocation->Region.VMin,
+					Allocation->Region.UMax - Allocation->Region.UMin,  // UScale
+					Allocation->Region.VMax - Allocation->Region.VMin   // VScale
+				);
+				RegionInfo.AtlasType = static_cast<uint32>(Allocation->AtlasType);
+				RegionInfo.AtlasIndex = Allocation->AtlasIndex;
+				RegionInfo.CascadeIndex = 0;
+				RegionInfo.CubeFaceIndex = 0;
+
+				ShadowRegions.push_back(RegionInfo);
+			}
+		}
+	}
+
+	// Shadow Region Structured Buffer 업데이트
+	if (!ShadowRegions.empty())
+	{
+		// 버퍼 크기가 부족하면 재생성 (동적 확장)
+		if (ShadowRegionBufferCount < ShadowRegions.size())
+		{
+			while (ShadowRegionBufferCount < ShadowRegions.size())
+			{
+				ShadowRegionBufferCount = ShadowRegionBufferCount << 1;
+			}
+			SafeRelease(ShadowRegionStructuredBuffer);
+			SafeRelease(ShadowRegionStructuredBufferSRV);
+			ShadowRegionStructuredBuffer = FRenderResourceFactory::CreateStructuredBuffer<FShadowAtlasRegionInfo>(ShadowRegionBufferCount);
+			FRenderResourceFactory::CreateStructuredShaderResourceView(ShadowRegionStructuredBuffer, &ShadowRegionStructuredBufferSRV);
+		}
+
+		FRenderResourceFactory::UpdateStructuredBuffer(ShadowRegionStructuredBuffer, ShadowRegions);
+		Pipeline->SetShaderResourceView(12, EShaderType::PS, ShadowRegionStructuredBufferSRV);
+	}
+
+	constexpr uint32 MaxSpotLightSlots = 8;
+	ID3D11ShaderResourceView* SpotShadowSRVs[MaxSpotLightSlots] = {};
+	uint32 SpotShadowCount = 0;
+
+	for (USpotLightComponent* SpotLight : Context.SpotLights)
+	{
+		if (!SpotLight || !SpotLight->GetLightEnabled() || !SpotLight->HasValidShadowMapIndex())
+		{
+			continue;
+		}
+
+		uint32 ShadowIndex = SpotLight->GetShadowMapArrayIndex();
+		if (ShadowIndex >= MaxSpotLightSlots)
+		{
+			continue;
+		}
+
+		FShadowMapData& ShadowData = SpotLight->GetShadowMapData();
+		if (!ShadowData.ShadowMapSRV)
+		{
+			continue;
+		}
+
+		SpotShadowSRVs[ShadowIndex] = ShadowData.ShadowMapSRV;
+		SpotShadowCount = std::max(SpotShadowCount, ShadowIndex + 1);
+	}
+
+	for (uint32 Index = 0; Index < SpotShadowCount; ++Index)
+	{
+		Pipeline->SetShaderResourceView(13 + Index, EShaderType::PS, SpotShadowSRVs[Index]);
+	}
+
+	if (!(Context.ShowFlags & EEngineShowFlags::SF_StaticMesh))
+	{
+		Pipeline->SetShaderResourceView(10, EShaderType::PS, nullptr);
+		Pipeline->SetShaderResourceView(11, EShaderType::PS, nullptr);
+		for (uint32 Index = 0; Index < SpotShadowCount; ++Index)
+		{
+			Pipeline->SetShaderResourceView(13 + Index, EShaderType::PS, nullptr);
+		}
+		return;
+	}
+
 	TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
 	sort(MeshComponents.begin(), MeshComponents.end(),
 		[](UStaticMeshComponent* A, UStaticMeshComponent* B) {
@@ -162,7 +332,14 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 	}
 	Pipeline->SetConstantBuffer(2, EShaderType::PS, nullptr);
 
-	
+	// Shadow Map SRV unbind (다음 ShadowMapPass를 위해)
+	Pipeline->SetShaderResourceView(10, EShaderType::PS, nullptr);
+	Pipeline->SetShaderResourceView(11, EShaderType::PS, nullptr);
+	for (uint32 Index = 0; Index < SpotShadowCount; ++Index)
+	{
+		Pipeline->SetShaderResourceView(13 + Index, EShaderType::PS, nullptr);
+	}
+
 	// --- RTVs Reset ---
 	
 	/**
@@ -177,4 +354,6 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 void FStaticMeshPass::Release()
 {
 	SafeRelease(ConstantBufferMaterial);
+	SafeRelease(ShadowRegionStructuredBuffer);
+	SafeRelease(ShadowRegionStructuredBufferSRV);
 }

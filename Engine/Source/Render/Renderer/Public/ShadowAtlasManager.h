@@ -1,0 +1,146 @@
+#pragma once
+
+#include "ShadowAtlas.h"
+#include "Component/Public/PointLightComponent.h"
+#include <d3d11.h>
+#include <vector>
+
+class UDeviceResources;
+class UDirectionalLightComponent;
+
+// Shadow Atlas 타입
+enum class EShadowAtlasType
+{
+    DirectionalCSM,     // Directional Light의 CSM (Cascaded Shadow Maps)
+    PointSpotLight      // Point Light와 Spot Light 통합
+};
+
+// 각 Atlas Slice에 대한 정보 (이제 Texture2DArray의 한 슬라이스)
+struct FShadowAtlasInfo
+{
+    ID3D11DepthStencilView* DSV = nullptr;  // Texture2DArray의 특정 슬라이스를 가리키는 DSV
+    FShadowAtlas* Atlas = nullptr;          // Region packing 로직
+    uint32 AtlasSize = 0;
+    uint32 SliceIndex = 0;                  // Texture2DArray 내 슬라이스 인덱스
+
+    void Release()
+    {
+        if (DSV) { DSV->Release(); DSV = nullptr; }
+        if (Atlas) { delete Atlas; Atlas = nullptr; }
+    }
+};
+
+// Atlas 할당 결과 (어느 Atlas의 어느 영역인지)
+struct FShadowAtlasAllocation
+{
+    EShadowAtlasType AtlasType;
+    uint32 AtlasIndex = 0;              // SliceIndex와 동일
+    FShadowAtlasRegion Region;          // Atlas 내 영역
+    ID3D11DepthStencilView* DSV = nullptr;
+    ID3D11ShaderResourceView* SRV = nullptr;  // Texture2DArray SRV (공유)
+
+    bool IsValid() const { return Region.IsValid() && DSV && SRV; }
+};
+
+// Shadow Atlas Region 정보 (Structured Buffer로 쉐이더에 전달)
+struct FShadowAtlasRegionInfo
+{
+    FVector4 UVTransform;     // (UMin, VMin, UScale, VScale)
+    uint32 AtlasType;         // 0: DirectionalCSM, 1: PointSpot
+    uint32 AtlasIndex;        // SliceIndex (Texture2DArray 인덱스)
+    uint32 CascadeIndex;      // DirectionalLight CSM의 Cascade 번호 (0, 1, 2, ...), 미사용 시 0
+    uint32 CubeFaceIndex;     // PointLight의 Cube Face 번호 (0-5), 미사용 시 0
+};
+
+// Light + Allocation 쌍 (Sorting 후 사용)
+struct FLightAllocationPair
+{
+    ULightComponent* Light = nullptr;
+    FShadowAtlasAllocation Allocation;
+    uint32 ShadowResolution = 0;
+
+    bool IsValid() const { return Light && Allocation.IsValid(); }
+};
+
+// Shadow Atlas 통합 관리 클래스 (동적 확장 지원)
+class FShadowAtlasManager
+{
+public:
+    FShadowAtlasManager();
+    ~FShadowAtlasManager();
+
+    // 초기화 (DeviceResources 필요)
+    void Initialize(ID3D11Device* InDevice);
+
+    // 정리
+    void Release();
+
+    // 영역 할당 (필요시 새 Atlas 자동 생성)
+    bool AllocateRegion(EShadowAtlasType Type, uint32 Width, uint32 Height, FShadowAtlasAllocation& OutAllocation);
+
+    // 모든 Atlas 할당 초기화 (매 프레임 시작 시 호출)
+    void ClearAllAllocations();
+
+    // Light Sorting + Allocation (핵심 함수)
+    // Directional Light들을 받아서 Sorting하고 Atlas에 할당
+    TArray<FLightAllocationPair> AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights);
+
+    TArray<FLightAllocationPair> AllocatePointSpotLights(const TArray<UPointLightComponent*>& Lights);
+
+    // Atlas 배열 접근
+    const TArray<FShadowAtlasInfo>& GetAtlases(EShadowAtlasType Type) const;
+
+    // 특정 Atlas 접근
+    const FShadowAtlasInfo* GetAtlas(EShadowAtlasType Type, uint32 Index) const;
+
+    // Light별 할당 정보 조회 (DetailWindow에서 사용)
+    const FShadowAtlasAllocation* GetLightAllocation(ULightComponentBase* Light) const;
+
+    // Texture2DArray SRV 접근
+    ID3D11ShaderResourceView* GetDirectionalAtlasArraySRV() const { return DirectionalAtlasArraySRV; }
+    ID3D11ShaderResourceView* GetPointSpotAtlasArraySRV() const { return PointSpotAtlasArraySRV; }
+
+    ID3D11ShaderResourceView* GetSliceSRV(
+        EShadowAtlasType type, uint32 sliceIndex);
+
+private:
+    // 새 Atlas Slice 생성 (Texture2DArray의 다음 슬라이스)
+    bool CreateNewAtlasSlice(EShadowAtlasType Type, uint32 AtlasSize);
+
+    // Texture2DArray용 DSV 생성 (특정 슬라이스)
+    bool CreateDSVForSlice(EShadowAtlasType Type, uint32 SliceIndex, ID3D11DepthStencilView** OutDSV);
+
+    // 타입별 기본 Atlas 크기 반환
+    uint32 GetDefaultAtlasSize(EShadowAtlasType Type) const;
+
+    // Point/Spot Light의 Shadow Map 해상도 계산
+    uint32 CalculatePointSpotLightResolution(UPointLightComponent* Light) const;
+
+    // Texture2DArray 생성 및 확장
+    bool CreateAtlasArray(EShadowAtlasType Type, uint32 Capacity);
+    bool ExpandAtlasArray(EShadowAtlasType Type);
+
+private:
+    ID3D11Device* Device = nullptr;
+
+    // 각 타입별 Atlas Slice 배열
+    TArray<FShadowAtlasInfo> DirectionalCSMAtlases;   // Directional Light CSM용
+    TArray<FShadowAtlasInfo> PointSpotAtlases;        // Point/Spot Light용
+
+    // 이전 프레임의 Light별 할당 정보 (더티 플래그 최적화용)
+    TMap<UPointLightComponent*, FShadowAtlasAllocation> PreviousPointSpotAllocations;
+
+    // 현재 프레임의 모든 Light별 할당 정보 (DetailWindow 시각화용)
+    TMap<ULightComponentBase*, FShadowAtlasAllocation> CurrentLightAllocations;
+
+    // Texture2DArray 관련 (렌더 타겟이자 샘플링 소스)
+    ID3D11Texture2D* DirectionalAtlasArrayTexture = nullptr;
+    ID3D11Texture2D* PointSpotAtlasArrayTexture = nullptr;
+    ID3D11ShaderResourceView* DirectionalAtlasArraySRV = nullptr;
+    ID3D11ShaderResourceView* PointSpotAtlasArraySRV = nullptr;
+    uint32 DirectionalArrayCapacity = 1;  // Directional 4장 시작, 필요시 8, 16... 확장
+    uint32 PointSpotArrayCapacity = 1;    // PointSpot 8장 시작, 필요시 16, 32... 확장
+
+    // Release 중복 호출 방지
+    bool bIsReleased = false;
+};

@@ -13,6 +13,9 @@ struct FDirectionalLightInfo
     float4 Color;
     float3 Direction;
     float Intensity;
+    float ShadowBias;
+    float ShadowSharpen;
+    float2 Padding;
 };
 
 struct FPointLightInfo
@@ -30,12 +33,20 @@ struct FSpotLightInfo
     float4 Color;
     float3 Position;
     float Intensity;
+    float4 Direction;
     float Range;
     float DistanceFalloffExponent;
     float InnerConeAngle;
     float OuterConeAngle;
     float AngleFalloffExponent;
-    float3 Direction;
+    float ShadowBias;
+    float ShadowSharpen;
+    uint ShadowMapIndex;
+    uint ShadowRegionIndex;  // ShadowRegions 버퍼의 인덱스
+    float2 ShadowMapInvSize;
+    float Padding;
+    row_major float4x4 LightViewMatrix;
+    row_major float4x4 LightProjectionMatrix;
 };
 
 #endif

@@ -199,3 +199,16 @@ enum class EViewType : uint8
 	OrthoFront,
 	OrthoBack
 };
+
+enum class EShadowMapType : uint8
+{
+	LVP,	// Light View Projection (Orthographic)
+	PSM,		// Perspective Shadow Maps
+	CSM		// Cascade Shadow Map
+};
+
+enum class EShadowFilterMode : uint8
+{
+	PCF,	// Percentage Closer Filtering (default)
+	VSM,	// Variance Shadow Map
+};

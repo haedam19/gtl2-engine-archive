@@ -15,10 +15,13 @@ class FViewportClient;
 class FFXAAPass;
 class FLightPass;
 class FClusteredRenderingGridPass;
+class FShadowAtlasManager;
+struct FShadowMapData;
+class FShadowMapPass;
 
 // URenderer 내부에서 셰이더들은 용도에 따라 분류될 수 있음.
 // 용도별로 Create Shader 메소드가 존재함. (e.g. CreateStaticmeshShader)
-enum class ShaderUsage
+enum class ShaderUsage: uint8
 {
 	DEFAULT,
 	TEXTURE,
@@ -27,7 +30,10 @@ enum class ShaderUsage
 	FXAA,
 	STATICMESH,
 	GIZMO,
-	CLUSTERED_RENDERING_GRID
+	CLUSTERED_RENDERING_GRID,
+	SHADOW_MAPPING,
+	SHADOW_PREVIEW,
+	SHADOW_DEPTH
 };
 
 
@@ -57,6 +63,9 @@ public:
 	void CreateStaticMeshShader();
 	void CreateGizmoShader();
 	void CreateClusteredRenderingGrid();
+	void CreateShadowDepthShader();
+	void CreateShadowSamplerState();
+	void CreateShadowPreviewShader();
 
 	// HotReload
 	/** @brief 런타임 중 VS, PS 셰이더 파일이 변경되었는지 확인하고, 변경된 파일을 사용하는 Shader Usage들을 반환합니다.*/
@@ -86,6 +95,7 @@ public:
 	IDXGISwapChain* GetSwapChain() const { return DeviceResources->GetSwapChain(); }
 	
 	ID3D11SamplerState* GetDefaultSampler() const { return DefaultSampler; }
+	ID3D11SamplerState* GetShadowSampler() const { return ShadowSampler; }
 	ID3D11ShaderResourceView* GetDepthSRV() const { return DeviceResources->GetDepthStencilSRV(); }
 	
 	ID3D11RenderTargetView* GetRenderTargetView() const { return DeviceResources->GetRenderTargetView(); }
@@ -102,14 +112,26 @@ public:
 	ID3D11BlendState* GetAlphaBlendState() const { return AlphaBlendState; }
 	ID3D11Buffer* GetConstantBufferModels() const { return ConstantBufferModels; }
 	ID3D11Buffer* GetConstantBufferViewProj() const { return ConstantBufferViewProj; }
+	ID3D11Buffer* GetCascadeConstantBuffer() const { return ConstantBufferCascadeShadow; }
 
 	void SetIsResizing(bool isResizing) { bIsResizing = isResizing; }
+
+	void SetShadowFilterMode(EShadowFilterMode InMode) { ShadowFilterMode = InMode; }
+	EShadowFilterMode GetShadowFilterMode() const { return ShadowFilterMode; }
 
 	ID3D11VertexShader* GetVertexShader(EViewModeIndex ViewModeIndex) const;
 	ID3D11PixelShader* GetPixelShader(EViewModeIndex ViewModeIndex) const;
 
 	FLightPass* GetLightPass() { return LightPass; }
 	FClusteredRenderingGridPass* GetClusteredRenderingGridPass() { return ClusteredRenderingGridPass; }
+	FShadowAtlasManager* GetShadowAtlasManager() const { return ShadowAtlasManager; }
+	FShadowMapPass* GetShadowMapPass() { return ShadowMapPass; }
+
+	ID3D11ShaderResourceView* RenderShadowPreview(ID3D11ShaderResourceView* ShadowMapSRV,
+		ID3D11RenderTargetView* PreviewRTV,
+		ID3D11ShaderResourceView* PreviewSRV,
+		ID3D11Texture2D* PreviewTexture,
+		float NearPlane, float FarPlane, float DepthGamma);
 
 private:
 	/*
@@ -133,6 +155,9 @@ private:
 	ID3D11Buffer* ConstantBufferModels = nullptr;
 	ID3D11Buffer* ConstantBufferViewProj = nullptr;
 	ID3D11Buffer* ConstantBufferColor = nullptr;
+	ID3D11Buffer* ConstantBufferLightViewProj = nullptr;
+	ID3D11Buffer* ShadowPreviewConstantBuffer = nullptr;
+	ID3D11Buffer* ConstantBufferCascadeShadow = nullptr;
 	FLOAT ClearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
 	// Default Shaders
@@ -153,6 +178,11 @@ private:
 	ID3D11PixelShader* UberLitPixelShaderGouraud = nullptr;
 	ID3D11PixelShader* UberLitPixelShaderBlinnPhong = nullptr;
 	ID3D11PixelShader* UberLitPixelShaderWorldNormal = nullptr;
+	// VSM variants
+	ID3D11PixelShader* UberLitPixelShader_VSM = nullptr;
+	ID3D11PixelShader* UberLitPixelShaderGouraud_VSM = nullptr;
+	ID3D11PixelShader* UberLitPixelShaderBlinnPhong_VSM = nullptr;
+	ID3D11PixelShader* UberLitPixelShaderWorldNormal_VSM = nullptr;
 	ID3D11InputLayout* UberLitInputLayout = nullptr;
 	
 	//Gizmo Shaders
@@ -180,6 +210,16 @@ private:
 	ID3D11PixelShader* FogPixelShader = nullptr;
 	ID3D11InputLayout* FogInputLayout = nullptr;
 	ID3D11SamplerState* DefaultSampler = nullptr;
+
+	// Shadow Depth Shaders
+	ID3D11VertexShader* ShadowDepthVertexShader = nullptr;
+	ID3D11PixelShader* ShadowDepthPixelShader = nullptr;
+	ID3D11InputLayout* ShadowDepthInputLayout = nullptr;
+	ID3D11SamplerState* ShadowSampler = nullptr;
+
+	// Shadow Map Preview Shaders
+	ID3D11VertexShader* ShadowMapPreviewVertexShader = nullptr;
+	ID3D11PixelShader* ShadowMapPreviewPixelShader = nullptr;
 	
 	uint32 Stride = 0;
 
@@ -188,11 +228,16 @@ private:
 	bool bIsResizing = false;
 	bool bFXAAEnabled = true;
 
+	// Shadow Filtering
+	EShadowFilterMode ShadowFilterMode = EShadowFilterMode::PCF;
+
 	TArray<class FRenderPass*> RenderPasses;
 
 	FFXAAPass* FXAAPass = nullptr;
 	FLightPass* LightPass = nullptr;
 	FClusteredRenderingGridPass* ClusteredRenderingGridPass = nullptr;
+	FShadowMapPass* ShadowMapPass = nullptr;
+	FShadowAtlasManager* ShadowAtlasManager = nullptr;
 
 	// For Hot Reloading Shaders
 	TMap<std::wstring, TSet<ShaderUsage>> ShaderFileUsageMap;

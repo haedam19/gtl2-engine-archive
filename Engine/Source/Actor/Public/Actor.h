@@ -3,6 +3,8 @@
 #include "Component/Public/ActorComponent.h"
 #include "Component/Public/SceneComponent.h"
 
+class UCamera;
+
 class UUUIDTextComponent;
 /**
  * @brief Level에서 렌더링되는 UObject 클래스
@@ -112,6 +114,9 @@ public:
 	bool IsPendingDestroy() const { return bIsPendingDestroy; }
 	void SetIsPendingDestroy(bool bInIsPendingDestroy) { bIsPendingDestroy = bInIsPendingDestroy; }
 
+	void SetOverrideCamera(UCamera* InCamera);
+	UCamera* GetOverrideCamera() const { return OverrideCamera; }
+
 protected:
 	bool bCanEverTick = false;
 	bool bTickInEditor = false;
@@ -119,6 +124,7 @@ protected:
 	/** @brief True if the actor is marked for destruction. */  
 	bool bIsPendingDestroy = false;
 
+	UCamera* OverrideCamera = nullptr;
 private:
 	USceneComponent* RootComponent = nullptr;
 	TArray<UActorComponent*> OwnedComponents;

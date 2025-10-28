@@ -1,5 +1,6 @@
 #include "pch.h"
 #include <algorithm>
+#include "Render/Renderer/Public/ShadowAtlasManager.h"
 #include "Component/Mesh/Public/StaticMesh.h"
 #include "Component/Mesh/Public/StaticMeshComponent.h"
 #include "Component/Public/DecalComponent.h"
@@ -16,19 +17,20 @@
 #include "Render/UI/Viewport/Public/ViewportClient.h"
 #include "Level/Public/Level.h"
 #include "Manager/UI/Public/UIManager.h"
-#include "Optimization/Public/OcclusionCuller.h"
+// #include "Optimization/Public/OcclusionCuller.h"
 #include "Render/RenderPass/Public/BillboardPass.h"
 #include "Render/RenderPass/Public/DecalPass.h"
 #include "Render/RenderPass/Public/FXAAPass.h"
 #include "Render/RenderPass/Public/FogPass.h"
-#include "Render/RenderPass/Public/PointLightPass.h"
 #include "Render/RenderPass/Public/RenderPass.h"
 #include "Render/RenderPass/Public/LightPass.h"
 #include "Render/RenderPass/Public/StaticMeshPass.h"
 #include "Render/RenderPass/Public/TextPass.h"
+#include "Render/RenderPass/Public/ShadowMapPass.h"
 #include "Render/Renderer/Public/RenderResourceFactory.h"
 #include "Render/Renderer/Public/Renderer.h"
 #include "Render/RenderPass/Public/ClusteredRenderingGridPass.h"
+#include "Global/CoreTypes.h"
 
 #include "Render/RenderPass/Public/SceneDepthPass.h"
 #include "Render/UI/Overlay/Public/StatOverlay.h"
@@ -48,7 +50,6 @@ void URenderer::Init(HWND InWindowHandle)
 	Pipeline = new UPipeline(GetDeviceContext());
 	ViewportClient = new FViewport();
 	
-	
 	// 렌더링 상태 및 리소스 생성
 	CreateDepthStencilState();
 	CreateBlendState();
@@ -62,13 +63,26 @@ void URenderer::Init(HWND InWindowHandle)
 	CreateStaticMeshShader();
 	CreateGizmoShader();
 	CreateClusteredRenderingGrid();
+	CreateShadowDepthShader();
+	CreateShadowSamplerState();
+	CreateShadowPreviewShader();
 
-	//ViewportClient->InitializeLayout(DeviceResources->GetViewportInfo());
+	// Shadow Atlas Manager 초기화
+	ShadowAtlasManager = new FShadowAtlasManager();
+	ShadowAtlasManager->Initialize(GetDevice());
+
+	// Build render passes
+	// render pass order: Shadow Map -> Light -> Static Mesh -> Decal -> Billboard -> Text -> Fog -> SceneDepth (-> FXAA)
+
+	ShadowMapPass = new FShadowMapPass(Pipeline, ConstantBufferLightViewProj, ConstantBufferCascadeShadow, ConstantBufferModels,
+		ShadowDepthVertexShader, ShadowDepthPixelShader, ShadowDepthInputLayout, DefaultDepthStencilState);
+	RenderPasses.push_back(ShadowMapPass);
 
 	LightPass = new FLightPass(Pipeline, ConstantBufferViewProj, GizmoInputLayout, GizmoVS, GizmoPS, DefaultDepthStencilState);
 	RenderPasses.push_back(LightPass);
 
 	FStaticMeshPass* StaticMeshPass = new FStaticMeshPass(Pipeline, ConstantBufferViewProj, ConstantBufferModels,
+		ConstantBufferLightViewProj,
 		UberLitVertexShader, UberLitPixelShader, UberLitInputLayout, DefaultDepthStencilState);
 	RenderPasses.push_back(StaticMeshPass);
 
@@ -94,10 +108,8 @@ void URenderer::Init(HWND InWindowHandle)
 	FSceneDepthPass* SceneDepthPass = new FSceneDepthPass(Pipeline, ConstantBufferViewProj, DisabledDepthStencilState);
 	RenderPasses.push_back(SceneDepthPass);
 
-	// UPipeline* InPipeline, UDeviceResources* InDeviceResources, ID3D11VertexShader* InVS,
-	// ID3D11PixelShader* InPS, ID3D11InputLayout* InLayout, ID3D11SamplerState* InSampler
+	// bFXAAEnabled로 실행 여부 별도 관리
 	FXAAPass = new FFXAAPass(Pipeline, DeviceResources, FXAAVertexShader, FXAAPixelShader, FXAAInputLayout, FXAASamplerState);
-	//RenderPasses.push_back(FXAAPass);
 	
 }
 
@@ -116,7 +128,10 @@ void URenderer::Release()
 	}
 	FXAAPass->Release();
 	SafeDelete(FXAAPass);
-	
+
+	// ShadowAtlasManager 해제
+	SafeDelete(ShadowAtlasManager);
+
 	SafeDelete(ViewportClient);
 	SafeDelete(Pipeline);
 	SafeDelete(DeviceResources);
@@ -323,36 +338,75 @@ void URenderer::CreateStaticMeshShader()
 		{ "TANGENT",  0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(FNormalVertex, Tangent),  D3D11_INPUT_PER_VERTEX_DATA, 0 }
 	};
 	
-	// Compile Lambert variant (default)
-	TArray<D3D_SHADER_MACRO> LambertMacros = {
+	// === PCF Variants (기존) ===
+	// Compile Lambert + PCF variant
+	TArray<D3D_SHADER_MACRO> LambertPCF = {
 		{ "LIGHTING_MODEL_LAMBERT", "1" },
+		{ "SHADOW_FILTER_VSM", "0" },
 		{ nullptr, nullptr }
 	};
-	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, ShaderMeshLayout, &UberLitVertexShader, &UberLitInputLayout, "Uber_VS", LambertMacros.data());
-	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShader, "Uber_PS", LambertMacros.data());
-	
-	// Compile Gouraud variant
-	TArray<D3D_SHADER_MACRO> GouraudMacros = {
+	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, ShaderMeshLayout, &UberLitVertexShader, &UberLitInputLayout, "Uber_VS", LambertPCF.data());
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShader, "Uber_PS", LambertPCF.data());
+
+	// Compile Gouraud + PCF variant
+	TArray<D3D_SHADER_MACRO> GouraudPCF = {
 		{ "LIGHTING_MODEL_GOURAUD", "1" },
+		{ "SHADOW_FILTER_VSM", "0" },
 		{ nullptr, nullptr }
 	};
 	ID3D11InputLayout* GouraudInputLayout = nullptr;
-	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, ShaderMeshLayout, &UberLitVertexShaderGouraud, &GouraudInputLayout, "Uber_VS", GouraudMacros.data());
+	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, ShaderMeshLayout, &UberLitVertexShaderGouraud, &GouraudInputLayout, "Uber_VS", GouraudPCF.data());
 	SafeRelease(GouraudInputLayout);
-	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderGouraud, "Uber_PS", GouraudMacros.data());
-	
-	// Compile Phong (Blinn-Phong) variant
-	TArray<D3D_SHADER_MACRO> PhongMacros = {
-		{ "LIGHTING_MODEL_BLINNPHONG", "1" },
-		{ nullptr, nullptr }
-	};
-	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderBlinnPhong, "Uber_PS", PhongMacros.data());
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderGouraud, "Uber_PS", GouraudPCF.data());
 
-	TArray<D3D_SHADER_MACRO> WorldNormalViewMacros = {
-		{ "LIGHTING_MODEL_NORMAL", "1" },
+	// Compile Phong (Blinn-Phong) + PCF variant
+	TArray<D3D_SHADER_MACRO> PhongPCF = {
+		{ "LIGHTING_MODEL_BLINNPHONG", "1" },
+		{ "SHADOW_FILTER_VSM", "0" },
 		{ nullptr, nullptr }
 	};
-	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderWorldNormal, "Uber_PS", WorldNormalViewMacros.data());
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderBlinnPhong, "Uber_PS", PhongPCF.data());
+
+	// Compile WorldNormal + PCF variant
+	TArray<D3D_SHADER_MACRO> WorldNormalPCF = {
+		{ "LIGHTING_MODEL_NORMAL", "1" },
+		{ "SHADOW_FILTER_VSM", "0" },
+		{ nullptr, nullptr }
+	};
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderWorldNormal, "Uber_PS", WorldNormalPCF.data());
+
+	// === VSM Variants (새로 추가) ===
+	// Compile Lambert + VSM variant
+	TArray<D3D_SHADER_MACRO> LambertVSM = {
+		{ "LIGHTING_MODEL_LAMBERT", "1" },
+		{ "SHADOW_FILTER_VSM", "1" },
+		{ nullptr, nullptr }
+	};
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShader_VSM, "Uber_PS", LambertVSM.data());
+
+	// Compile Gouraud + VSM variant
+	TArray<D3D_SHADER_MACRO> GouraudVSM = {
+		{ "LIGHTING_MODEL_GOURAUD", "1" },
+		{ "SHADOW_FILTER_VSM", "1" },
+		{ nullptr, nullptr }
+	};
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderGouraud_VSM, "Uber_PS", GouraudVSM.data());
+
+	// Compile Phong (Blinn-Phong) + VSM variant
+	TArray<D3D_SHADER_MACRO> PhongVSM = {
+		{ "LIGHTING_MODEL_BLINNPHONG", "1" },
+		{ "SHADOW_FILTER_VSM", "1" },
+		{ nullptr, nullptr }
+	};
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderBlinnPhong_VSM, "Uber_PS", PhongVSM.data());
+
+	// Compile WorldNormal + VSM variant
+	TArray<D3D_SHADER_MACRO> WorldNormalVSM = {
+		{ "LIGHTING_MODEL_NORMAL", "1" },
+		{ "SHADOW_FILTER_VSM", "1" },
+		{ nullptr, nullptr }
+	};
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &UberLitPixelShaderWorldNormal_VSM, "Uber_PS", WorldNormalVSM.data());
 
 	RegisterShaderReloadCache(ShaderPath, ShaderUsage::STATICMESH);
 }
@@ -389,6 +443,139 @@ void URenderer::CreateClusteredRenderingGrid()
 	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &ClusteredRenderingGridPS);
 
 	RegisterShaderReloadCache(ShaderPath, ShaderUsage::CLUSTERED_RENDERING_GRID);
+}
+
+void URenderer::CreateShadowDepthShader()
+{
+	const std::wstring ShaderFilePathString = L"Asset/Shader/ShadowDepthShader.hlsl";
+	const std::filesystem::path ShaderPath(ShaderFilePathString);
+
+	// Shadow Depth Shader는 StaticMesh와 동일한 입력 레이아웃 사용
+	TArray<D3D11_INPUT_ELEMENT_DESC> LayoutDesc =
+	{
+		{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 40, D3D11_INPUT_PER_VERTEX_DATA, 0}
+	};
+
+	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, LayoutDesc, &ShadowDepthVertexShader, &ShadowDepthInputLayout);
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &ShadowDepthPixelShader);
+
+	RegisterShaderReloadCache(ShaderPath, ShaderUsage::SHADOW_MAPPING);
+}
+
+void URenderer::CreateShadowSamplerState()
+{
+	// Shadow Sampler 생성 (일반 샘플러 - Shadow Atlas용)
+	D3D11_SAMPLER_DESC shadowSamplerDesc = {};
+	shadowSamplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	shadowSamplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
+	shadowSamplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
+	shadowSamplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+	shadowSamplerDesc.MipLODBias = 0.0f;
+	shadowSamplerDesc.MaxAnisotropy = 1;
+	shadowSamplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;  // 사용 안 함
+	shadowSamplerDesc.BorderColor[0] = 1.0f;
+	shadowSamplerDesc.BorderColor[1] = 1.0f;
+	shadowSamplerDesc.BorderColor[2] = 1.0f;
+	shadowSamplerDesc.BorderColor[3] = 1.0f;
+	shadowSamplerDesc.MinLOD = 0;
+	shadowSamplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+
+	GetDevice()->CreateSamplerState(&shadowSamplerDesc, &ShadowSampler);
+}
+
+void URenderer::CreateShadowPreviewShader()
+{
+	const std::wstring ShaderFilePathString = L"Asset/Shader/ShadowPreviewShader.hlsl";
+	const std::filesystem::path ShaderPath(ShaderFilePathString);
+
+	ID3D11InputLayout* DummyLayout = nullptr;
+	TArray<D3D11_INPUT_ELEMENT_DESC> EmptyLayout;
+	FRenderResourceFactory::CreateVertexShaderAndInputLayout(ShaderFilePathString, EmptyLayout, &ShadowMapPreviewVertexShader, &DummyLayout, "mainVS");
+	SafeRelease(DummyLayout);
+	FRenderResourceFactory::CreatePixelShader(ShaderFilePathString, &ShadowMapPreviewPixelShader, "mainPS");
+
+	RegisterShaderReloadCache(ShaderPath, ShaderUsage::SHADOW_PREVIEW);
+}
+
+ID3D11ShaderResourceView* URenderer::RenderShadowPreview(ID3D11ShaderResourceView* ShadowMapSRV,
+	ID3D11RenderTargetView* PreviewRTV,
+	ID3D11ShaderResourceView* PreviewSRV,
+	ID3D11Texture2D* PreviewTexture,
+	float NearPlane, float FarPlane, float DepthGamma)
+{
+	if (!ShadowMapPreviewVertexShader || !ShadowMapPreviewPixelShader)
+	{
+		return PreviewSRV;
+	}
+
+	if (!ShadowMapSRV || !PreviewRTV || !PreviewSRV || !PreviewTexture)
+	{
+		return nullptr;
+	}
+
+	ID3D11DeviceContext* Context = GetDeviceContext();
+	if (!Context)
+	{
+		return PreviewSRV;
+	}
+
+	if (!ShadowPreviewConstantBuffer)
+	{
+		ShadowPreviewConstantBuffer = FRenderResourceFactory::CreateConstantBuffer<FShadowPreviewParameters>();
+	}
+
+	D3D11_VIEWPORT OriginalViewport = {};
+	UINT NumViewports = 1;
+	Context->RSGetViewports(&NumViewports, &OriginalViewport);
+
+	ID3D11RenderTargetView* PreviousRTV = nullptr;
+	ID3D11DepthStencilView* PreviousDSV = nullptr;
+	Context->OMGetRenderTargets(1, &PreviousRTV, &PreviousDSV);
+
+	D3D11_TEXTURE2D_DESC PreviewDesc = {};
+	PreviewTexture->GetDesc(&PreviewDesc);
+
+	D3D11_VIEWPORT PreviewViewport = {};
+	PreviewViewport.TopLeftX = 0.0f;
+	PreviewViewport.TopLeftY = 0.0f;
+	PreviewViewport.Width = static_cast<float>(PreviewDesc.Width);
+	PreviewViewport.Height = static_cast<float>(PreviewDesc.Height);
+	PreviewViewport.MinDepth = 0.0f;
+	PreviewViewport.MaxDepth = 1.0f;
+	Context->RSSetViewports(1, &PreviewViewport);
+
+	constexpr float ShadowMapClearColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	Context->ClearRenderTargetView(PreviewRTV, ShadowMapClearColor);
+	Pipeline->SetRenderTargets(1, &PreviewRTV, nullptr);
+
+	FRenderState RenderState;
+	ID3D11RasterizerState* RS = FRenderResourceFactory::GetRasterizerState(RenderState);
+	FPipelineInfo PipelineInfo = { nullptr, ShadowMapPreviewVertexShader, RS, DisabledDepthStencilState, ShadowMapPreviewPixelShader, nullptr, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP };
+	Pipeline->UpdatePipeline(PipelineInfo);
+
+	FShadowPreviewParameters Parameters = { NearPlane, FarPlane, DepthGamma, 0.0f };
+	FRenderResourceFactory::UpdateConstantBufferData(ShadowPreviewConstantBuffer, Parameters);
+	Pipeline->SetConstantBuffer(0, EShaderType::VS | EShaderType::PS, ShadowPreviewConstantBuffer);
+
+	Pipeline->SetShaderResourceView(0, EShaderType::PS, ShadowMapSRV);
+	Pipeline->SetSamplerState(0, EShaderType::PS, DefaultSampler);
+	Pipeline->SetVertexBuffer(nullptr, 0);
+	Pipeline->Draw(4, 0);
+
+	ID3D11RenderTargetView* NullRTV = nullptr;
+	Pipeline->SetRenderTargets(1, &NullRTV, nullptr);
+	Pipeline->SetShaderResourceView(0, EShaderType::PS, nullptr);
+
+	Context->RSSetViewports(1, &OriginalViewport);
+	Context->OMSetRenderTargets(1, &PreviousRTV, PreviousDSV);
+
+	SafeRelease(PreviousRTV);
+	SafeRelease(PreviousDSV);
+
+	return PreviewSRV;
 }
 
 TSet<ShaderUsage> URenderer::GatherHotReloadTargets()
@@ -512,6 +699,10 @@ void URenderer::HotReloadShaders()
 				SafeRelease(UberLitPixelShaderGouraud);
 				SafeRelease(UberLitPixelShaderBlinnPhong);
 				SafeRelease(UberLitPixelShaderWorldNormal);
+				SafeRelease(UberLitPixelShader_VSM);
+				SafeRelease(UberLitPixelShaderGouraud_VSM);
+				SafeRelease(UberLitPixelShaderBlinnPhong_VSM);
+				SafeRelease(UberLitPixelShaderWorldNormal_VSM);
 				CreateStaticMeshShader();
 				for (FRenderPass* RenderPass : RenderPasses)
 				{
@@ -529,16 +720,19 @@ void URenderer::HotReloadShaders()
 				SafeRelease(GizmoVS);
 				SafeRelease(GizmoPS);
 				CreateGizmoShader();
-				for (FRenderPass* RenderPass : RenderPasses)
+				if (LightPass)
 				{
-					if (auto* LightPass = dynamic_cast<FLightPass*>(RenderPass))
-					{
-						LightPass->SetInputLayout(GizmoInputLayout);
-						LightPass->SetVertexShader(GizmoVS);
-						LightPass->SetPixelShader(GizmoPS);
-						break;
-					}
+					LightPass->SetInputLayout(GizmoInputLayout);
+					LightPass->SetVertexShader(GizmoVS);
+					LightPass->SetPixelShader(GizmoPS);
 				}
+				break;
+			case ShaderUsage::SHADOW_MAPPING:
+				break;
+			case ShaderUsage::SHADOW_PREVIEW:
+				SafeRelease(ShadowMapPreviewVertexShader);
+				SafeRelease(ShadowMapPreviewPixelShader);
+				CreateShadowPreviewShader();
 				break;
 			case ShaderUsage::CLUSTERED_RENDERING_GRID:
 				SafeRelease(ClusteredRenderingGridInputLayout);
@@ -552,6 +746,19 @@ void URenderer::HotReloadShaders()
 					ClusteredRenderingGridPass->SetInputLayout(ClusteredRenderingGridInputLayout);
 				}
 				break;
+			case ShaderUsage::SHADOW_DEPTH:
+				SafeRelease(ShadowDepthInputLayout);
+				SafeRelease(ShadowDepthVertexShader);
+				SafeRelease(ShadowDepthPixelShader);
+				SafeRelease(ShadowSampler);
+				CreateShadowDepthShader();
+				if (ShadowMapPass)
+				{
+					ShadowMapPass->SetVertexShader(ShadowDepthVertexShader);
+					ShadowMapPass->SetPixelShader(ShadowDepthPixelShader);
+					ShadowMapPass->SetInputLayout(ShadowDepthInputLayout);
+				}
+				break;
 		}
 	}
 }
@@ -563,6 +770,10 @@ void URenderer::ReleaseDefaultShader()
 	SafeRelease(UberLitPixelShaderGouraud);
 	SafeRelease(UberLitPixelShaderBlinnPhong);
 	SafeRelease(UberLitPixelShaderWorldNormal);
+	SafeRelease(UberLitPixelShader_VSM);
+	SafeRelease(UberLitPixelShaderGouraud_VSM);
+	SafeRelease(UberLitPixelShaderBlinnPhong_VSM);
+	SafeRelease(UberLitPixelShaderWorldNormal_VSM);
 	SafeRelease(UberLitVertexShader);
 	SafeRelease(UberLitVertexShaderGouraud);
 	
@@ -593,6 +804,14 @@ void URenderer::ReleaseDefaultShader()
 	SafeRelease(ClusteredRenderingGridInputLayout);
 	SafeRelease(ClusteredRenderingGridVS);
 	SafeRelease(ClusteredRenderingGridPS);
+
+	SafeRelease(ShadowDepthVertexShader);
+	SafeRelease(ShadowDepthPixelShader);
+	SafeRelease(ShadowDepthInputLayout);
+	SafeRelease(ShadowSampler);
+
+	SafeRelease(ShadowMapPreviewVertexShader);
+	SafeRelease(ShadowMapPreviewPixelShader);
 }
 
 void URenderer::ReleaseDepthStencilState()
@@ -634,11 +853,15 @@ void URenderer::Update()
 
     for (FViewport* Viewport : UViewportManager::GetInstance().GetViewports())
     {
-        if (Viewport->GetRect().Width < 1.0f || Viewport->GetRect().Height < 1.0f) { continue; }
+        if (Viewport->GetRect().Width < 1L || Viewport->GetRect().Height < 1L) { continue; }
 
     	FRect SingleWindowRect = Viewport->GetRect();
-    	const int32 ViewportToolBarHeight = 32;
-    	D3D11_VIEWPORT LocalViewport = { (float)SingleWindowRect.Left,(float)SingleWindowRect.Top + ViewportToolBarHeight, (float)SingleWindowRect.Width, (float)SingleWindowRect.Height - ViewportToolBarHeight, 0.0f, 1.0f };
+    	constexpr int32 ViewportToolBarHeight = 32;
+    	D3D11_VIEWPORT LocalViewport = { static_cast<float>(SingleWindowRect.Left),
+    		static_cast<float>(SingleWindowRect.Top + ViewportToolBarHeight),
+    		static_cast<float>(SingleWindowRect.Width),
+    		static_cast<float>(SingleWindowRect.Height - ViewportToolBarHeight),
+    		0.0f, 1.0f };
     	GetDeviceContext()->RSSetViewports(1, &LocalViewport);
 		Viewport->SetRenderRect(LocalViewport);
         UCamera* CurrentCamera = Viewport->GetViewportClient()->GetCamera();
@@ -699,7 +922,7 @@ void URenderer::RenderBegin() const
     if (bFXAAEnabled)
     {
         auto* SceneColorRenderTargetView = DeviceResources->GetSceneColorRenderTargetView();
-        auto* NormalRenderTargetView = DeviceResources->GetNormalRenderTargetView();
+        
         GetDeviceContext()->ClearRenderTargetView(SceneColorRenderTargetView, ClearColor);
         GetDeviceContext()->ClearRenderTargetView(NormalRenderTargetView, ClearColor);
         GetDeviceContext()->ClearDepthStencilView(DepthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
@@ -708,8 +931,6 @@ void URenderer::RenderBegin() const
     }
     else
     {
-        auto* RenderTargetView = DeviceResources->GetRenderTargetView();
-        auto* NormalRenderTargetView = DeviceResources->GetNormalRenderTargetView();
         GetDeviceContext()->ClearRenderTargetView(RenderTargetView, ClearColor);
         GetDeviceContext()->ClearRenderTargetView(NormalRenderTargetView, ClearColor);
         GetDeviceContext()->ClearDepthStencilView(DepthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
@@ -914,31 +1135,32 @@ ID3D11VertexShader* URenderer::GetVertexShader(EViewModeIndex ViewModeIndex) con
 	{
 		return UberLitVertexShaderGouraud;
 	}
-	else if (ViewModeIndex == EViewModeIndex::VMI_Lambert
-		|| ViewModeIndex == EViewModeIndex::VMI_BlinnPhong
-		|| ViewModeIndex == EViewModeIndex::VMI_WorldNormal)
-	{
-		return UberLitVertexShader;
-	}
-	else if (ViewModeIndex == EViewModeIndex::VMI_Unlit || ViewModeIndex == EViewModeIndex::VMI_SceneDepth)
+	if (ViewModeIndex == EViewModeIndex::VMI_Unlit || ViewModeIndex == EViewModeIndex::VMI_SceneDepth)
 	{
 		return TextureVertexShader;
 	}
+
+	// 기본값: VMI_Lambert || VMI_BlinnPhong || VMI_WorldNormal
+	// 반환값 보장을 위해 별도의 조건문 미설정
+	return UberLitVertexShader;
 }
 
 ID3D11PixelShader* URenderer::GetPixelShader(EViewModeIndex ViewModeIndex) const
 {
+	// VSM 모드 체크
+	bool useVSM = (ShadowFilterMode == EShadowFilterMode::VSM);
+
 	if (ViewModeIndex == EViewModeIndex::VMI_Gouraud)
 	{
-		return UberLitPixelShaderGouraud;
+		return useVSM ? UberLitPixelShaderGouraud_VSM : UberLitPixelShaderGouraud;
 	}
 	else if (ViewModeIndex == EViewModeIndex::VMI_Lambert)
 	{
-		return UberLitPixelShader;
+		return useVSM ? UberLitPixelShader_VSM : UberLitPixelShader;
 	}
 	else if (ViewModeIndex == EViewModeIndex::VMI_BlinnPhong)
 	{
-		return UberLitPixelShaderBlinnPhong;
+		return useVSM ? UberLitPixelShaderBlinnPhong_VSM : UberLitPixelShaderBlinnPhong;
 	}
 	else if (ViewModeIndex == EViewModeIndex::VMI_Unlit || ViewModeIndex == EViewModeIndex::VMI_SceneDepth)
 	{
@@ -946,7 +1168,7 @@ ID3D11PixelShader* URenderer::GetPixelShader(EViewModeIndex ViewModeIndex) const
 	}
 	else if (ViewModeIndex == EViewModeIndex::VMI_WorldNormal)
 	{
-		return UberLitPixelShaderWorldNormal;
+		return useVSM ? UberLitPixelShaderWorldNormal_VSM : UberLitPixelShaderWorldNormal;
 	}
 }
 
@@ -955,6 +1177,9 @@ void URenderer::CreateConstantBuffers()
 	ConstantBufferModels = FRenderResourceFactory::CreateConstantBuffer<FMatrix>();
 	ConstantBufferColor = FRenderResourceFactory::CreateConstantBuffer<FVector4>();
 	ConstantBufferViewProj = FRenderResourceFactory::CreateConstantBuffer<FCameraConstants>();
+	ConstantBufferLightViewProj = FRenderResourceFactory::CreateConstantBuffer<FLightViewProjConstants>();
+	ShadowPreviewConstantBuffer = FRenderResourceFactory::CreateConstantBuffer<FShadowPreviewParameters>();
+	ConstantBufferCascadeShadow = FRenderResourceFactory::CreateConstantBuffer<FCascadeShadowConstants>();
 }
 
 void URenderer::ReleaseConstantBuffers()
@@ -962,4 +1187,7 @@ void URenderer::ReleaseConstantBuffers()
 	SafeRelease(ConstantBufferModels);
 	SafeRelease(ConstantBufferColor);
 	SafeRelease(ConstantBufferViewProj);
+	SafeRelease(ConstantBufferLightViewProj);
+	SafeRelease(ShadowPreviewConstantBuffer);
+	SafeRelease(ConstantBufferCascadeShadow);
 }

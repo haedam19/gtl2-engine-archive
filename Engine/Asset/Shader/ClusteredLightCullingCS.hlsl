@@ -54,13 +54,13 @@ bool IntersectAABBSpotLight(float3 AABBMin, float3 AABBMax, uint SpotIdx)
 {
     FSpotLightInfo SpotLight = SpotLightInfos[SpotIdx];
     float4 LightViewPos = mul(float4(SpotLight.Position, 1), ViewMatrix);
-    float3 LightViewDirection = mul(float4(SpotLight.Direction, 0), ViewMatrix);
+    float3 LightViewDirection = mul(float4(SpotLight.Direction.xyz, 0), ViewMatrix);
     float ConeOuterSin = sin(SpotLight.OuterConeAngle);
     float3 SpotLocalAABBMin = float3(-SpotLight.Range * ConeOuterSin, 0, -SpotLight.Range * ConeOuterSin);
     float3 SpotLocalAABBMax = float3(SpotLight.Range * ConeOuterSin, SpotLight.Range, SpotLight.Range * ConeOuterSin);
     float3 Axis = cross(float3(0, 1, 0), LightViewDirection);
     Axis = length(Axis) < 0.0001f ? float3(1, 0, 0) : normalize(Axis);
-    float RotAngleRadian = acos(clamp(LightViewDirection.y, -1, 1)); //dot(float3(0,1,0),SpotLight.Direction) = SpotLight.Direction.y
+    float RotAngleRadian = acos(clamp(LightViewDirection.y, -1, 1)); // dot(float3(0,1,0),SpotLight.Direction) = SpotLight.Direction.xyz.y
     
     float Sin = sin(RotAngleRadian);
     float Cos = cos(RotAngleRadian);

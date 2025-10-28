@@ -8,9 +8,11 @@
 // =============================================================================
 #include "LightStructures.hlsli"
 
-#define NUM_POINT_LIGHT 8
-#define NUM_SPOT_LIGHT 8
+#define NUM_POINT_LIGHT 100
+#define NUM_SPOT_LIGHT 100
 #define ADD_ILLUM(a, b) { (a).Ambient += (b).Ambient; (a).Diffuse += (b).Diffuse; (a).Specular += (b).Specular; }
+#define CSM_MAX_CASCADES 4
+#define SHADOW_MAP_RESOLUTION 2048.0f
 
 static const float PI = 3.14159265f;
 
@@ -39,6 +41,22 @@ cbuffer Camera : register(b1)
     float FarClip;
 }
 
+cbuffer LightViewProj : register(b6)
+{
+    row_major float4x4 LightView;
+    row_major float4x4 LightProjection;
+};
+
+cbuffer CSMLightViewProj : register(b7)
+{
+    row_major float4x4 CascadeLightView[CSM_MAX_CASCADES];
+    row_major float4x4 CascadeLightProjection[CSM_MAX_CASCADES];
+    float4 CascadeSplits;
+    float4 CascadeScaleOffsets[CSM_MAX_CASCADES];
+    float4 CascadeParams;
+    float4 bIsCSM;
+};
+
 cbuffer GlobalLightConstant : register(b3)
 {
     FAmbientLightInfo Ambient;
@@ -66,6 +84,29 @@ StructuredBuffer<int> PointLightIndices : register(t6);
 StructuredBuffer<int> SpotLightIndices : register(t7);
 StructuredBuffer<FPointLightInfo> PointLightInfos : register(t8);
 StructuredBuffer<FSpotLightInfo> SpotLightInfos : register(t9);
+
+// Shadow Atlas Texture Arrays (동적 확장 지원)
+// VSM 모드일 때는 float2 (moment), PCF일 때는 float (depth)
+#if SHADOW_FILTER_VSM
+    Texture2DArray<float2> DirectionalAtlases : register(t10);  // VSM Moment Atlas
+    Texture2DArray<float2> PointSpotAtlases : register(t11);    // VSM Moment Atlas
+#else
+    Texture2DArray<float> DirectionalAtlases : register(t10);   // PCF Depth Atlas
+    Texture2DArray<float> PointSpotAtlases : register(t11);     // PCF Depth Atlas
+#endif
+
+// Shadow Atlas Region 정보
+struct FShadowAtlasRegionInfo
+{
+    float4 UVTransform;     // (UMin, VMin, UScale, VScale)
+    uint AtlasType;         // 0: DirectionalCSM, 1: PointSpot
+    uint AtlasIndex;        // 몇 번째 Atlas인지
+    uint CascadeIndex;      // DirectionalLight CSM의 Cascade 번호
+    uint CubeFaceIndex;     // PointLight의 Cube Face 번호 (0-5)
+};
+StructuredBuffer<FShadowAtlasRegionInfo> ShadowRegions : register(t12);
+
+SamplerState ShadowSampler : register(s1);
 
 
 uint GetDepthSliceIdx(float ViewZ)
@@ -178,6 +219,7 @@ struct PS_INPUT
     float3 WorldNormal : TEXCOORD1;
     float2 Tex : TEXCOORD2;
     float4 WorldTangent : TEXCOORD3;
+    float4 LightSpacePos : TEXCOORD4;		// Shadow Mapping용 Light Space Position
 #if LIGHTING_MODEL_GOURAUD
     float4 AmbientLight : COLOR0;
     float4 DiffuseLight : COLOR1;
@@ -324,7 +366,7 @@ FIllumination CalculateSpotLight(FSpotLightInfo Info, float3 WorldNormal, float3
         return Result;
     
     LightDir = SafeNormalize3(LightDir);
-    float3 SpotDir = SafeNormalize3(Info.Direction); // SpotDIr이 영벡터면 (CosAngle < CosOuter)에 걸려 0벡터 반환
+    float3 SpotDir = SafeNormalize3(Info.Direction.xyz); // SpotDir이 영벡터면 (CosAngle < CosOuter)에 걸려 0벡터 반환
     
     float CosAngle = dot(-LightDir, SpotDir);
     float CosOuter = cos(Info.OuterConeAngle);
@@ -390,18 +432,342 @@ float3 ComputeNormalMappedWorldNormal(float2 UV, float3 WorldNormal, float4 Worl
     return SafeNormalize3(mul(TangentSpaceNormal, TBN));
 
 }
+// Shadow Calculation (Shadow Atlas-based shadow mapping)
+float CalculateShadow(float4 LightSpacePos)
+{
+    // Perspective divide
+    float3 projCoords = LightSpacePos.xyz / LightSpacePos.w; //라이트 시점에서의 클립 공간 좌표를 NDC (-1~1) 로 변환
+
+    // Transform to [0,1] range for texture sampling
+    projCoords.x = projCoords.x * 0.5f + 0.5f;
+    projCoords.y = -projCoords.y * 0.5f + 0.5f;  // Flip Y
+
+    // Check if position is outside shadow map//uv 좌표로 변환
+    if (projCoords.x < 0.0f || projCoords.x > 1.0f ||
+        projCoords.y < 0.0f || projCoords.y > 1.0f ||
+        projCoords.z < 0.0f || projCoords.z > 1.0f)
+    {
+        return 1.0f;  // No shadow
+    }
+
+    // Shadow Atlas Region 정보 가져오기 (현재는 DirectionalLight Index 0)
+    FShadowAtlasRegionInfo region = ShadowRegions[0];
+
+    // Shadow Map UV를 Atlas UV로 변환
+    // atlasUV = originalUV * UVScale + UVOffset
+    float2 atlasUV = projCoords.xy * region.UVTransform.zw + region.UVTransform.xy;
+
+    float currentDepth = projCoords.z;
+    float bias = Directional.ShadowBias;
+
+#if SHADOW_FILTER_VSM
+    // VSM: Variance Shadow Mapping (Chebyshev inequality)
+    float2 moments = float2(0.0f, 0.0f);
+    if (region.AtlasType == 0) // DirectionalCSM
+    {
+        moments = DirectionalAtlases.Sample(ShadowSampler, float3(atlasUV, region.AtlasIndex));
+    }
+    else // PointSpot
+    {
+        moments = PointSpotAtlases.Sample(ShadowSampler, float3(atlasUV, region.AtlasIndex));
+    }
+
+    float mean = moments.x;
+    float variance = max(moments.y - mean * mean, 0.00001f);
+    float depth = currentDepth - bias;
+
+    // If depth is less than or equal to mean, fully lit
+    if (depth <= mean)
+        return 1.0f;
+
+    // Chebyshev's inequality
+    float d = depth - mean;
+    float p_max = variance / (variance + d * d);
+
+    // Light bleeding reduction
+    const float LBR = 0.3f;
+    p_max = saturate((p_max - LBR) / (1.0f - LBR));
+
+    // Shadow sharpening
+    float sharpen = max(0.0f, Directional.ShadowSharpen);
+    float shadow = saturate((p_max - 0.5f) * (sharpen + 1.0f) + 0.5f);
+
+    return shadow;
+#else
+    // PCF: Percentage Closer Filtering
+    float shadow = 0.0f;
+    float2 texelSize = 1.0f / float2(4096.0f, 4096.0f);  // Shadow Atlas size (4096x4096)
+
+    // 3x3 PCF kernel
+    [unroll]
+    for (int x = -1; x <= 1; ++x)
+    {
+        [unroll]
+        for (int y = -1; y <= 1; ++y)
+        {
+            float2 offset = float2(x, y) * texelSize;
+
+            // Atlas Type에 따라 적절한 Texture2DArray에서 샘플링
+            float shadowMapDepth = 0.0f;
+            if (region.AtlasType == 0) // DirectionalCSM
+            {
+                shadowMapDepth = DirectionalAtlases.SampleLevel(ShadowSampler, float3(atlasUV + offset, region.AtlasIndex), 0).r;
+            }
+            else // PointSpot
+            {
+                shadowMapDepth = PointSpotAtlases.SampleLevel(ShadowSampler, float3(atlasUV + offset, region.AtlasIndex), 0).r;
+            }
+
+            shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
+        }
+    }
+    shadow /= 9.0f;
+    shadow = saturate(shadow);
+
+    // Shadow sharpening
+    float sharpen = max(0.0f, Directional.ShadowSharpen);
+    shadow = saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
+
+	return shadow;
+#endif
+}
+
+// CSM Shadow Sampling Functions (Atlas 기반)
+float SampleCSMCascadePCF(float currentDepth, float bias, float texelSize, float2 atlasUV, uint atlasIndex)
+{
+	float shadow = 0.0f;
+
+	[unroll]
+	for (int x = -1; x <= 1; ++x)
+	{
+		[unroll]
+		for (int y = -1; y <= 1; ++y)
+		{
+			float2 offset = float2(x, y) * texelSize;
+			float shadowMapDepth = DirectionalAtlases.SampleLevel(ShadowSampler, float3(atlasUV + offset, atlasIndex), 0).r;
+			shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
+		}
+	}
+
+	shadow /= 9.0f;
+	shadow = saturate(shadow);
+
+	float sharpen = max(0.0f, Directional.ShadowSharpen);
+	return saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
+}
+
+float SampleCSMCascadeVSM(float currentDepth, float bias, float2 atlasUV, uint atlasIndex)
+{
+	float depth = currentDepth - bias;
+
+	float2 moments = DirectionalAtlases.Sample(ShadowSampler, float3(atlasUV, atlasIndex));
+	float mean = moments.x;
+	float variance = max(moments.y - mean * mean, 0.00001f);
+
+	if (depth <= mean)
+	{
+		return 1.0f;
+	}
+
+	float d = depth - mean;
+	float p_max = variance / (variance + d * d);
+
+	const float LBR = 0.3f;
+	p_max = saturate((p_max - LBR) / (1.0f - LBR));
+
+	float sharpen = max(0.0f, Directional.ShadowSharpen);
+	return saturate((p_max - 0.5f) * (sharpen + 1.0f) + 0.5f);
+}
+
+float CalculateCSMShadow(float3 WorldPos)
+{
+    float4 worldPos = float4(WorldPos, 1.0f);
+    float viewDepth = mul(worldPos, View).z;
+
+    uint cascadeCount = max((uint) CascadeParams.x, 1u);
+    uint cascadeIndex = cascadeCount - 1u;
+
+    if (cascadeCount > 0u && viewDepth <= CascadeSplits.x)
+        cascadeIndex = 0u;
+    else if (cascadeCount > 1u && viewDepth <= CascadeSplits.y)
+        cascadeIndex = 1u;
+    else if (cascadeCount > 2u && viewDepth <= CascadeSplits.z)
+        cascadeIndex = 2u;
+    else if (cascadeCount > 3u && viewDepth <= CascadeSplits.w)
+        cascadeIndex = 3u;
+
+    float4 lightViewPos = mul(worldPos, CascadeLightView[cascadeIndex]);
+    float4 lightProjPos = mul(lightViewPos, CascadeLightProjection[cascadeIndex]);
+    float3 projCoords = lightProjPos.xyz / lightProjPos.w;
+
+    if (projCoords.x < -1.0f || projCoords.x > 1.0f ||
+        projCoords.y < -1.0f || projCoords.y > 1.0f ||
+        projCoords.z < 0.0f || projCoords.z > 1.0f)
+    {
+        return 1.0f;
+    }
+
+    projCoords.x = projCoords.x * 0.5f + 0.5f;
+    projCoords.y = -projCoords.y * 0.5f + 0.5f;
+
+    float4 scaleOffset = CascadeScaleOffsets[cascadeIndex];
+    float2 atlasUV = projCoords.xy * scaleOffset.xy + scaleOffset.zw;
+    float currentDepth = projCoords.z;
+
+	// CSM은 항상 DirectionalAtlas의 첫 번째 슬라이스(AtlasIndex=0) 사용
+	uint atlasIndex = 0;
+
+	float shadowValue = 1.0f;
+#if SHADOW_FILTER_VSM
+	shadowValue = SampleCSMCascadeVSM(currentDepth, Directional.ShadowBias, atlasUV, atlasIndex);
+#else
+	shadowValue = SampleCSMCascadePCF(currentDepth, 0.0005f, CascadeParams.w, atlasUV, atlasIndex);
+#endif
+
+	// Cross-fade with the next cascade near split boundaries for smoother transitions
+	if (cascadeCount > 1u && cascadeIndex < cascadeCount - 1u)
+	{
+		float cascadeNear = (cascadeIndex == 0u) ? NearClip : CascadeSplits[cascadeIndex - 1u];
+		float cascadeFar = CascadeSplits[cascadeIndex];
+		const float BlendRatio = 0.1f;
+		float blendRange = (cascadeFar - cascadeNear) * BlendRatio;
+		float distanceToFar = cascadeFar - viewDepth;
+
+		if (blendRange > 0.0f && distanceToFar > 0.0f && distanceToFar < blendRange)
+		{
+			uint nextIndex = cascadeIndex + 1u;
+			float4 nextLightViewPos = mul(worldPos, CascadeLightView[nextIndex]);
+			float4 nextLightProjPos = mul(nextLightViewPos, CascadeLightProjection[nextIndex]);
+			float3 nextProjCoords = nextLightProjPos.xyz / nextLightProjPos.w;
+
+			if (nextProjCoords.x >= -1.0f && nextProjCoords.x <= 1.0f &&
+				nextProjCoords.y >= -1.0f && nextProjCoords.y <= 1.0f &&
+				nextProjCoords.z >= 0.0f && nextProjCoords.z <= 1.0f)
+			{
+				nextProjCoords.x = nextProjCoords.x * 0.5f + 0.5f;
+				nextProjCoords.y = -nextProjCoords.y * 0.5f + 0.5f;
+				float4 nextScaleOffset = CascadeScaleOffsets[nextIndex];
+				float2 nextAtlasUV = nextProjCoords.xy * nextScaleOffset.xy + nextScaleOffset.zw;
+				float nextDepth = nextProjCoords.z;
+#if SHADOW_FILTER_VSM
+				float nextShadow = SampleCSMCascadeVSM(nextDepth, Directional.ShadowBias, nextAtlasUV, atlasIndex);
+#else
+				float nextShadow = SampleCSMCascadePCF(nextDepth, 0.0005f, CascadeParams.w, nextAtlasUV, atlasIndex);
+#endif
+				float weight = saturate((blendRange - distanceToFar) / blendRange);
+				shadowValue = lerp(shadowValue, nextShadow, weight);
+			}
+		}
+	}
+
+	return shadowValue;
+}
+
+float CalculateSpotShadow(FSpotLightInfo Info, float3 WorldPos)
+{
+    // Light Space로 변환
+    float4 lightViewPos = mul(float4(WorldPos, 1.0f), Info.LightViewMatrix);
+    float4 lightClipPos = mul(lightViewPos, Info.LightProjectionMatrix);
+
+    // Perspective divide 및 [0,1] 범위로 변환
+    float3 projCoords = lightClipPos.xyz / lightClipPos.w;
+    projCoords.x = projCoords.x * 0.5f + 0.5f;
+    projCoords.y = -projCoords.y * 0.5f + 0.5f;
+
+    // Shadow Map 범위 밖이면 그림자 없음
+    if (projCoords.x < 0.0f || projCoords.x > 1.0f ||
+        projCoords.y < 0.0f || projCoords.y > 1.0f ||
+        projCoords.z < 0.0f || projCoords.z > 1.0f)
+    {
+        return 1.0f;
+    }
+
+    // Shadow Atlas Region 정보 가져오기
+    FShadowAtlasRegionInfo region = ShadowRegions[Info.ShadowRegionIndex];
+
+    // 🔥 Shadow Map UV를 Atlas UV로 변환 (Region 좌표 기반)
+    // region.UVTransform = (UMin, VMin, UScale, VScale)
+    float2 atlasUV = projCoords.xy * region.UVTransform.zw + region.UVTransform.xy;
+
+    float currentDepth = projCoords.z;
+    float bias = Info.ShadowBias;
+
+#if SHADOW_FILTER_VSM
+    // 🔥 VSM: Variance Shadow Mapping (SpotLight도 Atlas 기반)
+    float2 moments = float2(0.0f, 0.0f);
+
+    // ⚠️ PointSpot Atlas에서 샘플링 (AtlasType == 1), Texture2DArray의 3번째 파라미터는 SliceIndex
+    moments = PointSpotAtlases.Sample(ShadowSampler, float3(atlasUV, region.AtlasIndex));
+
+    float mean = moments.x;
+    float variance = max(moments.y - mean * mean, 0.00001f);
+    float depth = currentDepth - bias;
+
+    // If depth is less than or equal to mean, fully lit
+    if (depth <= mean)
+        return 1.0f;
+
+    // Chebyshev's inequality
+    float d = depth - mean;
+    float p_max = variance / (variance + d * d);
+
+    // Light bleeding reduction
+    const float LBR = 0.3f;
+    p_max = saturate((p_max - LBR) / (1.0f - LBR));
+
+    // Shadow sharpening
+    float sharpen = max(0.0f, Info.ShadowSharpen);
+    float shadow = saturate((p_max - 0.5f) * (sharpen + 1.0f) + 0.5f);
+
+    return shadow;
+#else
+    // 🔥 PCF: Percentage Closer Filtering (SpotLight도 Atlas 기반)
+    float shadow = 0.0f;
+    float2 texelSize = 1.0f / float2(4096.0f, 4096.0f);  // Shadow Atlas size
+
+    // 3x3 PCF kernel
+    [unroll]
+    for (int x = -1; x <= 1; ++x)
+    {
+        [unroll]
+        for (int y = -1; y <= 1; ++y)
+        {
+            float2 offset = float2(x, y) * texelSize;
+
+            // ⚠️ PointSpot Atlas에서 샘플링, Texture2DArray의 3번째 파라미터는 SliceIndex
+            float shadowMapDepth = PointSpotAtlases.SampleLevel(ShadowSampler, float3(atlasUV + offset, region.AtlasIndex), 0).r;
+            shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
+        }
+    }
+
+    shadow /= 9.0f;
+    shadow = saturate(shadow);
+
+    // Shadow sharpening
+    float sharpen = max(0.0f, Info.ShadowSharpen);
+    shadow = saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
+
+    return shadow;
+#endif
+}
+
 // Vertex Shader
 PS_INPUT Uber_VS(VS_INPUT Input)
 {
     PS_INPUT Output;
-    
     Output.WorldPosition = mul(float4(Input.Position, 1.0f), World).xyz;
     Output.Position = mul(mul(mul(float4(Input.Position, 1.0f), World), View), Projection);
+
     float3x3 World3x3 = (float3x3) World;
     Output.WorldNormal = SafeNormalize3(mul(Input.Normal, transpose(Inverse3x3(World3x3))));
     float3 WorldTangent = SafeNormalize3(mul(Input.Tangent.xyz, (float3x3) World));
     Output.WorldTangent = float4(WorldTangent, Input.Tangent.w);
     Output.Tex = Input.Tex;
+
+    // Shadow Mapping: Light Space Position 계산
+    float4 worldPos = mul(float4(Input.Position, 1.0f), World);
+    float4 lightViewPos = mul(worldPos, LightView);
+    Output.LightSpacePos = mul(lightViewPos, LightProjection);
     
 #if LIGHTING_MODEL_GOURAUD
     // Calculate lighting in vertex shader (Gouraud)
@@ -417,18 +783,24 @@ PS_INPUT Uber_VS(VS_INPUT Input)
     // 3. Point Lights
     uint LightIndicesOffset = GetLightIndicesOffset(Output.WorldPosition);
     uint PointLightCount = GetPointLightCount(LightIndicesOffset);
+    [loop]
     for (uint i = 0; i < PointLightCount; i++)
-    {        
+    {
         FPointLightInfo PointLight = GetPointLight(LightIndicesOffset + i);
         ADD_ILLUM(Illumination, CalculatePointLight(PointLight, Output.WorldNormal, Output.WorldPosition, ViewWorldLocation));
     }
 
-    // 4.Spot Lights 
+    // 4.Spot Lights
     uint SpotLightCount = GetSpotLightCount(LightIndicesOffset);
-     for (uint j = 0; j < SpotLightCount; j++)
-    {        
+    [loop]
+    for (uint j = 0; j < SpotLightCount; j++)
+    {
         FSpotLightInfo SpotLight = GetSpotLight(LightIndicesOffset + j);
-        ADD_ILLUM(Illumination, CalculateSpotLight(SpotLight, Output.WorldNormal, Output.WorldPosition, ViewWorldLocation));
+        FIllumination SpotIllum = CalculateSpotLight(SpotLight, Output.WorldNormal, Output.WorldPosition, ViewWorldLocation);
+        float spotShadow = CalculateSpotShadow(SpotLight, Output.WorldPosition);
+        SpotIllum.Diffuse *= spotShadow;
+        SpotIllum.Specular *= spotShadow;
+        ADD_ILLUM(Illumination, SpotIllum);
     }
     
     // Assign to output
@@ -476,10 +848,22 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
         specularColor *= SpecularTexture.Sample(SamplerWrap, UV);
     }
     
+    float shadowFactor;
+    
+    if (bIsCSM.x < 0.5f)
+    {
+        
+        shadowFactor = CalculateShadow(Input.LightSpacePos);
+    }
+    else
+    {
+        shadowFactor = CalculateCSMShadow(Input.WorldPosition);
+    }
     
 #if LIGHTING_MODEL_GOURAUD
     // Use pre-calculated vertex lighting; apply diffuse material/texture per-pixel
-    finalPixel.rgb = Input.AmbientLight.rgb * ambientColor.rgb + Input.DiffuseLight.rgb * diffuseColor.rgb + Input.SpecularLight.rgb * specularColor.rgb;
+
+    finalPixel.rgb = Input.AmbientLight.rgb * ambientColor.rgb + (Input.DiffuseLight.rgb * shadowFactor) * diffuseColor.rgb + (Input.SpecularLight.rgb * shadowFactor) * specularColor.rgb;
     
 #elif LIGHTING_MODEL_LAMBERT || LIGHTING_MODEL_BLINNPHONG
     // Calculate lighting in pixel shader
@@ -488,25 +872,35 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     
     // 1. Ambient Light
     Illumination.Ambient = CalculateAmbientLight(Ambient);
-    
-    // 2. Directional Light
-    ADD_ILLUM(Illumination, CalculateDirectionalLight(Directional, N, Input.WorldPosition, ViewWorldLocation));
+
+    // 2. Directional Light with Shadow
+    FIllumination DirLightIllum = CalculateDirectionalLight(Directional, N, Input.WorldPosition, ViewWorldLocation);
+
+    DirLightIllum.Diffuse *= shadowFactor;
+    DirLightIllum.Specular *= shadowFactor;
+    ADD_ILLUM(Illumination, DirLightIllum);
     
     // 3. Point Lights
     uint LightIndicesOffset = GetLightIndicesOffset(Input.WorldPosition);
     uint PointLightCount = GetPointLightCount(LightIndicesOffset);
+    [loop]
     for (uint i = 0; i < PointLightCount ; i++)
     {
         FPointLightInfo PointLight = GetPointLight(LightIndicesOffset + i);
         ADD_ILLUM(Illumination, CalculatePointLight(PointLight, N, Input.WorldPosition, ViewWorldLocation));
     }
-    
+
     // 4. Spot Lights
     uint SpotLightCount = GetSpotLightCount(LightIndicesOffset);
-     for (uint j = 0; j < SpotLightCount ; j++)
+    [loop]
+    for (uint j = 0; j < SpotLightCount ; j++)
     {
         FSpotLightInfo SpotLight = GetSpotLight(LightIndicesOffset + j);
-        ADD_ILLUM(Illumination, CalculateSpotLight(SpotLight, N, Input.WorldPosition, ViewWorldLocation));
+        FIllumination SpotIllum = CalculateSpotLight(SpotLight, N, Input.WorldPosition, ViewWorldLocation);
+        float spotShadow = CalculateSpotShadow(SpotLight, Input.WorldPosition);
+        SpotIllum.Diffuse *= spotShadow;
+        SpotIllum.Specular *= spotShadow;
+        ADD_ILLUM(Illumination, SpotIllum);
     }
     
     finalPixel.rgb = Illumination.Ambient.rgb * ambientColor.rgb + Illumination.Diffuse.rgb * diffuseColor.rgb + Illumination.Specular.rgb * specularColor.rgb;
@@ -517,7 +911,7 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     
 #else
     // Fallback: simple textured rendering (like current TexturePS.hlsl)
-    finalPixel.rgb = diffuseColor.rgb + ambientColor.rgb;
+        finalPixel.rgb = diffuseColor.rgb + ambientColor.rgb;
 #endif
     
     // Alpha handling
@@ -525,22 +919,22 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     finalPixel.a = 1.0f;
 #else
     // 1. Diffuse Map 있으면 그 alpha 사용, 없으면 1.0
-    float alpha = (MaterialFlags & HAS_DIFFUSE_MAP) ? diffuseColor.a : 1.0f;
+        float alpha = (MaterialFlags & HAS_DIFFUSE_MAP) ? diffuseColor.a : 1.0f;
     
     // 2. Alpha Map 따로 있으면 곱해줌.
-    if (MaterialFlags & HAS_ALPHA_MAP)
-    {
-        alpha *= AlphaTexture.Sample(SamplerWrap, UV).r;
-    }
+        if (MaterialFlags & HAS_ALPHA_MAP)
+        {
+            alpha *= AlphaTexture.Sample(SamplerWrap, UV).r;
+        }
     
     // 3. D 곱해서 최종 alpha 결정
-    finalPixel.a = D * alpha;
+        finalPixel.a = D * alpha;
 #endif
-    Output.SceneColor = finalPixel;
+        Output.SceneColor = finalPixel;
     
     // Encode normal for deferred rendering
-    float3 encodedNormal = SafeNormalize3(ShadedWorldNormal) * 0.5f + 0.5f;
-    Output.NormalData = float4(encodedNormal, 1.0f);
+        float3 encodedNormal = SafeNormalize3(ShadedWorldNormal) * 0.5f + 0.5f;
+        Output.NormalData = float4(encodedNormal, 1.0f);
     
-    return Output;
-}
+        return Output;
+    }

@@ -374,4 +374,91 @@ FVector FMatrix::TransformPosition(const FVector& V) const
     );
 }
 
+FMatrix FMatrix::LookAtLH(const FVector& Eye, const FVector& Target, const FVector& Up)
+{
+    FVector zAxis = (Target - Eye).GetNormalized();
+    FVector xAxis = Up.Cross(zAxis).GetNormalized();
+    FVector yAxis = zAxis.Cross(xAxis);
+
+    FMatrix result;
+    result.Data[0][0] = xAxis.X;
+    result.Data[1][0] = xAxis.Y;
+    result.Data[2][0] = xAxis.Z;
+    result.Data[3][0] = -xAxis.Dot(Eye);
+
+    result.Data[0][1] = yAxis.X;
+    result.Data[1][1] = yAxis.Y;
+    result.Data[2][1] = yAxis.Z;
+    result.Data[3][1] = -yAxis.Dot(Eye);
+
+    result.Data[0][2] = zAxis.X;
+    result.Data[1][2] = zAxis.Y;
+    result.Data[2][2] = zAxis.Z;
+    result.Data[3][2] = -zAxis.Dot(Eye);
+
+    result.Data[0][3] = 0.0f;
+    result.Data[1][3] = 0.0f;
+    result.Data[2][3] = 0.0f;
+    result.Data[3][3] = 1.0f;
+
+    return result;
+}
+
+FMatrix FMatrix::OrthographicLH(float Width, float Height, float NearZ, float FarZ)
+{
+    FMatrix result;
+
+    result.Data[0][0] = 2.0f / Width;
+    result.Data[0][1] = 0.0f;
+    result.Data[0][2] = 0.0f;
+    result.Data[0][3] = 0.0f;
+
+    result.Data[1][0] = 0.0f;
+    result.Data[1][1] = 2.0f / Height;
+    result.Data[1][2] = 0.0f;
+    result.Data[1][3] = 0.0f;
+
+    result.Data[2][0] = 0.0f;
+    result.Data[2][1] = 0.0f;
+    result.Data[2][2] = 1.0f / (FarZ - NearZ);
+    result.Data[2][3] = 0.0f;
+
+    result.Data[3][0] = 0.0f;
+    result.Data[3][1] = 0.0f;
+    result.Data[3][2] = -NearZ / (FarZ - NearZ);
+    result.Data[3][3] = 1.0f;
+
+    return result;
+}
+
+FMatrix FMatrix::PerspectiveFovLH(float FovY, float AspectRatio, float NearZ, float FarZ)
+{
+    FMatrix result;
+
+    float yScale = 1.0f / std::tan(FovY * 0.5f);
+    float xScale = yScale / AspectRatio;
+
+    result.Data[0][0] = xScale;
+    result.Data[0][1] = 0.0f;
+    result.Data[0][2] = 0.0f;
+    result.Data[0][3] = 0.0f;
+
+    result.Data[1][0] = 0.0f;
+    result.Data[1][1] = yScale;
+    result.Data[1][2] = 0.0f;
+    result.Data[1][3] = 0.0f;
+
+    result.Data[2][0] = 0.0f;
+    result.Data[2][1] = 0.0f;
+    result.Data[2][2] = FarZ / (FarZ - NearZ);
+    result.Data[2][3] = 1.0f;
+
+    result.Data[3][0] = 0.0f;
+    result.Data[3][1] = 0.0f;
+    result.Data[3][2] = -NearZ * FarZ / (FarZ - NearZ);
+    result.Data[3][3] = 0.0f;
+
+    return result;
+}
+
 

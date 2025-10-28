@@ -5,12 +5,13 @@ class FStaticMeshPass : public FRenderPass
 {
 public:
     FStaticMeshPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferViewProj, ID3D11Buffer* InConstantBufferModel,
+        ID3D11Buffer* InConstantBufferLightViewProj,
         ID3D11VertexShader* InVS, ID3D11PixelShader* InPS, ID3D11InputLayout* InLayout, ID3D11DepthStencilState* InDS);
     void Execute(FRenderingContext& Context) override;
     void Release() override;
 
     // hot reload용 setter methods
-	void SetVertexShader(ID3D11VertexShader* InVS) { VS = InVS; } 
+	void SetVertexShader(ID3D11VertexShader* InVS) { VS = InVS; }
 	void SetPixelShader(ID3D11PixelShader* InPS) { PS = InPS; }
 	void SetInputLayout(ID3D11InputLayout* InLayout) { InputLayout = InLayout; }
 
@@ -19,6 +20,12 @@ private:
     ID3D11PixelShader* PS = nullptr;
     ID3D11InputLayout* InputLayout = nullptr;
     ID3D11DepthStencilState* DS = nullptr;
-    
+
     ID3D11Buffer* ConstantBufferMaterial = nullptr;
+    ID3D11Buffer* ConstantBufferLightViewProj = nullptr;
+
+    // Shadow Atlas Region Structured Buffer
+    ID3D11Buffer* ShadowRegionStructuredBuffer = nullptr;
+    ID3D11ShaderResourceView* ShadowRegionStructuredBufferSRV = nullptr;
+    uint32 ShadowRegionBufferCount = 64;  // 초기 크기 (동적 확장)
 };

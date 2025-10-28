@@ -114,7 +114,7 @@ void UEditorEngine::StartPIE()
 
 void UEditorEngine::EndPIE()
 {
-    if (PIEState != EPIEState::Playing) { return; }
+    if (PIEState != EPIEState::Playing && PIEState != EPIEState::Paused) { return; }
     PIEState = EPIEState::Stopped;
     FWorldContext* PIEContext = GetPIEWorldContext();
     if (PIEContext)

@@ -162,12 +162,29 @@ void FRenderResourceFactory::CreateComputeShader(const wstring& InFilePath, ID3D
 	HRESULT Result = D3DCompileFromFile(InFilePath.data(), 0, D3D_COMPILE_STANDARD_FILE_INCLUDE, InEntryPoint, "cs_5_0", Flag, 0, &ShaderBlob, &ErrorBlob);
 	if (FAILED(Result))
 	{
-		if (ErrorBlob) { OutputDebugStringA(static_cast<char*>(ErrorBlob->GetBufferPointer())); SafeRelease(ErrorBlob); }
+		UE_LOG_ERROR("[RenderResourceFactory] Compute Shader 컴파일 실패: %s (Entry: %hs)", InFilePath.c_str(), InEntryPoint);
+		UE_LOG_ERROR("  - HRESULT: 0x%08X", Result);
+		if (ErrorBlob)
+		{
+			UE_LOG_ERROR("  - Compile Error: %hs", static_cast<char*>(ErrorBlob->GetBufferPointer()));
+			OutputDebugStringA(static_cast<char*>(ErrorBlob->GetBufferPointer()));
+			SafeRelease(ErrorBlob);
+		}
 		SafeRelease(ShaderBlob);
 		return;
 	}
 
-	URenderer::GetInstance().GetDevice()->CreateComputeShader(ShaderBlob->GetBufferPointer(), ShaderBlob->GetBufferSize(), nullptr, OutComputeShader);
+	Result = URenderer::GetInstance().GetDevice()->CreateComputeShader(ShaderBlob->GetBufferPointer(), ShaderBlob->GetBufferSize(), nullptr, OutComputeShader);
+	if (FAILED(Result))
+	{
+		UE_LOG_ERROR("[RenderResourceFactory] Compute Shader 생성 실패: %s (Entry: %hs)", InFilePath.c_str(), InEntryPoint);
+		UE_LOG_ERROR("  - HRESULT: 0x%08X", Result);
+	}
+	else
+	{
+		UE_LOG("[RenderResourceFactory] Compute Shader 생성 성공: %s (Entry: %hs)", InFilePath.c_str(), InEntryPoint);
+	}
+
 	SafeRelease(ShaderBlob);
 	SafeRelease(ErrorBlob);
 }
@@ -215,7 +232,13 @@ ID3D11SamplerState* FRenderResourceFactory::CreateFXAASamplerState()
 
 ID3D11RasterizerState* FRenderResourceFactory::GetRasterizerState(const FRenderState& InRenderState)
 {
-	const FRasterKey Key{ ToD3D11(InRenderState.FillMode), ToD3D11(InRenderState.CullMode) };
+	const FRasterKey Key{
+		ToD3D11(InRenderState.FillMode),
+		ToD3D11(InRenderState.CullMode),
+		InRenderState.DepthBias,
+		InRenderState.SlopeScaledDepthBias,
+		InRenderState.DepthBiasClamp
+	};
 	if (auto Iter = RasterCache.find(Key); Iter != RasterCache.end())
 	{
 		return Iter->second;
@@ -226,6 +249,9 @@ ID3D11RasterizerState* FRenderResourceFactory::GetRasterizerState(const FRenderS
 	RasterizerDesc.CullMode = Key.CullMode;
 	RasterizerDesc.FrontCounterClockwise = TRUE;
 	RasterizerDesc.DepthClipEnable = TRUE;
+	RasterizerDesc.DepthBias = Key.DepthBias;
+	RasterizerDesc.SlopeScaledDepthBias = Key.SlopeScaledDepthBias;
+	RasterizerDesc.DepthBiasClamp = Key.DepthBiasClamp;
 
 	ID3D11RasterizerState* RasterizerState = nullptr;
 	if (FAILED(URenderer::GetInstance().GetDevice()->CreateRasterizerState(&RasterizerDesc, &RasterizerState)))

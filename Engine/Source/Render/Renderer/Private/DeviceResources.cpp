@@ -348,8 +348,6 @@ void UDeviceResources::ReleaseDepthBuffer()
 	}
 }
 
-
-
 void UDeviceResources::UpdateViewport(float InMenuBarHeight)
 {
 	DXGI_SWAP_CHAIN_DESC SwapChainDescription = {};

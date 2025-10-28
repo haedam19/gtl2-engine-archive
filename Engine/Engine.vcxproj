@@ -307,6 +307,7 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Source\Utility\Public\CSMBuilder.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Source\Actor\Public\Actor.h" />
     <ClInclude Include="Source\Actor\Public\AmbientLight.h" />
@@ -421,6 +422,9 @@
     <ClInclude Include="Source\Render\Renderer\Public\Pipeline.h" />
     <ClInclude Include="Source\Render\Renderer\Public\Renderer.h" />
     <ClInclude Include="Source\Render\Renderer\Public\RenderResourceFactory.h" />
+    <ClInclude Include="Source\Render\Renderer\Public\ShadowAtlas.h" />
+    <ClInclude Include="Source\Render\Renderer\Public\ShadowAtlasManager.h" />
+    <ClInclude Include="Source\Render\Renderer\Public\ShadowMapData.h" />
     <ClInclude Include="Source\Render\RenderPass\Public\BillboardPass.h" />
     <ClInclude Include="Source\Render\RenderPass\Public\ClusteredRenderingGridPass.h" />
     <ClInclude Include="Source\Render\RenderPass\Public\DecalPass.h" />
@@ -431,6 +435,7 @@
     <ClInclude Include="Source\Render\RenderPass\Public\RenderingContext.h" />
     <ClInclude Include="Source\Render\RenderPass\Public\RenderPass.h" />
     <ClInclude Include="Source\Render\RenderPass\Public\SceneDepthPass.h" />
+    <ClInclude Include="Source\Render\RenderPass\Public\ShadowMapPass.h" />
     <ClInclude Include="Source\Render\RenderPass\Public\StaticMeshPass.h" />
     <ClInclude Include="Source\Render\RenderPass\Public\TextPass.h" />
     <ClInclude Include="Source\Render\UI\Factory\Public\UIWindowFactory.h" />
@@ -566,6 +571,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ObjViewerDebug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </FxCompile>
+    <ClCompile Include="Source\Utility\Private\CSMBuilder.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
@@ -674,6 +680,8 @@
     <ClCompile Include="Source\Render\Renderer\Private\Pipeline.cpp" />
     <ClCompile Include="Source\Render\Renderer\Private\Renderer.cpp" />
     <ClCompile Include="Source\Render\Renderer\Private\RenderResourceFactory.cpp" />
+    <ClCompile Include="Source\Render\Renderer\Private\ShadowAtlas.cpp" />
+    <ClCompile Include="Source\Render\Renderer\Private\ShadowAtlasManager.cpp" />
     <ClCompile Include="Source\Render\RenderPass\Private\BillboardPass.cpp" />
     <ClCompile Include="Source\Render\RenderPass\Private\ClusteredRenderingGridPass.cpp" />
     <ClCompile Include="Source\Render\RenderPass\Private\DecalPass.cpp" />
@@ -683,6 +691,7 @@
     <ClCompile Include="Source\Render\RenderPass\Private\FogPass.cpp" />
     <ClCompile Include="Source\Render\RenderPass\Private\RenderPass.cpp" />
     <ClCompile Include="Source\Render\RenderPass\Private\SceneDepthPass.cpp" />
+    <ClCompile Include="Source\Render\RenderPass\Private\ShadowMapPass.cpp" />
     <ClCompile Include="Source\Render\RenderPass\Private\StaticMeshPass.cpp" />
     <ClCompile Include="Source\Render\RenderPass\Private\TextPass.cpp" />
     <ClCompile Include="Source\Render\UI\Factory\Private\UIWindowFactory.cpp" />
@@ -732,7 +741,27 @@
     <ClCompile Include="Source\Texture\Private\Texture.cpp" />
     <ClCompile Include="Source\Utility\Private\ScopeCycleCounter.cpp" />
     <ClCompile Include="Source\Utility\Private\UELogParser.cpp" />
+    <FxCompile Include="Asset\Shader\ShadowPreviewShader.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ObjViewerDebug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ObjViewerDebug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
     <FxCompile Include="Asset\Shader\UberLit.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ObjViewerDebug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+    <FxCompile Include="Asset\Shader\VarianceShadowMappingCS.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ObjViewerDebug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ObjViewerDebug|x64'">true</ExcludedFromBuild>
