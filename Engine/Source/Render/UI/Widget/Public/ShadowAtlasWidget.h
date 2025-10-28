@@ -17,5 +17,5 @@ public:
 	~UShadowAtlasWidget() override = default;
 
 private:
-	int32 SelectedAtlasSize = 1;  // 0: 2048, 1: 4096
+	int32 SelectedAtlasSize = 1;  // 0: 2048, 1: 4096, 2: 8192
 };
