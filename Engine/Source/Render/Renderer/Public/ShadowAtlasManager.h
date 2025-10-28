@@ -91,15 +91,17 @@ public:
     // Directional Light들을 받아서 Sorting하고 Atlas에 할당
     TArray<FLightAllocationPair> AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights);
 
-    TArray<FLightAllocationPair> AllocatePointSpotLights(
-        const TArray<UPointLightComponent*>& Lights,
-        const FVector& CameraPos = FVector(),
-        const TMap<uint32, uint32>* LightClusterInfluences = nullptr);
-    TArray<FLightAllocationPair> AllocateSpotLights(
-        const TArray<USpotLightComponent*>& Lights,
+    struct FPointSpotAllocationResult
+    {
+        TArray<FLightAllocationPair> PointLights;
+        TArray<FLightAllocationPair> SpotLights;
+    };
+
+    FPointSpotAllocationResult AllocatePointSpotLights(
+        const TArray<UPointLightComponent*>& PointLights,
+        const TArray<USpotLightComponent*>& SpotLights,
         const FVector* CameraPos = nullptr,
         const TMap<uint32, uint32>* LightClusterInfluences = nullptr);
-    TArray<FLightAllocationPair> AllocatePointLights(const TArray<UPointLightComponent*>& Lights);
     bool GetPointLightFaceAllocation(UPointLightComponent* Light, uint32 FaceIndex, FShadowAtlasAllocation& OutAllocation, uint32& OutResolution) const;
 
     // Atlas 배열 접근

@@ -15,28 +15,58 @@
 #include "Utility/Public/CSMBuilder.h"
 #include "Editor/Public/Camera.h"
 
-static FMatrix CalculateCubeFaceViewMatrix(const FVector& LightPos, uint32 Face)
+// Shadow Map Pass 전용 헬퍼 함수 모음
+namespace
 {
-	static const FVector Directions[6] = {
-		FVector(1.0f, 0.0f, 0.0f),
-		FVector(-1.0f, 0.0f, 0.0f),
-		FVector(0.0f, 1.0f, 0.0f),
-		FVector(0.0f, -1.0f, 0.0f),
-		FVector(0.0f, 0.0f, 1.0f),
-		FVector(0.0f, 0.0f, -1.0f)
-	};
+	TArray<UPointLightComponent*> GetEnabledPointLights(const FRenderingContext& Context)
+	{
+		TArray<UPointLightComponent*> EnabledPointLights;
+		for (UPointLightComponent* PointLight : Context.PointLights)
+		{
+			if (PointLight->GetLightEnabled())
+			{
+				EnabledPointLights.push_back(PointLight);
+			}
+		}
+		return EnabledPointLights;
+	}
 
-	static const FVector Ups[6] = {
-		FVector(0.0f, 1.0f, 0.0f),
-		FVector(0.0f, 1.0f, 0.0f),
-		FVector(0.0f, 0.0f, -1.0f),
-		FVector(0.0f, 0.0f, 1.0f),
-		FVector(0.0f, 1.0f, 0.0f),
-		FVector(0.0f, 1.0f, 0.0f)
-	};
+	TArray<USpotLightComponent*> GetEnabledSpotLights(const FRenderingContext& Context)
+	{
+		TArray<USpotLightComponent*> EnabledSpotLights;
+		for (USpotLightComponent* SpotLight : Context.SpotLights)
+		{
+			if (SpotLight->GetLightEnabled())
+			{
+				EnabledSpotLights.push_back(SpotLight);
+			}
+		}
+		return EnabledSpotLights;
+	}
 
-	const uint32 FaceIndex = std::min<uint32>(Face, 5);
-	return FMatrix::LookAtLH(LightPos, LightPos + Directions[FaceIndex], Ups[FaceIndex]);
+	static FMatrix CalculateCubeFaceViewMatrix(const FVector& LightPos, uint32 Face)
+	{
+		static const FVector Directions[6] = {
+			FVector(1.0f, 0.0f, 0.0f),
+			FVector(-1.0f, 0.0f, 0.0f),
+			FVector(0.0f, 1.0f, 0.0f),
+			FVector(0.0f, -1.0f, 0.0f),
+			FVector(0.0f, 0.0f, 1.0f),
+			FVector(0.0f, 0.0f, -1.0f)
+		};
+
+		static const FVector Ups[6] = {
+			FVector(0.0f, 1.0f, 0.0f),
+			FVector(0.0f, 1.0f, 0.0f),
+			FVector(0.0f, 0.0f, -1.0f),
+			FVector(0.0f, 0.0f, 1.0f),
+			FVector(0.0f, 1.0f, 0.0f),
+			FVector(0.0f, 1.0f, 0.0f)
+		};
+
+		const uint32 FaceIndex = std::min<uint32>(Face, 5);
+		return FMatrix::LookAtLH(LightPos, LightPos + Directions[FaceIndex], Ups[FaceIndex]);
+	}
 }
 
 FShadowMapPass::FShadowMapPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferLightViewProj, ID3D11Buffer* InConstantBufferCascadeShadow, ID3D11Buffer* InConstantBufferModel,
@@ -315,9 +345,42 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 	}
 
 	// ===========================================================================
+	// Point/Spot Shadow Atlas 할당 (공동 처리)
+	// ===========================================================================
+	TArray<USpotLightComponent*> SpotLightsForAllocation = GetEnabledSpotLights(Context);
+	TArray<UPointLightComponent*> PointLightsForAllocation = GetEnabledPointLights(Context);
+
+	FVector CameraPos{};
+	const FVector* CameraPosPtr = nullptr;
+	TMap<uint32, uint32> SpotInfluenceMap;
+	const TMap<uint32, uint32>* InfluenceMapPtr = nullptr;
+
+	if (Context.CurrentCamera && Renderer.GetLightPass())
+	{
+		CameraPos = Context.CurrentCamera->GetLocation();
+		CameraPosPtr = &CameraPos;
+
+		TArray<FLightClusterInfluence> ClusterInfluences = Renderer.GetLightPass()->GetSpotLightClusterInfluences();
+		for (const FLightClusterInfluence& Influence : ClusterInfluences)
+		{
+			SpotInfluenceMap[Influence.LightIndex] = Influence.AffectedClusterCount;
+		}
+
+		InfluenceMapPtr = &SpotInfluenceMap;
+	}
+
+	FShadowAtlasManager::FPointSpotAllocationResult PointSpotAllocations =
+		AtlasManager->AllocatePointSpotLights(Context.PointLights, SpotLightsForAllocation, CameraPosPtr, InfluenceMapPtr);
+
+
+	// 렌더링 시 각 Atlas Slice를 한 번만 Clear하기 위한 집합
+	// 여러 번 클리어했다는 말은 Point Light 그린 slice를 Spot Light 그릴 때 다시 클리어했다는 뜻이므로 Point Light 섀도우 맵 사라지게 됨.
+	TSet<uint32> ClearedAtlasIndices = {};
+
+	// ===========================================================================
 	// PointLight Shadow 렌더링 (Shadow Atlas 기반)
 	// ===========================================================================
-	TArray<FLightAllocationPair> AllocatedPointLights = AtlasManager->AllocatePointLights(Context.PointLights);
+	const TArray<FLightAllocationPair>& AllocatedPointLights = PointSpotAllocations.PointLights;
 
 	TMap<uint32, TArray<const FLightAllocationPair*>> pointBySlice;
 	for (const FLightAllocationPair& Pair : AllocatedPointLights)
@@ -337,7 +400,10 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		ID3D11RenderTargetView* NullRTV = nullptr;
 		Pipeline->SetRenderTargets(1, &NullRTV, dsv);
 
-		DeviceContext->ClearDepthStencilView(dsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
+		if (ClearedAtlasIndices.insert(sliceIndex).second)
+		{
+			DeviceContext->ClearDepthStencilView(dsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
+		}
 
 		FRenderState RSState = UStaticMeshComponent::GetClassDefaultRenderState();
 		ID3D11RasterizerState* RS_scissor = FRenderResourceFactory::GetRasterizerState(RSState);
@@ -416,36 +482,7 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 	// ===========================================================================
 	// SpotLight Shadow 렌더링 (Shadow Atlas 기반)
 	// ===========================================================================
-	TArray<USpotLightComponent*> SpotLightsForAllocation;
-	for (USpotLightComponent* SpotLight : Context.SpotLights)
-	{
-		if (SpotLight && SpotLight->GetLightEnabled())
-			SpotLightsForAllocation.push_back(SpotLight);
-	}
-
-	// 2) LOD를 위한 클러스터 영향도 수집 및 Atlas에서 영역/슬라이스 할당
-	TArray<FLightAllocationPair> AllocatedSpotLights;
-
-	// 카메라 위치와 클러스터 정보 수집 (LOD 적용)
-	if (Context.CurrentCamera && Renderer.GetLightPass())
-	{
-		FVector CameraPos = Context.CurrentCamera->GetLocation();
-		TArray<FLightClusterInfluence> ClusterInfluences = Renderer.GetLightPass()->GetSpotLightClusterInfluences();
-
-		// 배열 인덱스 기반 Map 생성
-		TMap<uint32, uint32> InfluenceMap;
-		for (const FLightClusterInfluence& Influence : ClusterInfluences)
-		{
-			InfluenceMap[Influence.LightIndex] = Influence.AffectedClusterCount;
-		}
-
-		AllocatedSpotLights = AtlasManager->AllocateSpotLights(SpotLightsForAllocation, &CameraPos, &InfluenceMap);
-	}
-	else
-	{
-		// LOD 없이 기존 방식으로 할당
-		AllocatedSpotLights = AtlasManager->AllocateSpotLights(SpotLightsForAllocation);
-	}
+	const TArray<FLightAllocationPair>& AllocatedSpotLights = PointSpotAllocations.SpotLights;
 
 	// 슬라이스별로 라이트를 묶는다 (AtlasIndex 기준)
 	std::unordered_map<uint32, std::vector<const FLightAllocationPair*>> spotBySlice;
@@ -461,7 +498,7 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 	FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, NonCSMData);
 	Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
 
-	// 슬라이스 단위 렌더링: 슬라이스 진입 시 "1회만" Clear
+	// 슬라이스 단위 렌더링
 	for (auto& kv : spotBySlice)
 	{
 		const uint32 sliceIndex = kv.first;
@@ -475,8 +512,10 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		ID3D11RenderTargetView* NullRTV = nullptr;
 		Pipeline->SetRenderTargets(1, &NullRTV, dsv);
 
-		// ✅ 이 슬라이스는 프레임당 "한 번만" 클리어
-		DeviceContext->ClearDepthStencilView(dsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
+		if (ClearedAtlasIndices.insert(sliceIndex).second)
+		{
+			DeviceContext->ClearDepthStencilView(dsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
+		}
 
 		// Scissor 활성화된 래스터라이저 상태 준비
 		FRenderState RSState = UStaticMeshComponent::GetClassDefaultRenderState();
