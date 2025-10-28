@@ -87,6 +87,7 @@ void UStatOverlay::Render()
     if (IsStatEnabled(EStatType::Picking)) RenderPicking(D2DCtx);
     if (IsStatEnabled(EStatType::Time))    RenderTimeInfo(D2DCtx);
     if (IsStatEnabled(EStatType::Decal))   RenderDecalInfo(D2DCtx);
+    if (IsStatEnabled(EStatType::VRAM))    RenderVRAM(D2DCtx);
 
     D2DCtx->EndDraw();
     D2DCtx->SetTarget(nullptr);
@@ -256,4 +257,38 @@ void UStatOverlay::RecordDecalStats(uint32 InRenderedDecal, uint32 InCollidedCom
 {
     RenderedDecal = InRenderedDecal;
     CollidedCompCount = InCollidedCompCount;
+}
+
+void UStatOverlay::RenderVRAM(ID2D1DeviceContext* d2dCtx)
+{
+    auto* DeviceResources = URenderer::GetInstance().GetDeviceResources();
+
+    size_t UsedVRAM = 0;
+    size_t TotalVRAM = 0;
+    DeviceResources->GetVRAMInfo(UsedVRAM, TotalVRAM);
+
+    float UsedVRAMMB = static_cast<float>(UsedVRAM) / (1024.0f * 1024.0f);
+    float TotalVRAMMB = static_cast<float>(TotalVRAM) / (1024.0f * 1024.0f);
+    float UsagePercent = TotalVRAM > 0 ? (static_cast<float>(UsedVRAM) / static_cast<float>(TotalVRAM)) * 100.0f : 0.0f;
+
+    char Buf[128];
+    sprintf_s(Buf, sizeof(Buf), "VRAM: %.1f / %.1f MB (%.1f%%)", UsedVRAMMB, TotalVRAMMB, UsagePercent);
+    FString text = Buf;
+
+    float OffsetY = 0.0f;
+    if (IsStatEnabled(EStatType::FPS))     OffsetY += 20.0f;
+    if (IsStatEnabled(EStatType::Memory))  OffsetY += 20.0f;
+    if (IsStatEnabled(EStatType::Picking)) OffsetY += 20.0f;
+    if (IsStatEnabled(EStatType::Decal))   OffsetY += 40.0f;
+    if (IsStatEnabled(EStatType::Time))
+    {
+        const TArray<FString> ProfileKeys = FScopeCycleCounter::GetTimeProfileKeys();
+        OffsetY += ProfileKeys.size() * 20.0f;
+    }
+
+    float r = 0.5f, g = 1.0f, b = 1.0f;
+    if (UsagePercent > 90.0f) { r = 1.0f; g = 0.0f; b = 0.0f; }
+    else if (UsagePercent > 75.0f) { r = 1.0f; g = 1.0f; b = 0.0f; }
+
+    RenderText(d2dCtx, text, OverlayX, OverlayY + OffsetY, r, g, b);
 }
