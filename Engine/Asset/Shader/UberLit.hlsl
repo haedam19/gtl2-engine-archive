@@ -11,6 +11,8 @@
 #define NUM_POINT_LIGHT 100
 #define NUM_SPOT_LIGHT 100
 #define ADD_ILLUM(a, b) { (a).Ambient += (b).Ambient; (a).Diffuse += (b).Diffuse; (a).Specular += (b).Specular; }
+#define CSM_MAX_CASCADES 4
+#define SHADOW_MAP_RESOLUTION 2048.0f
 
 static const float PI = 3.14159265f;
 
@@ -43,6 +45,16 @@ cbuffer LightViewProj : register(b6)
 {
     row_major float4x4 LightView;
     row_major float4x4 LightProjection;
+};
+
+cbuffer CSMLightViewProj : register(b7)
+{
+    row_major float4x4 CascadeLightView[CSM_MAX_CASCADES];
+    row_major float4x4 CascadeLightProjection[CSM_MAX_CASCADES];
+    float4 CascadeSplits;
+    float4 CascadeScaleOffsets[CSM_MAX_CASCADES];
+    float4 CascadeParams;
+    float4 bIsCSM;
 };
 
 cbuffer GlobalLightConstant : register(b3)
@@ -516,8 +528,139 @@ float CalculateShadow(float4 LightSpacePos)
     float sharpen = max(0.0f, Directional.ShadowSharpen);
     shadow = saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
 
-    return shadow;
+	return shadow;
 #endif
+}
+
+// CSM Shadow Sampling Functions (Atlas 기반)
+float SampleCSMCascadePCF(float currentDepth, float bias, float texelSize, float2 atlasUV, uint atlasIndex)
+{
+	float shadow = 0.0f;
+
+	[unroll]
+	for (int x = -1; x <= 1; ++x)
+	{
+		[unroll]
+		for (int y = -1; y <= 1; ++y)
+		{
+			float2 offset = float2(x, y) * texelSize;
+			float shadowMapDepth = DirectionalAtlases.SampleLevel(ShadowSampler, float3(atlasUV + offset, atlasIndex), 0).r;
+			shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
+		}
+	}
+
+	shadow /= 9.0f;
+	shadow = saturate(shadow);
+
+	float sharpen = max(0.0f, Directional.ShadowSharpen);
+	return saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
+}
+
+float SampleCSMCascadeVSM(float currentDepth, float bias, float2 atlasUV, uint atlasIndex)
+{
+	float depth = currentDepth - bias;
+
+	float2 moments = DirectionalAtlases.Sample(ShadowSampler, float3(atlasUV, atlasIndex));
+	float mean = moments.x;
+	float variance = max(moments.y - mean * mean, 0.00001f);
+
+	if (depth <= mean)
+	{
+		return 1.0f;
+	}
+
+	float d = depth - mean;
+	float p_max = variance / (variance + d * d);
+
+	const float LBR = 0.3f;
+	p_max = saturate((p_max - LBR) / (1.0f - LBR));
+
+	float sharpen = max(0.0f, Directional.ShadowSharpen);
+	return saturate((p_max - 0.5f) * (sharpen + 1.0f) + 0.5f);
+}
+
+float CalculateCSMShadow(float3 WorldPos)
+{
+    float4 worldPos = float4(WorldPos, 1.0f);
+    float viewDepth = mul(worldPos, View).z;
+
+    uint cascadeCount = max((uint) CascadeParams.x, 1u);
+    uint cascadeIndex = cascadeCount - 1u;
+
+    if (cascadeCount > 0u && viewDepth <= CascadeSplits.x)
+        cascadeIndex = 0u;
+    else if (cascadeCount > 1u && viewDepth <= CascadeSplits.y)
+        cascadeIndex = 1u;
+    else if (cascadeCount > 2u && viewDepth <= CascadeSplits.z)
+        cascadeIndex = 2u;
+    else if (cascadeCount > 3u && viewDepth <= CascadeSplits.w)
+        cascadeIndex = 3u;
+
+    float4 lightViewPos = mul(worldPos, CascadeLightView[cascadeIndex]);
+    float4 lightProjPos = mul(lightViewPos, CascadeLightProjection[cascadeIndex]);
+    float3 projCoords = lightProjPos.xyz / lightProjPos.w;
+
+    if (projCoords.x < -1.0f || projCoords.x > 1.0f ||
+        projCoords.y < -1.0f || projCoords.y > 1.0f ||
+        projCoords.z < 0.0f || projCoords.z > 1.0f)
+    {
+        return 1.0f;
+    }
+
+    projCoords.x = projCoords.x * 0.5f + 0.5f;
+    projCoords.y = -projCoords.y * 0.5f + 0.5f;
+
+    float4 scaleOffset = CascadeScaleOffsets[cascadeIndex];
+    float2 atlasUV = projCoords.xy * scaleOffset.xy + scaleOffset.zw;
+    float currentDepth = projCoords.z;
+
+	// CSM은 항상 DirectionalAtlas의 첫 번째 슬라이스(AtlasIndex=0) 사용
+	uint atlasIndex = 0;
+
+	float shadowValue = 1.0f;
+#if SHADOW_FILTER_VSM
+	shadowValue = SampleCSMCascadeVSM(currentDepth, Directional.ShadowBias, atlasUV, atlasIndex);
+#else
+	shadowValue = SampleCSMCascadePCF(currentDepth, 0.0005f, CascadeParams.w, atlasUV, atlasIndex);
+#endif
+
+	// Cross-fade with the next cascade near split boundaries for smoother transitions
+	if (cascadeCount > 1u && cascadeIndex < cascadeCount - 1u)
+	{
+		float cascadeNear = (cascadeIndex == 0u) ? NearClip : CascadeSplits[cascadeIndex - 1u];
+		float cascadeFar = CascadeSplits[cascadeIndex];
+		const float BlendRatio = 0.1f;
+		float blendRange = (cascadeFar - cascadeNear) * BlendRatio;
+		float distanceToFar = cascadeFar - viewDepth;
+
+		if (blendRange > 0.0f && distanceToFar > 0.0f && distanceToFar < blendRange)
+		{
+			uint nextIndex = cascadeIndex + 1u;
+			float4 nextLightViewPos = mul(worldPos, CascadeLightView[nextIndex]);
+			float4 nextLightProjPos = mul(nextLightViewPos, CascadeLightProjection[nextIndex]);
+			float3 nextProjCoords = nextLightProjPos.xyz / nextLightProjPos.w;
+
+			if (nextProjCoords.x >= -1.0f && nextProjCoords.x <= 1.0f &&
+				nextProjCoords.y >= -1.0f && nextProjCoords.y <= 1.0f &&
+				nextProjCoords.z >= 0.0f && nextProjCoords.z <= 1.0f)
+			{
+				nextProjCoords.x = nextProjCoords.x * 0.5f + 0.5f;
+				nextProjCoords.y = -nextProjCoords.y * 0.5f + 0.5f;
+				float4 nextScaleOffset = CascadeScaleOffsets[nextIndex];
+				float2 nextAtlasUV = nextProjCoords.xy * nextScaleOffset.xy + nextScaleOffset.zw;
+				float nextDepth = nextProjCoords.z;
+#if SHADOW_FILTER_VSM
+				float nextShadow = SampleCSMCascadeVSM(nextDepth, Directional.ShadowBias, nextAtlasUV, atlasIndex);
+#else
+				float nextShadow = SampleCSMCascadePCF(nextDepth, 0.0005f, CascadeParams.w, nextAtlasUV, atlasIndex);
+#endif
+				float weight = saturate((blendRange - distanceToFar) / blendRange);
+				shadowValue = lerp(shadowValue, nextShadow, weight);
+			}
+		}
+	}
+
+	return shadowValue;
 }
 
 float CalculateSpotShadow(FSpotLightInfo Info, float3 WorldPos)
@@ -705,10 +848,21 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
         specularColor *= SpecularTexture.Sample(SamplerWrap, UV);
     }
     
+    float shadowFactor;
+    
+    if (bIsCSM.x < 0.5f)
+    {
+        
+        shadowFactor = CalculateShadow(Input.LightSpacePos);
+    }
+    else
+    {
+        shadowFactor = CalculateCSMShadow(Input.WorldPosition);
+    }
     
 #if LIGHTING_MODEL_GOURAUD
     // Use pre-calculated vertex lighting; apply diffuse material/texture per-pixel
-    float shadowFactor = CalculateShadow(Input.LightSpacePos);
+
     finalPixel.rgb = Input.AmbientLight.rgb * ambientColor.rgb + (Input.DiffuseLight.rgb * shadowFactor) * diffuseColor.rgb + (Input.SpecularLight.rgb * shadowFactor) * specularColor.rgb;
     
 #elif LIGHTING_MODEL_LAMBERT || LIGHTING_MODEL_BLINNPHONG
@@ -721,7 +875,7 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
 
     // 2. Directional Light with Shadow
     FIllumination DirLightIllum = CalculateDirectionalLight(Directional, N, Input.WorldPosition, ViewWorldLocation);
-    float shadowFactor = CalculateShadow(Input.LightSpacePos);
+
     DirLightIllum.Diffuse *= shadowFactor;
     DirLightIllum.Specular *= shadowFactor;
     ADD_ILLUM(Illumination, DirLightIllum);
@@ -757,7 +911,7 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     
 #else
     // Fallback: simple textured rendering (like current TexturePS.hlsl)
-    finalPixel.rgb = diffuseColor.rgb + ambientColor.rgb;
+        finalPixel.rgb = diffuseColor.rgb + ambientColor.rgb;
 #endif
     
     // Alpha handling
@@ -765,22 +919,22 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     finalPixel.a = 1.0f;
 #else
     // 1. Diffuse Map 있으면 그 alpha 사용, 없으면 1.0
-    float alpha = (MaterialFlags & HAS_DIFFUSE_MAP) ? diffuseColor.a : 1.0f;
+        float alpha = (MaterialFlags & HAS_DIFFUSE_MAP) ? diffuseColor.a : 1.0f;
     
     // 2. Alpha Map 따로 있으면 곱해줌.
-    if (MaterialFlags & HAS_ALPHA_MAP)
-    {
-        alpha *= AlphaTexture.Sample(SamplerWrap, UV).r;
-    }
+        if (MaterialFlags & HAS_ALPHA_MAP)
+        {
+            alpha *= AlphaTexture.Sample(SamplerWrap, UV).r;
+        }
     
     // 3. D 곱해서 최종 alpha 결정
-    finalPixel.a = D * alpha;
+        finalPixel.a = D * alpha;
 #endif
-    Output.SceneColor = finalPixel;
+        Output.SceneColor = finalPixel;
     
     // Encode normal for deferred rendering
-    float3 encodedNormal = SafeNormalize3(ShadedWorldNormal) * 0.5f + 0.5f;
-    Output.NormalData = float4(encodedNormal, 1.0f);
+        float3 encodedNormal = SafeNormalize3(ShadedWorldNormal) * 0.5f + 0.5f;
+        Output.NormalData = float4(encodedNormal, 1.0f);
     
-    return Output;
-}
+        return Output;
+    }

@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include <algorithm>
 #include <cmath>
 #include "Render/RenderPass/Public/ShadowMapPass.h"
@@ -9,12 +9,14 @@
 #include "Render/Renderer/Public/RenderResourceFactory.h"
 #include "Render/Renderer/Public/Renderer.h"
 #include "Render/Renderer/Public/ShadowAtlasManager.h"
+#include "Utility/Public/CSMBuilder.h"
 
-FShadowMapPass::FShadowMapPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferLightViewProj, ID3D11Buffer* InConstantBufferModel,
+FShadowMapPass::FShadowMapPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferLightViewProj, ID3D11Buffer* InConstantBufferCascadeShadow, ID3D11Buffer* InConstantBufferModel,
     ID3D11VertexShader* InVS, ID3D11PixelShader* InPS, ID3D11InputLayout* InLayout, ID3D11DepthStencilState* InDS)
     : FRenderPass(InPipeline, InConstantBufferLightViewProj, InConstantBufferModel)
     , VS(InVS), PS(InPS), InputLayout(InLayout), DS(InDS)
     , ConstantBufferLightViewProj(InConstantBufferLightViewProj)
+	, ConstantBufferCascadeShadow(InConstantBufferCascadeShadow)
 {
 	// VSM 리소스 생성
 	bool resourcesCreated = CreateVSMResources();
@@ -54,19 +56,8 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		return;
 	}
 
-	// ===========================================================================
-	// 1단계: ShadowAtlasManager에게 Light Sorting + Allocation 위임
-	// ===========================================================================
-	TArray<FLightAllocationPair> AllocatedLights = AtlasManager->AllocateDirectionalLights(Context.DirectionalLights);
-
-	if (AllocatedLights.empty())
-	{
-		return;  // 할당된 라이트가 없음
-	}
-
-	// ===========================================================================
-	// 2단계: Shadow Map 렌더링 (Shadow Atlas 기반)
-	// ===========================================================================
+	// Cascade Shadow 데이터를 나중에 StaticMeshPass로 전달하기 위해 임시 저장
+	FCascadeShadowConstants TempCascadeData;
 
 	// 원래 Viewport 저장
 	D3D11_VIEWPORT OriginalViewport = {};
@@ -79,106 +70,198 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 	FPipelineInfo PipelineInfo = { InputLayout, VS, RS, DS, PS, nullptr, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST };
 	Pipeline->UpdatePipeline(PipelineInfo);
 
-	// 각 DirectionalLight별로 Shadow 렌더링
-	for (const FLightAllocationPair& Pair : AllocatedLights)
+	// ===========================================================================
+	// DirectionalLight Shadow 렌더링 (CSM or 일반 Shadow Map)
+	// ===========================================================================
+	if (!Context.DirectionalLights.empty())
 	{
-		if (!Pair.IsValid())
+		UDirectionalLightComponent* DirLight = Context.DirectionalLights[0];
+		if (!DirLight) goto RENDER_SPOTLIGHT;
+
+		// CSM 활성화 여부 확인
+		const bool bUseCSM = (DirLight->GetShadowMapType() == EShadowMapType::CSM && Context.CurrentCamera);
+
+		if (bUseCSM)
 		{
-			continue;
-		}
+			// CSM 렌더링: Shadow Atlas에 Cascade별로 렌더링
+			TArray<FLightAllocationPair> AllocatedLights = AtlasManager->AllocateDirectionalLights(Context.DirectionalLights);
+			if (!AllocatedLights.empty() && AllocatedLights[0].IsValid())
+			{
+				const FShadowAtlasAllocation& Allocation = AllocatedLights[0].Allocation;
 
-		UDirectionalLightComponent* DirLight = Cast<UDirectionalLightComponent>(Pair.Light);
-		const FShadowAtlasRegion& Region = Pair.Allocation.Region;
+				// Shadow Map DSV Clear
+				DeviceContext->ClearDepthStencilView(Allocation.DSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
 
-		// Shadow Map DSV Clear
-		DeviceContext->ClearDepthStencilView(Pair.Allocation.DSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
+				// Render Target 설정 (Color 없음, Depth만)
+				ID3D11RenderTargetView* NullRTV = nullptr;
+				Pipeline->SetRenderTargets(1, &NullRTV, Allocation.DSV);
 
-		// Render Target 설정 (Color 없음, Depth만)
-		ID3D11RenderTargetView* NullRTV = nullptr;
-		Pipeline->SetRenderTargets(1, &NullRTV, Pair.Allocation.DSV);
+				// CSM 데이터 빌드
+				FCascadeShadowConstants CascadeData;
+				CascadeData.CascadeParams = FVector4(
+					static_cast<float>(CSM_MAX_CASCADES),
+					0.0f,
+					CSMShadowMapResolution,
+					1.0f / CSMShadowMapResolution
+				);
+				CascadeData.bIsCSM = FVector4(1.0f, 0.0f, 0.0f, 0.0f);
 
-		// Viewport 설정 (Atlas 내 Region)
-		D3D11_VIEWPORT ShadowViewport = {};
-		ShadowViewport.TopLeftX = static_cast<float>(Region.X);
-		ShadowViewport.TopLeftY = static_cast<float>(Region.Y);
-		ShadowViewport.Width = static_cast<float>(Region.Width);
-		ShadowViewport.Height = static_cast<float>(Region.Height);
-		ShadowViewport.MinDepth = 0.0f;
-		ShadowViewport.MaxDepth = 1.0f;
-		DeviceContext->RSSetViewports(1, &ShadowViewport);
+				TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
+				uint32 CascadeCount = FCSMBuilder::BuildCascadeData(DirLight, Context.CurrentCamera, MeshComponents, CascadeData);
+				CascadeData.CascadeParams.X = static_cast<float>(CascadeCount);
+				TempCascadeData = CascadeData;
 
-		// Light View Projection 행렬 계산
-		FLightViewProjConstants LightVP;
-		if (DirLight->GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
-		{
-			// PSM: Camera 정보를 사용한 Perspective Shadow Mapping
-			LightVP.LightView = DirLight->GetLightViewMatrix(Context.CurrentCamera);
-			LightVP.LightProjection = DirLight->GetLightProjectionMatrix(Context.CurrentCamera);
+				// Slope Bias 설정
+				RenderState.SlopeScaledDepthBias = DirLight->GetShadowSlopeBias();
+				RS = FRenderResourceFactory::GetRasterizerState(RenderState);
+				PipelineInfo.RasterizerState = RS;
+				Pipeline->UpdatePipeline(PipelineInfo);
+
+				// Cascade별 렌더링
+				for (uint32 CascadeIndex = 0; CascadeIndex < CascadeCount; ++CascadeIndex)
+				{
+					CascadeData.CascadeParams.Y = static_cast<float>(CascadeIndex);
+					FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, CascadeData);
+					Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
+
+					// Cascade Viewport 설정 (2x2 타일 레이아웃)
+					D3D11_VIEWPORT cascadeViewport = {};
+					const float tileSize = CSMShadowMapResolution / CascadesPerRow;
+					const float viewportSize = std::max(tileSize - AtlasBorder * 2.0f, 1.0f);
+					cascadeViewport.TopLeftX = static_cast<float>(CascadeIndex % CascadesPerRow) * tileSize + AtlasBorder;
+					cascadeViewport.TopLeftY = static_cast<float>(CascadeIndex / CascadesPerRow) * tileSize + AtlasBorder;
+					cascadeViewport.Width = viewportSize;
+					cascadeViewport.Height = viewportSize;
+					cascadeViewport.MinDepth = 0.0f;
+					cascadeViewport.MaxDepth = 1.0f;
+					DeviceContext->RSSetViewports(1, &cascadeViewport);
+
+					FStaticMesh* CurrentMeshAsset = nullptr;
+
+					for (UStaticMeshComponent* MeshComp : MeshComponents)
+					{
+						if (!MeshComp || !MeshComp->IsVisible()) { continue; }
+						if (!MeshComp->GetStaticMesh()) { continue; }
+						FStaticMesh* MeshAsset = MeshComp->GetStaticMesh()->GetStaticMeshAsset();
+						if (!MeshAsset) { continue; }
+
+						if (CurrentMeshAsset != MeshAsset)
+						{
+							Pipeline->SetVertexBuffer(MeshComp->GetVertexBuffer(), sizeof(FNormalVertex));
+							Pipeline->SetIndexBuffer(MeshComp->GetIndexBuffer(), 0);
+							CurrentMeshAsset = MeshAsset;
+						}
+
+						FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferModel, MeshComp->GetWorldTransformMatrix());
+						Pipeline->SetConstantBuffer(0, EShaderType::VS, ConstantBufferModel);
+
+						Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
+					}
+				}
+
+				// CSM 렌더링 후 RenderTarget Unbind
+				 NullRTV = nullptr;
+				ID3D11DepthStencilView* NullDSV = nullptr;
+				Pipeline->SetRenderTargets(1, &NullRTV, NullDSV);
+			}
 		}
 		else
 		{
-			// LVP: 기본 Orthographic Shadow Mapping
-			LightVP.LightView = DirLight->GetLightViewMatrix();
-			LightVP.LightProjection = DirLight->GetLightProjectionMatrix();
-		}
+			// 일반 Shadow Map 렌더링 (LVP/PSM)
+			TArray<FLightAllocationPair> AllocatedLights = AtlasManager->AllocateDirectionalLights(Context.DirectionalLights);
+			if (AllocatedLights.empty()) goto RENDER_SPOTLIGHT;
 
-		// Slope Bias 설정
-		RenderState.SlopeScaledDepthBias = DirLight->GetShadowSlopeBias();
-		RS = FRenderResourceFactory::GetRasterizerState(RenderState);
-		PipelineInfo.RasterizerState = RS;
-		Pipeline->UpdatePipeline(PipelineInfo);
-
-		// Constant Buffer 업데이트
-		FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);
-		Pipeline->SetConstantBuffer(1, EShaderType::VS, ConstantBufferLightViewProj);
-
-		// Static Mesh 렌더링
-		TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
-		FStaticMesh* CurrentMeshAsset = nullptr;
-
-		for (UStaticMeshComponent* MeshComp : MeshComponents)
-		{
-			if (!MeshComp || !MeshComp->IsVisible()) { continue; }
-			if (!MeshComp->GetStaticMesh()) { continue; }
-			FStaticMesh* MeshAsset = MeshComp->GetStaticMesh()->GetStaticMeshAsset();
-			if (!MeshAsset) { continue; }
-
-			// Vertex/Index Buffer 설정
-			if (CurrentMeshAsset != MeshAsset)
+			for (const FLightAllocationPair& Pair : AllocatedLights)
 			{
-				Pipeline->SetVertexBuffer(MeshComp->GetVertexBuffer(), sizeof(FNormalVertex));
-				Pipeline->SetIndexBuffer(MeshComp->GetIndexBuffer(), 0);
-				CurrentMeshAsset = MeshAsset;
+				if (!Pair.IsValid()) { continue; }
+
+				UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(Pair.Light);
+				const FShadowAtlasRegion& Region = Pair.Allocation.Region;
+
+				// CSM이 아니라는 것을 Shader에 알림
+				FCascadeShadowConstants CascadeData;
+				CascadeData.bIsCSM = FVector4::Zero();
+				FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, CascadeData);
+				Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
+
+				// Shadow Map DSV Clear
+				DeviceContext->ClearDepthStencilView(Pair.Allocation.DSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
+
+				// Render Target 설정
+				ID3D11RenderTargetView* NullRTV = nullptr;
+				Pipeline->SetRenderTargets(1, &NullRTV, Pair.Allocation.DSV);
+
+				// Viewport 설정
+				D3D11_VIEWPORT ShadowViewport = {};
+				ShadowViewport.TopLeftX = static_cast<float>(Region.X);
+				ShadowViewport.TopLeftY = static_cast<float>(Region.Y);
+				ShadowViewport.Width = static_cast<float>(Region.Width);
+				ShadowViewport.Height = static_cast<float>(Region.Height);
+				ShadowViewport.MinDepth = 0.0f;
+				ShadowViewport.MaxDepth = 1.0f;
+				DeviceContext->RSSetViewports(1, &ShadowViewport);
+
+				// Light View Projection 행렬 계산
+				FLightViewProjConstants LightVP;
+				if (Light->GetShadowMapType() == EShadowMapType::PSM && Context.CurrentCamera)
+				{
+					// PSM: Camera 정보를 사용한 Perspective Shadow Mapping
+					LightVP.LightView = Light->GetLightViewMatrix(Context.CurrentCamera);
+					LightVP.LightProjection = Light->GetLightProjectionMatrix(Context.CurrentCamera);
+				}
+				else
+				{
+					// LVP: 기본 Orthographic Shadow Mapping
+					LightVP.LightView = Light->GetLightViewMatrix();
+					LightVP.LightProjection = Light->GetLightProjectionMatrix();
+				}
+
+				// Slope Bias 설정
+				RenderState.SlopeScaledDepthBias = Light->GetShadowSlopeBias();
+				RS = FRenderResourceFactory::GetRasterizerState(RenderState);
+				PipelineInfo.RasterizerState = RS;
+				Pipeline->UpdatePipeline(PipelineInfo);
+
+				// Constant Buffer 업데이트
+				FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferLightViewProj, LightVP);
+				Pipeline->SetConstantBuffer(1, EShaderType::VS, ConstantBufferLightViewProj);
+
+				// Static Mesh 렌더링
+				TArray<UStaticMeshComponent*>& MeshComponents = Context.StaticMeshes;
+				FStaticMesh* CurrentMeshAsset = nullptr;
+
+				for (UStaticMeshComponent* MeshComp : MeshComponents)
+				{
+					if (!MeshComp || !MeshComp->IsVisible()) { continue; }
+					if (!MeshComp->GetStaticMesh()) { continue; }
+					FStaticMesh* MeshAsset = MeshComp->GetStaticMesh()->GetStaticMeshAsset();
+					if (!MeshAsset) { continue; }
+
+					// Vertex/Index Buffer 설정
+					if (CurrentMeshAsset != MeshAsset)
+					{
+						Pipeline->SetVertexBuffer(MeshComp->GetVertexBuffer(), sizeof(FNormalVertex));
+						Pipeline->SetIndexBuffer(MeshComp->GetIndexBuffer(), 0);
+						CurrentMeshAsset = MeshAsset;
+					}
+
+					// Model Matrix 업데이트
+					FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferModel, MeshComp->GetWorldTransformMatrix());
+					Pipeline->SetConstantBuffer(0, EShaderType::VS, ConstantBufferModel);
+
+					// Draw
+					Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
+				}
 			}
-
-			// Model Matrix 업데이트
-			FRenderResourceFactory::UpdateConstantBufferData(ConstantBufferModel, MeshComp->GetWorldTransformMatrix());
-			Pipeline->SetConstantBuffer(0, EShaderType::VS, ConstantBufferModel);
-
-			// Draw
-			Pipeline->DrawIndexed(MeshAsset->Indices.size(), 0, 0);
 		}
 	}
+
+RENDER_SPOTLIGHT:
+
+	// ===========================================================================
+	// SpotLight Shadow 렌더링 (Shadow Atlas 기반)
+	// ===========================================================================
 	TArray<UPointLightComponent*> SpotLightsAsPointLights;
-	/*for (USpotLightComponent* SpotLight : Context.SpotLights)
-	{
-		if (!SpotLight || !SpotLight->GetLightEnabled()) { continue; }
-		if (SpotLight && SpotLight->GetLightEnabled())
-		{
-			SpotLightsAsPointLights.push_back(SpotLight);
-		}
-	}*/
-
-	//TArray<FLightAllocationPair> AllocatedSpotLights = AtlasManager->AllocatePointSpotLights(SpotLightsAsPointLights);
-	// ===========================================================================
-	// 3단계: SpotLight Shadow 렌더링 (개별 텍스처)
-	// ===========================================================================
-	// ===========================================================================
-// 2단계 이후: SpotLight Shadow 렌더링 (Atlas 기반, 슬라이스/리전 사용)
-// ===========================================================================
-
-// 1) SpotLight를 Point/Spot 공용 할당기로 변환 (이미 있는 코드 OK)
-	//TArray<UPointLightComponent*> SpotLightsAsPointLights;
 	for (USpotLightComponent* SpotLight : Context.SpotLights)
 	{
 		if (SpotLight && SpotLight->GetLightEnabled())
@@ -195,6 +278,12 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		if (!Pair.IsValid()) continue;
 		spotBySlice[Pair.Allocation.AtlasIndex].push_back(&Pair);
 	}
+
+	// SpotLight 렌더링 시작 전에 Cascade Shadow Constant Buffer 초기화 (CSM 데이터 제거)
+	FCascadeShadowConstants NonCSMData;
+	NonCSMData.bIsCSM = FVector4::Zero();
+	FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, NonCSMData);
+	Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
 
 	// 4) 🔥 슬라이스 단위 렌더링: 슬라이스 진입 시 "1회만" Clear
 	for (auto& kv : spotBySlice)
@@ -310,6 +399,9 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 	Pipeline->SetRenderTargets(1, &NullRTV, NullDSV);
 
 	DeviceContext->RSSetViewports(1, &OriginalViewport);
+
+	FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, TempCascadeData);
+	Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
 }
 
 void FShadowMapPass::Release()
@@ -468,3 +560,9 @@ void FShadowMapPass::ExecuteVSMFilter()
 	DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
 	DeviceContext->CSSetShader(nullptr, nullptr, 0);  // Unbind compute shader
 }
+
+
+
+
+
+

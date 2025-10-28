@@ -437,6 +437,7 @@ void UMainBarWidget::RenderShowFlagsMenu()
 
 			bool bIsLVP = (CurrentType == EShadowMapType::LVP);
 			bool bIsPSM = (CurrentType == EShadowMapType::PSM);
+			bool bIsCSM = (CurrentType == EShadowMapType::CSM);
 
 			if (ImGui::MenuItem("LVP (Light View Projection)", nullptr, bIsLVP))
 			{
@@ -448,6 +449,12 @@ void UMainBarWidget::RenderShowFlagsMenu()
 			{
 				DirLight->SetShadowMapType(EShadowMapType::PSM);
 				UE_LOG("MainBarWidget: Shadow Map 타입을 PSM으로 변경");
+			}
+
+			if (ImGui::MenuItem("CSM (Cacade Shadow Maps)", nullptr, bIsCSM))
+			{
+				DirLight->SetShadowMapType(EShadowMapType::CSM);
+				UE_LOG("MainBarWidget: Shadow Map 타입을 CSM으로 변경");
 			}
 		}
 		else
