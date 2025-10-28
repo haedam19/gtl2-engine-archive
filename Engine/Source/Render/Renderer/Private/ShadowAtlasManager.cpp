@@ -510,8 +510,6 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocateDirectionalLights(cons
         }
     }
 
-    UE_LOG_INFO("ShadowAtlasManager: %d개의 Directional Light에 Shadow Map 할당 완료", Result.size());
-
     return Result;
 }
 
@@ -888,8 +886,6 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(
     // 4단계: 이전 할당 정보 업데이트
     // ===========================================================================
     PreviousPointSpotAllocations = NewAllocations;
-
-    UE_LOG_INFO("ShadowAtlasManager: %d개의 Point/Spot Light에 Shadow Map 할당 완료", Result.size());
 
     return Result;
 }

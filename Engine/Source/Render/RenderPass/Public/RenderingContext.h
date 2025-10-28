@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include "Physics/Public/AABB.h"
+
 struct FRenderingContext
 {
     FRenderingContext(){}
@@ -13,6 +15,9 @@ struct FRenderingContext
     uint64 ShowFlags;
     D3D11_VIEWPORT Viewport;
     FVector2 RenderTargetSize;
+
+    // PSM을 위한 씬 전체의 AABB (Octree 기반)
+    FAABB SceneAABB;
 
     TArray<class UPrimitiveComponent*> AllPrimitives;
     // Components By Render Pass

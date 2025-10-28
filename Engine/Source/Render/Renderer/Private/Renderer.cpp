@@ -987,6 +987,67 @@ void URenderer::RenderLevel(FViewport* InViewport)
 		InViewport->GetRenderRect(),
 		{DeviceResources->GetViewportInfo().Width, DeviceResources->GetViewportInfo().Height}
 		);
+
+	// Compute SceneAABB for PSM using frustum-culled primitives (PracticalPSM approach)
+	// This matches PracticalPSM's ComputeVirtualCameraParameters() which uses frustum-culled objects
+	constexpr float MIN_SCENE_AABB_SIZE = 1.0f;
+	FAABB SceneAABB;
+	SceneAABB.Min = FVector(FLT_MAX, FLT_MAX, FLT_MAX);
+	SceneAABB.Max = FVector(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+	bool bHasValidPrimitives = false;
+	for (auto* Prim : FinalVisiblePrims)
+	{
+		if (Prim && Prim->IsVisible())
+		{
+			FVector Min, Max;
+			Prim->GetWorldAABB(Min, Max);
+
+			SceneAABB.Min.X = std::min(SceneAABB.Min.X, Min.X);
+			SceneAABB.Min.Y = std::min(SceneAABB.Min.Y, Min.Y);
+			SceneAABB.Min.Z = std::min(SceneAABB.Min.Z, Min.Z);
+			SceneAABB.Max.X = std::max(SceneAABB.Max.X, Max.X);
+			SceneAABB.Max.Y = std::max(SceneAABB.Max.Y, Max.Y);
+			SceneAABB.Max.Z = std::max(SceneAABB.Max.Z, Max.Z);
+
+			bHasValidPrimitives = true;
+		}
+	}
+
+	// Clamp to minimum size for numerical stability
+	if (bHasValidPrimitives)
+	{
+		FVector Size = SceneAABB.Max - SceneAABB.Min;
+
+		// Debug: Log actual scene size
+		static bool bLoggedOnce = false;
+		if (!bLoggedOnce)
+		{
+			UE_LOG("[PSM] Scene AABB (frustum-culled): Min(%.2f, %.2f, %.2f) Max(%.2f, %.2f, %.2f) Size(%.2f, %.2f, %.2f)",
+				SceneAABB.Min.X, SceneAABB.Min.Y, SceneAABB.Min.Z,
+				SceneAABB.Max.X, SceneAABB.Max.Y, SceneAABB.Max.Z,
+				Size.X, Size.Y, Size.Z);
+			bLoggedOnce = true;
+		}
+
+		if (Size.X < MIN_SCENE_AABB_SIZE || Size.Y < MIN_SCENE_AABB_SIZE || Size.Z < MIN_SCENE_AABB_SIZE)
+		{
+			FVector Center = SceneAABB.GetCenter();
+			float HalfSize = MIN_SCENE_AABB_SIZE * 0.5f;
+			SceneAABB.Min = Center - FVector(HalfSize, HalfSize, HalfSize);
+			SceneAABB.Max = Center + FVector(HalfSize, HalfSize, HalfSize);
+		}
+	}
+	else
+	{
+		// No visible primitives - use default small box at origin
+		float HalfSize = MIN_SCENE_AABB_SIZE * 0.5f;
+		SceneAABB.Min = FVector(-HalfSize, -HalfSize, -HalfSize);
+		SceneAABB.Max = FVector(HalfSize, HalfSize, HalfSize);
+	}
+
+	RenderingContext.SceneAABB = SceneAABB;
+
 	// 1. Sort visible primitive components
 	RenderingContext.AllPrimitives = FinalVisiblePrims;
 	for (auto& Prim : FinalVisiblePrims)

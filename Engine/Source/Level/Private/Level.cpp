@@ -21,7 +21,10 @@ IMPLEMENT_CLASS(ULevel, UObject)
 
 ULevel::ULevel()
 {
-	StaticOctree = new FOctree(FVector(0, 0, -5), 75, 0);
+	// PSM 및 수치적 안정성을 고려한 Octree 초기화
+	// Size: 1000 (전체 AABB 크기: 2000x2000x2000)
+	// 실제 오브젝트가 있는 영역만 subdivide되므로 메모리 낭비 없음
+	StaticOctree = new FOctree(FVector(0, 0, 0), 2500, 0);
 }
 
 ULevel::~ULevel()

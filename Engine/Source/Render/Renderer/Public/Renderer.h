@@ -119,6 +119,9 @@ public:
 	void SetShadowFilterMode(EShadowFilterMode InMode) { ShadowFilterMode = InMode; }
 	EShadowFilterMode GetShadowFilterMode() const { return ShadowFilterMode; }
 
+	void SetShadowMapType(EShadowMapType InType) { ShadowMapType = InType; }
+	EShadowMapType GetShadowMapType() const { return ShadowMapType; }
+
 	ID3D11VertexShader* GetVertexShader(EViewModeIndex ViewModeIndex) const;
 	ID3D11PixelShader* GetPixelShader(EViewModeIndex ViewModeIndex) const;
 
@@ -230,6 +233,9 @@ private:
 
 	// Shadow Filtering
 	EShadowFilterMode ShadowFilterMode = EShadowFilterMode::PCF;
+
+	// Shadow Map Type (PSM/CSM/LVP)
+	EShadowMapType ShadowMapType = EShadowMapType::LVP;
 
 	TArray<class FRenderPass*> RenderPasses;
 

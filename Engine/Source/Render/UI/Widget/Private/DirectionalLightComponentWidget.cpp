@@ -179,7 +179,9 @@ void UDirectionalLightComponentWidget::RenderWidget()
 
     ImGui::Separator();
 
-    if (DirectionalLightComponent->GetShadowMapType() == EShadowMapType::CSM)
+    EShadowMapType CurrentShadowMapType = Renderer.GetShadowMapType();
+
+    if (CurrentShadowMapType == EShadowMapType::CSM)
     {
         ImGui::Text("CSM Settings");
 
@@ -207,6 +209,48 @@ void UDirectionalLightComponentWidget::RenderWidget()
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("0은 균등 분할, 1은 로그 분할에 가깝습니다.\n씬에 맞춰 적절한 분포를 찾으세요.");
+        }
+
+        ImGui::Separator();
+    }
+    else if (CurrentShadowMapType == EShadowMapType::PSM)
+    {
+        ImGui::Text("PSM Settings");
+
+        ImGui::SetNextItemWidth(BoxWidth * 2.5f);
+        float PSMCoverageDistanceValue = DirectionalLightComponent->GetPSMCoverageDistance();
+        if (ImGui::DragFloat("PSM Coverage Distance", &PSMCoverageDistanceValue, 1.0f, 10.0f, 1000.0f, "%.0f"))
+        {
+            if (PSMCoverageDistanceValue < 10.0f)
+            {
+                PSMCoverageDistanceValue = 10.0f;
+            }
+            DirectionalLightComponent->SetPSMCoverageDistance(PSMCoverageDistanceValue);
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("PSM이 커버할 거리입니다.\n카메라 주변 영역에 고해상도 섀도우를 제공합니다.");
+        }
+
+        ImGui::Separator();
+    }
+    else if (CurrentShadowMapType == EShadowMapType::LVP)
+    {
+        ImGui::Text("LVP Settings");
+
+        ImGui::SetNextItemWidth(BoxWidth * 2.5f);
+        float ShadowDistanceValue = DirectionalLightComponent->GetShadowDistance();
+        if (ImGui::DragFloat("Shadow Distance", &ShadowDistanceValue, 1.0f, 1.0f, 2000.0f, "%.0f"))
+        {
+            if (ShadowDistanceValue < 1.0f)
+            {
+                ShadowDistanceValue = 1.0f;
+            }
+            DirectionalLightComponent->SetShadowDistance(ShadowDistanceValue);
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("직교 투영 섀도우 맵의 크기입니다.\n전체 씬을 커버하는 범위를 설정합니다.");
         }
 
         ImGui::Separator();

@@ -39,7 +39,7 @@ public:
 
 	void UpdatePrimitiveInOctree(UPrimitiveComponent* InComponent);
 
-	FOctree* GetStaticOctree() { return StaticOctree; }
+	FOctree* GetStaticOctree() const { return StaticOctree; }
 
 	/** @todo: 효율 개선을 위해 DirtyFlag와 캐시 도입 가능 */
 	TArray<UPrimitiveComponent*>& GetDynamicPrimitives()
