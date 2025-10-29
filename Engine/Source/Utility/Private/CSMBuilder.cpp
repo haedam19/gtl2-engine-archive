@@ -40,8 +40,9 @@ void FCSMBuilder::CalculateFrustumCorners(UCamera* Camera, float NearPlane, floa
     FVector Right = Camera->GetRight().GetNormalized();
 
     float Aspect = Camera->GetAspect();
-    float Fov = Camera->GetFovY();
-    float TangentHalfFov = tanf(Fov * 0.5f);
+    float FovDegrees = Camera->GetFovY();
+    float FovRadians = FVector::GetDegreeToRadian(FovDegrees);
+    float TangentHalfFov = tanf(FovRadians * 0.5f);
 
     float NearHeight = TangentHalfFov * NearPlane;
     float NearWidth = NearHeight * Aspect;
