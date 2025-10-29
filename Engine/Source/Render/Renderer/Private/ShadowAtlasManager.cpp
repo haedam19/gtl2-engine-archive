@@ -457,9 +457,10 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocateDirectionalLights(cons
 
     TArray<FSortEntry> SortEntries;
 
+
     for (UDirectionalLightComponent* Light : Lights)
     {
-        if (!Light || !Light->GetLightEnabled())
+        if (!Light || !Light->GetLightEnabled() || !Light->GetCastShadows())
         {
             continue;
         }
@@ -764,6 +765,14 @@ FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
                 continue;
             }
 
+            if (!(Light->GetCastShadows()))
+            {
+                PreviousSpotAllocations.erase(Light);
+                //Light->ReleaseShadowMapResources();
+                CurrentLightAllocations.erase(Light);
+                continue;
+            }
+
             ++SpotActiveCount;
 
             FSpotEntry Entry;
@@ -859,6 +868,13 @@ FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
         {
             if (!Light || !Light->GetLightEnabled())
             {
+                continue;
+            }
+
+            if (!(Light->GetCastShadows()))
+            {
+                PreviousPointAllocations.erase(Light);
+                CurrentLightAllocations.erase(Light);
                 continue;
             }
 

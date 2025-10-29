@@ -23,7 +23,7 @@ namespace
 		TArray<UPointLightComponent*> EnabledPointLights;
 		for (UPointLightComponent* PointLight : Context.PointLights)
 		{
-			if (PointLight->GetLightEnabled())
+			if (PointLight->GetLightEnabled() && PointLight->GetCastShadows())
 			{
 				EnabledPointLights.push_back(PointLight);
 			}
@@ -36,7 +36,7 @@ namespace
 		TArray<USpotLightComponent*> EnabledSpotLights;
 		for (USpotLightComponent* SpotLight : Context.SpotLights)
 		{
-			if (SpotLight->GetLightEnabled())
+			if (SpotLight->GetLightEnabled() && SpotLight->GetCastShadows())
 			{
 				EnabledSpotLights.push_back(SpotLight);
 			}
@@ -684,6 +684,9 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 			// Optional: 라이트에 LVP/해상도 캐시
 			SpotLight->UpdateLVP(LightView, LightProj);
 			SpotLight->UpdateShadowMapSize(Region.Width, Region.Height);
+			// ShadowMapData에 SRV 설정
+			FShadowMapData& ShadowData = SpotLight->GetShadowMapData();
+			ShadowData.ShadowMapSRV = Pair.Allocation.SRV;
 		}
 
 		// 🔥 슬라이스 렌더링 완료 후 DSV Unbind

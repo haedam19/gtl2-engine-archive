@@ -185,7 +185,8 @@ struct FDirectionalLightInfo
 	float Intensity;
 	float ShadowBias;
 	float ShadowSharpen;
-	FVector2 Padding;
+	uint32 ShadowEnabled;
+	float Padding;
 };
 
 //StructuredBuffer padding 없어도됨
@@ -223,9 +224,9 @@ struct alignas(16) FSpotLightInfo
 	float ShadowBias;
 	float ShadowSharpen;
 	uint32 ShadowMapIndex;
+	uint32 ShadowEnabled;
 	uint32 ShadowRegionIndex;  // ShadowRegions 버퍼의 인덱스
 	FVector2 ShadowMapInvSize;
-	float Padding;
 
 	FMatrix LightViewMatrix;
 	FMatrix LightProjectionMatrix;

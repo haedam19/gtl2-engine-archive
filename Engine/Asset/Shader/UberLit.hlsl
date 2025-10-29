@@ -435,6 +435,10 @@ float3 ComputeNormalMappedWorldNormal(float2 UV, float3 WorldNormal, float4 Worl
 // Shadow Calculation (Shadow Atlas-based shadow mapping)
 float CalculateShadow(float4 LightSpacePos)
 {
+    // Shadow가 비활성화되어 있으면 그림자 없음 반환
+    if (Directional.ShadowEnabled == 0)
+        return 1.0f;
+
     // Perspective divide
     float3 projCoords = LightSpacePos.xyz / LightSpacePos.w; //라이트 시점에서의 클립 공간 좌표를 NDC (-1~1) 로 변환
 
@@ -581,6 +585,10 @@ float SampleCSMCascadeVSM(float currentDepth, float bias, float2 atlasUV, uint a
 
 float CalculateCSMShadow(float3 WorldPos)
 {
+    // Shadow가 비활성화되어 있으면 그림자 없음 반환
+    if (Directional.ShadowEnabled == 0)
+        return 1.0f;
+
     float4 worldPos = float4(WorldPos, 1.0f);
     float viewDepth = mul(worldPos, View).z;
 
@@ -665,6 +673,10 @@ float CalculateCSMShadow(float3 WorldPos)
 
 float CalculateSpotShadow(FSpotLightInfo Info, float3 WorldPos)
 {
+    // Shadow가 비활성화되어 있으면 그림자 없음 반환
+    if (Info.ShadowEnabled == 0)
+        return 1.0f;
+
     // Light Space로 변환
     float4 lightViewPos = mul(float4(WorldPos, 1.0f), Info.LightViewMatrix);
     float4 lightClipPos = mul(lightViewPos, Info.LightProjectionMatrix);
@@ -777,10 +789,11 @@ float CalculatePointShadow(FPointLightInfo Info, float3 WorldPos)
     {
         CubeFaceIndex = (Direction.z > 0.0f) ? 4 : 5; // +Z : -Z
     }
-
     // Shadow가 비활성화되어 있으면 그림자 없음 반환
     if (Info.ShadowEnabled == 0)
         return 1.0f;
+
+
 
     // 해당 큐브맵 면의 Shadow Region 정보 가져오기
     // Info.ShadowRegionIndex는 첫 번째 면(+X)의 인덱스이고,

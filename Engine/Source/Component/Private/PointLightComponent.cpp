@@ -87,7 +87,7 @@ FPointLightInfo UPointLightComponent::GetPointlightInfo() const
 	Info.DistanceFalloffExponent = DistanceFalloffExponent;
 	Info.ShadowBias = GetShadowBias();
 	Info.ShadowSharpen = GetShadowSharpen();
-	Info.ShadowEnabled = bHasShadowAllocation ? 1u : 0u;
+	Info.ShadowEnabled = GetCastShadows() ? 1u : 0u;
 	Info.ShadowRegionIndex = ShadowRegionStartIndex;
 	Info.Padding = FVector2();
 
