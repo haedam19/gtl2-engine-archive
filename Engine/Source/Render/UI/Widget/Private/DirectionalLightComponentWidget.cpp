@@ -11,6 +11,66 @@
 
 IMPLEMENT_CLASS(UDirectionalLightComponentWidget, UWidget)
 
+UDirectionalLightComponentWidget::~UDirectionalLightComponentWidget()
+{
+	ReleaseShadowPreviewResources();
+}
+
+void UDirectionalLightComponentWidget::ReleaseShadowPreviewResources()
+{
+	SafeRelease(CachedSliceSRV);
+	SafeRelease(ShadowMapPreviewSRV);
+	SafeRelease(ShadowMapPreviewRTV);
+	SafeRelease(ShadowMapPreviewTexture);
+}
+
+void UDirectionalLightComponentWidget::EnsureShadowPreviewResources(ID3D11Device* Device, uint32 Size)
+{
+	if (!Device)
+	{
+		return;
+	}
+
+	if (ShadowMapPreviewTexture)
+	{
+		D3D11_TEXTURE2D_DESC ExistingDesc = {};
+		ShadowMapPreviewTexture->GetDesc(&ExistingDesc);
+		if (ExistingDesc.Width == Size && ExistingDesc.Height == Size)
+		{
+			return;
+		}
+		ReleaseShadowPreviewResources();
+	}
+
+	D3D11_TEXTURE2D_DESC Desc = {};
+	Desc.Width = Size;
+	Desc.Height = Size;
+	Desc.MipLevels = 1;
+	Desc.ArraySize = 1;
+	Desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	Desc.SampleDesc.Count = 1;
+	Desc.SampleDesc.Quality = 0;
+	Desc.Usage = D3D11_USAGE_DEFAULT;
+	Desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+
+	if (FAILED(Device->CreateTexture2D(&Desc, nullptr, &ShadowMapPreviewTexture)))
+	{
+		ReleaseShadowPreviewResources();
+		return;
+	}
+
+	if (FAILED(Device->CreateRenderTargetView(ShadowMapPreviewTexture, nullptr, &ShadowMapPreviewRTV)))
+	{
+		ReleaseShadowPreviewResources();
+		return;
+	}
+
+	if (FAILED(Device->CreateShaderResourceView(ShadowMapPreviewTexture, nullptr, &ShadowMapPreviewSRV)))
+	{
+		ReleaseShadowPreviewResources();
+	}
+}
+
 void UDirectionalLightComponentWidget::Initialize()
 {
 }
@@ -30,6 +90,13 @@ void UDirectionalLightComponentWidget::Update()
 
 void UDirectionalLightComponentWidget::RenderWidget()
 {
+    // 이전 프레임에서 생성된 SliceSRV를 Release
+    if (CachedSliceSRV)
+    {
+        CachedSliceSRV->Release();
+        CachedSliceSRV = nullptr;
+    }
+
     if (!DirectionalLightComponent)
     {
         return;
@@ -41,6 +108,7 @@ void UDirectionalLightComponentWidget::RenderWidget()
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
+
 	// 라이트 활성화 체크박스
     bool LightEnabled = DirectionalLightComponent->GetLightEnabled();
     if (ImGui::Checkbox("Light Enabled", &LightEnabled))
@@ -51,6 +119,7 @@ void UDirectionalLightComponentWidget::RenderWidget()
     {
         ImGui::SetTooltip("라이트를 켜고 끕니다.\n끄면 조명 계산에서 제외됩니다.\n(Outliner O/X와는 별개)");
     }
+
     // Light Color
     FVector LightColor = DirectionalLightComponent->GetLightColor();
     float LightColorRGB[3] = { LightColor.X * 255.0f, LightColor.Y * 255.0f, LightColor.Z * 255.0f };
@@ -115,71 +184,7 @@ void UDirectionalLightComponentWidget::RenderWidget()
 
     ImGui::Separator();
 
-    // Shadow Atlas 미리보기
-    ImGui::Text("Shadow Atlas Preview");
-
-    const auto& Renderer = URenderer::GetInstance();
-    FShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
-
-    if (AtlasManager)
-    {
-        // 이 라이트의 할당 정보 가져오기
-        const FShadowAtlasAllocation* Allocation = AtlasManager->GetLightAllocation(DirectionalLightComponent);
-
-        if (Allocation && Allocation->IsValid())
-        {
-            // Atlas 전체 미리보기 (256x256)
-            ImVec2 previewSize(256.0f, 256.0f);
-            ImGui::Image((void*)Allocation->SRV, previewSize);
-
-            if (ImGui::IsItemHovered())
-            {
-                ImGui::SetTooltip("Shadow Atlas 전체 (4096x4096)\n이 라이트는 아래 영역을 사용 중");
-            }
-
-            // 할당된 영역 정보 표시
-            ImGui::Text("Atlas Type: DirectionalCSM");
-            ImGui::Text("Atlas Index: %d", Allocation->AtlasIndex);
-            ImGui::Text("Region: (%d, %d) - (%d x %d)",
-                Allocation->Region.X,
-                Allocation->Region.Y,
-                Allocation->Region.Width,
-                Allocation->Region.Height);
-
-            // UV 좌표 표시
-            ImGui::Text("UV: (%.3f, %.3f) - (%.3f, %.3f)",
-                Allocation->Region.UMin,
-                Allocation->Region.VMin,
-                Allocation->Region.UMax,
-                Allocation->Region.VMax);
-
-            // 할당된 영역만 확대해서 보기
-            ImGui::Separator();
-            ImGui::Text("Allocated Region (Zoomed)");
-
-            // UV 좌표로 할당된 영역만 표시
-            ImVec2 uv0(Allocation->Region.UMin, Allocation->Region.VMin);
-            ImVec2 uv1(Allocation->Region.UMax, Allocation->Region.VMax);
-            ImGui::Image((void*)Allocation->SRV, previewSize, uv0, uv1);
-
-            if (ImGui::IsItemHovered())
-            {
-                ImGui::SetTooltip("이 라이트가 할당받은 영역만 확대\n흰색에 가까울수록 빛에 가깝고\n검은색에 가까울수록 빛에서 멀어요");
-            }
-        }
-        else
-        {
-            ImGui::TextDisabled("Shadow Atlas 할당 정보가 없습니다");
-        }
-    }
-    else
-    {
-        ImGui::TextDisabled("Shadow Atlas Manager를 찾을 수 없습니다");
-    }
-
-    ImGui::Separator();
-
-    EShadowMapType CurrentShadowMapType = Renderer.GetShadowMapType();
+    EShadowMapType CurrentShadowMapType = URenderer::GetInstance().GetShadowMapType();
 
     if (CurrentShadowMapType == EShadowMapType::CSM)
     {
@@ -229,7 +234,7 @@ void UDirectionalLightComponentWidget::RenderWidget()
         }
         if (ImGui::IsItemHovered())
         {
-            ImGui::SetTooltip("PSM이 커버할 거리입니다.\n카메라 주변 영역에 고해상도 섀도우를 제공합니다.");
+            ImGui::SetTooltip("PSM이 커버할 거리입니다.\n카메라 주변 영역에 고해상도 섊도우를 제공합니다.");
         }
 
         ImGui::Separator();
@@ -300,5 +305,117 @@ void UDirectionalLightComponentWidget::RenderWidget()
     if (ImGui::IsItemHovered())
     {
         ImGui::SetTooltip("필터링 에지 샤프닝 강도입니다.\n0이면 블러에 가깝고, 값이 높을수록 경계가 날카로워집니다.");
+    }
+
+    ImGui::Separator();
+
+    // ========================================= Shadow Depth Map Preview =========================================
+    ImGui::Text("Shadow Depth Map Preview");
+
+    URenderer& Renderer = URenderer::GetInstance();
+    FShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
+
+    // Shadow Atlas에서 이 DirectionalLight의 할당 정보 가져오기
+    const FShadowAtlasAllocation* Allocation = AtlasManager ? AtlasManager->GetLightAllocation(DirectionalLightComponent) : nullptr;
+
+    // RenderShadowPreview 결과를 저장할 변수 (아래 Debug 섹션에서도 사용)
+    ID3D11ShaderResourceView* CachedPreviewSRV = nullptr;
+
+    if (Allocation && Allocation->IsValid())
+    {
+        // 이전 프레임의 Slice SRV 해제 (매 프레임 재생성되므로)
+        SafeRelease(CachedSliceSRV);
+
+        // Slice 전용 SRV 생성 (FirstArraySlice=AtlasIndex, ArraySize=1)
+        CachedSliceSRV = AtlasManager->GetSliceSRV(Allocation->AtlasType, Allocation->AtlasIndex);
+
+        if (CachedSliceSRV)
+        {
+            // RenderShadowPreview용 리소스 준비
+            EnsureShadowPreviewResources(Renderer.GetDevice(), 256);
+
+            // RenderShadowPreview로 Shadow Atlas의 depth를 시각화
+            float NearPlane = 0.1f;
+            float FarPlane = DirectionalLightComponent->GetShadowDistance();
+
+            CachedPreviewSRV = Renderer.RenderShadowPreview(
+                CachedSliceSRV,  // Slice 전용 SRV 사용
+                ShadowMapPreviewRTV,
+                ShadowMapPreviewSRV,
+                ShadowMapPreviewTexture,
+                NearPlane, FarPlane, 1.4f);
+
+            if (CachedPreviewSRV)
+            {
+                ImVec2 PreviewSize(256.0f, 256.0f);
+
+                // 할당된 Region만 표시 (UV 좌표로 자르기)
+                ImVec2 uv0(Allocation->Region.UMin, Allocation->Region.VMin);
+                ImVec2 uv1(Allocation->Region.UMax, Allocation->Region.VMax);
+                ImGui::Image(static_cast<void*>(CachedPreviewSRV), PreviewSize, uv0, uv1);
+
+                if (ImGui::IsItemHovered())
+                {
+                    ImGui::SetTooltip("이 디렉셔널 라이트가 할당받은 Shadow Region\n밝을수록 빛에 가깝고 어두울수록 그림자 영역입니다.\n\nAtlas Index: %d\nRegion: (%d, %d) %dx%d",
+                        Allocation->AtlasIndex,
+                        Allocation->Region.X, Allocation->Region.Y,
+                        Allocation->Region.Width, Allocation->Region.Height);
+                }
+            }
+            else
+            {
+                ImGui::TextDisabled("프리뷰 생성 실패");
+            }
+        }
+        else
+        {
+            ImGui::TextDisabled("Slice SRV 생성 실패");
+        }
+    }
+    else
+    {
+        ImGui::TextDisabled("Shadow Atlas 할당 정보가 없습니다.");
+    }
+
+    ImGui::Separator();
+
+    // ========================================= Shadow Atlas Debug =========================================
+    ImGui::Text("Shadow Atlas Allocation Info");
+
+    if (AtlasManager && Allocation && Allocation->IsValid() && CachedPreviewSRV)
+    {
+        // 위에서 생성한 CachedPreviewSRV 재사용
+        // Slice 전체 미리보기 (256x256) - Region UV 제거
+        ImVec2 previewSize(256.0f, 256.0f);
+        ImGui::Image((void*)CachedPreviewSRV, previewSize, ImVec2(0, 0), ImVec2(1, 1));
+
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Shadow Atlas Slice %d 전체 (4096x4096)\n이 라이트는 아래 영역을 사용 중", Allocation->AtlasIndex);
+        }
+
+        // 할당된 영역 정보 표시
+        ImGui::Text("Atlas Type: DirectionalCSM");
+        ImGui::Text("Atlas Index: %d", Allocation->AtlasIndex);
+        ImGui::Text("Region: (%d, %d) - (%d x %d)",
+            Allocation->Region.X,
+            Allocation->Region.Y,
+            Allocation->Region.Width,
+            Allocation->Region.Height);
+
+        // UV 좌표 표시
+        ImGui::Text("UV: (%.3f, %.3f) - (%.3f, %.3f)",
+            Allocation->Region.UMin,
+            Allocation->Region.VMin,
+            Allocation->Region.UMax,
+            Allocation->Region.VMax);
+    }
+    else if (AtlasManager)
+    {
+        ImGui::TextDisabled("Shadow Atlas 할당 정보가 없습니다");
+    }
+    else
+    {
+        ImGui::TextDisabled("Shadow Atlas Manager를 찾을 수 없습니다.");
     }
 }
