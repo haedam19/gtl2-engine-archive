@@ -1043,6 +1043,18 @@ FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
             // 중간에 expansion 발생 시 rollback하고 실패 처리
             // ========================================
 
+            // 🛡️ 추가 안전 장치: Point Light 할당 직전 slice 여유 확인
+            // Spot Light 할당 이후 실제 사용 가능한 공간을 재계산
+            uint32 MinRequiredSlices = (PointEntries.size() + 1) / 2;  // 최소 2개 light당 1 slice
+            while (PointSpotAtlases.size() < MinRequiredSlices)
+            {
+                if (!CreateNewAtlasSlice(EShadowAtlasType::PointSpotLight, PointSpotAtlasSize))
+                {
+                    UE_LOG_WARNING("ShadowAtlasManager: Point Light 할당 전 추가 slice 생성 실패");
+                    break;
+                }
+            }
+
             for (const FPointEntry& Entry : PointEntries)
             {
                 FPointLightAllocationCache Cache;
@@ -1071,11 +1083,22 @@ FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
                     if (PointSpotAtlasArrayTexture != TextureBeforeAllocation)
                     {
                         // 할당 도중 Texture2DArray가 재생성됨 (expansion 발생)
-                        // 이전 face들의 DSV가 무효화되었으므로 전체 light 할당 실패 처리
-                        bAllFacesAllocated = false;
-                        UE_LOG_ERROR("ShadowAtlasManager: CRITICAL - Point Light 할당 중 Texture2DArray expansion 발생! (Face: %d)", Face);
-                        UE_LOG_ERROR("  -> 이는 pre-expansion이 충분하지 않았음을 의미합니다. Pre-expansion 로직 개선 필요.");
-                        break;
+                        // 이전 face들의 DSV가 무효화되었으므로 전체 light를 재할당해야 함
+                        UE_LOG_WARNING("ShadowAtlasManager: Point Light 할당 중 Texture2DArray expansion 발생! (Face: %d) - 재할당 시도", Face);
+
+                        // Result에서 이미 추가한 face들 제거
+                        Result.PointLights.resize(ResultStart);
+
+                        // Cache 초기화 후 처음부터 다시 할당
+                        Cache = FPointLightAllocationCache();
+                        Cache.ShadowResolution = Entry.Resolution;
+
+                        // 새로운 Texture 주소로 업데이트
+                        TextureBeforeAllocation = PointSpotAtlasArrayTexture;
+
+                        // Face 0부터 다시 시작
+                        Face = static_cast<uint32>(-1);  // 다음 루프에서 ++Face로 0이 됨
+                        continue;
                     }
 
                     Cache.FaceAllocations[Face] = FaceAllocation;
@@ -1106,8 +1129,22 @@ FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
                 }
             }
 
-            UE_LOG_INFO("ShadowAtlasManager: Point Light Allocation 완료 - Total Allocated: %d",
-                NewPointAllocations.size());
+            uint32 FailedCount = static_cast<uint32>(PointEntries.size()) - NewPointAllocations.size();
+            UE_LOG_INFO("ShadowAtlasManager: Point Light Allocation 완료 - Allocated: %d, Failed: %d, Total Slices: %d",
+                NewPointAllocations.size(), FailedCount, PointSpotAtlases.size());
+
+            // Atlas 사용률 출력 (디버깅용)
+            for (uint32 i = 0; i < PointSpotAtlases.size(); ++i)
+            {
+                if (PointSpotAtlases[i].Atlas)
+                {
+                    float Usage = PointSpotAtlases[i].Atlas->GetUsagePercentage();
+                    if (Usage > 90.0f)
+                    {
+                        UE_LOG_INFO("  Slice %d: %.1f%% used (nearly full)", i, Usage);
+                    }
+                }
+            }
         }
         else
         {
