@@ -388,6 +388,20 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 	// ===========================================================================
 	const TArray<FLightAllocationPair>& AllocatedPointLights = PointSpotAllocations.PointLights;
 
+	// 먼저 모든 PointLight의 Shadow Atlas 정보 초기화
+	for (UPointLightComponent* PointLight : Context.PointLights)
+	{
+		if (PointLight)
+		{
+			PointLight->SetShadowAtlasInfo(0, TArray<FMatrix>(), TArray<FMatrix>());
+		}
+	}
+
+	// PointLight별로 6개 면의 View/Projection 행렬을 저장할 맵
+	TMap<UPointLightComponent*, TArray<FMatrix>> LightViewMatrices;
+	TMap<UPointLightComponent*, TArray<FMatrix>> LightProjectionMatrices;
+	TMap<UPointLightComponent*, TArray<FShadowAtlasAllocation>> LightAllocations;
+
 	TMap<uint32, TArray<const FLightAllocationPair*>> pointBySlice;
 	for (const FLightAllocationPair& Pair : AllocatedPointLights)
 	{
@@ -453,6 +467,25 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 			const float NearZ = 0.1f;
 			FMatrix LightProj = FMatrix::PerspectiveFovLH(static_cast<float>(PI) / 2.0f, 1.0f, NearZ, Range);
 
+			// PointLight별로 행렬과 할당 정보 저장 (첫 번째 면이면 초기화)
+			if (AllocationPair.CubeFaceIndex == 0)
+			{
+				LightViewMatrices[PointLight] = TArray<FMatrix>();
+				LightProjectionMatrices[PointLight] = TArray<FMatrix>();
+				LightAllocations[PointLight] = TArray<FShadowAtlasAllocation>();
+				LightViewMatrices[PointLight].reserve(6);
+				LightProjectionMatrices[PointLight].reserve(6);
+				LightAllocations[PointLight].reserve(6);
+			}
+
+			// 현재 면의 행렬과 할당 정보 저장
+			if (LightViewMatrices.find(PointLight) != LightViewMatrices.end())
+			{
+				LightViewMatrices[PointLight].push_back(LightView);
+				LightProjectionMatrices[PointLight].push_back(LightProj);
+				LightAllocations[PointLight].push_back(AllocationPair.Allocation);
+			}
+
 			FLightViewProjConstants LightVP{};
 			LightVP.LightView = LightView;
 			LightVP.LightProjection = LightProj;
@@ -483,6 +516,23 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		ID3D11RenderTargetView* LightNullRTV = nullptr;
 		ID3D11DepthStencilView* LightNullDSV = nullptr;
 		Pipeline->SetRenderTargets(1, &LightNullRTV, LightNullDSV);
+	}
+
+	// PointLight에 수집된 Shadow Atlas 정보 설정
+	// 주의: RegionIndex는 StaticMeshPass에서 ShadowRegions 배열에 추가할 때 설정됨
+	for (auto& Pair : LightViewMatrices)
+	{
+		UPointLightComponent* Light = Pair.first;
+		if (Light && LightProjectionMatrices.find(Light) != LightProjectionMatrices.end() &&
+			LightAllocations.find(Light) != LightAllocations.end())
+		{
+			// RegionIndex는 0으로 임시 설정 (StaticMeshPass에서 올바른 값으로 설정됨)
+			Light->SetShadowAtlasInfo(
+				0,
+				LightViewMatrices[Light],
+				LightProjectionMatrices[Light]
+			);
+		}
 	}
 
 	// ===========================================================================

@@ -85,9 +85,41 @@ FPointLightInfo UPointLightComponent::GetPointlightInfo() const
 	Info.Intensity = Intensity;
 	Info.Range = AttenuationRadius;
 	Info.DistanceFalloffExponent = DistanceFalloffExponent;
-	Info.AtlasIndex = 0;
-	Info.ShadowEnabled = 0;
 	Info.ShadowBias = GetShadowBias();
-	Info.Padding = FVector::ZeroVector();
+	Info.ShadowSharpen = GetShadowSharpen();
+	Info.ShadowEnabled = bHasShadowAllocation ? 1u : 0u;
+	Info.ShadowRegionIndex = ShadowRegionStartIndex;
+	Info.Padding = FVector2();
+
+	// View/Projection 행렬 복사 (6개 면)
+	for (int32 i = 0; i < 6; ++i)
+	{
+		if (i < CubeFaceViewMatrices.size())
+		{
+			Info.LightViewMatrices[i] = CubeFaceViewMatrices[i];
+		}
+		else
+		{
+			Info.LightViewMatrices[i] = FMatrix::Identity();
+		}
+
+		if (i < CubeFaceProjectionMatrices.size())
+		{
+			Info.LightProjectionMatrices[i] = CubeFaceProjectionMatrices[i];
+		}
+		else
+		{
+			Info.LightProjectionMatrices[i] = FMatrix::Identity();
+		}
+	}
+
 	return Info;
+}
+
+void UPointLightComponent::SetShadowAtlasInfo(uint32 InRegionStartIndex, const TArray<FMatrix>& InViewMatrices, const TArray<FMatrix>& InProjectionMatrices)
+{
+	ShadowRegionStartIndex = InRegionStartIndex;
+	CubeFaceViewMatrices = InViewMatrices;
+	CubeFaceProjectionMatrices = InProjectionMatrices;
+	bHasShadowAllocation = true;
 }

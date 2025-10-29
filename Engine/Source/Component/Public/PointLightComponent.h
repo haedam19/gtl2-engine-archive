@@ -58,8 +58,17 @@ public:
 
     FPointLightInfo GetPointlightInfo() const;
 
+    // Shadow Atlas 관련 정보 설정 (ShadowMapPass에서 호출)
+    void SetShadowAtlasInfo(uint32 InRegionStartIndex, const TArray<FMatrix>& InViewMatrices, const TArray<FMatrix>& InProjectionMatrices);
+
 private:
     void EnsureVisualizationBillboard()override;
+
+    // Shadow Atlas 정보 (렌더링 시 ShadowMapPass에서 설정됨)
+    uint32 ShadowRegionStartIndex = 0;
+    TArray<FMatrix> CubeFaceViewMatrices;       // 6개 면의 View 행렬
+    TArray<FMatrix> CubeFaceProjectionMatrices; // 6개 면의 Projection 행렬
+    bool bHasShadowAllocation = false;
     
 protected:
     /**
