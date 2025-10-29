@@ -141,6 +141,7 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 						Allocation.Region.UMax - Allocation.Region.UMin,  // UScale
 						Allocation.Region.VMax - Allocation.Region.VMin   // VScale
 					);
+					
 					RegionInfo.AtlasType = static_cast<uint32>(Allocation.AtlasType);
 					RegionInfo.AtlasIndex = Allocation.AtlasIndex;
 					RegionInfo.CascadeIndex = 0;
@@ -148,6 +149,18 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 
 					ShadowRegions.push_back(RegionInfo);
 				}
+			}
+
+			// PointLight에 Shadow Region 시작 인덱스를 업데이트
+			// ShadowMapPass에서 이미 View/Projection 행렬을 SetShadowAtlasInfo로 저장했으므로
+			// 여기서는 ShadowRegionStartIndex만 업데이트
+			if (ShadowRegions.size() > StartIndex)
+			{
+				// GetPointlightInfo()는 현재 저장된 행렬을 반환하므로 재사용
+				FPointLightInfo CurrentInfo = PointLight->GetPointlightInfo();
+				TArray<FMatrix> ViewMatrices(CurrentInfo.LightViewMatrices, CurrentInfo.LightViewMatrices + 6);
+				TArray<FMatrix> ProjMatrices(CurrentInfo.LightProjectionMatrices, CurrentInfo.LightProjectionMatrices + 6);
+				PointLight->SetShadowAtlasInfo(StartIndex, ViewMatrices, ProjMatrices);
 			}
 		}
 	}

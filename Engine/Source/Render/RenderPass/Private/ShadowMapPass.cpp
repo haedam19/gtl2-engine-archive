@@ -389,13 +389,13 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 	const TArray<FLightAllocationPair>& AllocatedPointLights = PointSpotAllocations.PointLights;
 
 	// 먼저 모든 PointLight의 Shadow Atlas 정보 초기화
-	for (UPointLightComponent* PointLight : Context.PointLights)
+	/*for (UPointLightComponent* PointLight : Context.PointLights)
 	{
 		if (PointLight)
 		{
 			PointLight->SetShadowAtlasInfo(0, TArray<FMatrix>(), TArray<FMatrix>());
 		}
-	}
+	}*/
 
 	// PointLight별로 6개 면의 View/Projection 행렬을 저장할 맵
 	TMap<UPointLightComponent*, TArray<FMatrix>> LightViewMatrices;
