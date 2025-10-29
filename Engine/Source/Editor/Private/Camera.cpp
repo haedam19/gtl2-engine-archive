@@ -10,6 +10,27 @@
 #include "Actor/Public/Actor.h"
 #include "Global/Quaternion.h"
 
+namespace
+{
+	// 전역 회전 체계가 서로 반대 축에 의존하고 있으므로,
+	// 카메라 오버라이드 경로에서만 보정용 변환을 둔다.
+	inline FVector ConvertActorRotationToCamera(const FVector& InActorEuler)
+	{
+		FVector Result = InActorEuler;
+		Result.Y *= -1.0f;
+		Result.Z *= -1.0f;
+		return Result;
+	}
+
+	inline FVector ConvertCameraRotationToActor(const FVector& InCameraEuler)
+	{
+		FVector Result = InCameraEuler;
+		Result.Y *= -1.0f;
+		Result.Z *= -1.0f;
+		return Result;
+	}
+}
+
 UCamera::UCamera() :
 	CameraConstants(FCameraConstants()),
 	RelativeLocation(FVector(-15.0f, 0.f, 10.0f)), RelativeRotation(FVector(0, 0, 0)),
@@ -87,7 +108,8 @@ FVector UCamera::UpdateInput()
 
 	if (Overrider)
 	{
-		const FQuaternion NewRotationQuat = FQuaternion::FromEuler(Rotation);
+		const FVector ActorSpaceRotation = ConvertCameraRotationToActor(Rotation);
+		const FQuaternion NewRotationQuat = FQuaternion::FromEuler(ActorSpaceRotation);
 		if (USceneComponent* Root = Overrider->GetRootComponent())
 		{
 			Root->SetWorldLocation(Location);
@@ -427,9 +449,9 @@ FVector UCamera::GetEffectiveRotation() const
 	{
 		if (USceneComponent* Root = Overrider->GetRootComponent())
 		{
-			return Root->GetWorldRotationAsQuaternion().ToEuler();
+			return ConvertActorRotationToCamera(Root->GetWorldRotationAsQuaternion().ToEuler());
 		}
-		return Overrider->GetActorRotation().ToEuler();
+		return ConvertActorRotationToCamera(Overrider->GetActorRotation().ToEuler());
 	}
 	return RelativeRotation;
 }
