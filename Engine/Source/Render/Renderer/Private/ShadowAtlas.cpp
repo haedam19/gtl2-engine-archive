@@ -69,6 +69,20 @@ bool FShadowAtlas::CanAllocate(uint32 Width, uint32 Height) const
     return BestIndex != -1;
 }
 
+FShadowAtlas FShadowAtlas::Clone() const
+{
+    FShadowAtlas Copy(AtlasSize);
+    Copy.FreeRectangles = this->FreeRectangles;
+    Copy.UsedArea = this->UsedArea;
+    return Copy;
+}
+
+void FShadowAtlas::RestoreState(const FShadowAtlas& Other)
+{
+    this->FreeRectangles = Other.FreeRectangles;
+    this->UsedArea = Other.UsedArea;
+}
+
 void FShadowAtlas::Clear()
 {
     FreeRectangles.clear();

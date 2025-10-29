@@ -51,6 +51,10 @@ public:
     // 할당 가능 여부만 확인 (Dry-Run, 상태 변경 없음)
     bool CanAllocate(uint32 Width, uint32 Height) const;
 
+    // 상태 복사 (Simulation용)
+    FShadowAtlas Clone() const;
+    void RestoreState(const FShadowAtlas& Other);
+
     // 모든 할당 해제
     void Clear();
 
