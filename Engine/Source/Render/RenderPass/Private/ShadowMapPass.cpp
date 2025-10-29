@@ -472,7 +472,7 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
 			FMatrix LightView = CalculateCubeFaceViewMatrix(LightPos, AllocationPair.CubeFaceIndex);
 			const float NearZ = 0.1f;
-			FMatrix LightProj = FMatrix::PerspectiveFovLH(static_cast<float>(PI) / 2.0f, 1.0f, NearZ, Range);
+			FMatrix LightProj = FMatrix::PerspectiveFovLH(static_cast<float>(PI) / (2.0f - 1e-4), 1.0f, NearZ, Range);
 
 			// PointLight별로 행렬과 할당 정보 저장 (첫 번째 면이면 초기화)
 			if (AllocationPair.CubeFaceIndex == 0)

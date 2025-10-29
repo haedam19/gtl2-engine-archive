@@ -94,7 +94,7 @@ private:
 
     // Shadow parameters
     float ShadowCascadeLambda = 0.85f;
-    float ShadowDistance = 1000.0f;  // Shadow 렌더링 거리 (CSM/LVP용)
+    float ShadowDistance = 128.0f;  // Shadow 렌더링 거리 (CSM/LVP용)
     float PSMCoverageDistance = 100.0f;  // PSM 커버리지 거리 (PSM 전용)
 
     // Shadow Resolution
