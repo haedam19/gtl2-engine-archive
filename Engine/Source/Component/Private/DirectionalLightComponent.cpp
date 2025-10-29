@@ -186,7 +186,8 @@ FDirectionalLightInfo UDirectionalLightComponent::GetDirectionalLightInfo() cons
     Info.Intensity = Intensity;
     Info.ShadowBias = GetShadowBias();
     Info.ShadowSharpen = GetShadowSharpen();
-    Info.Padding = FVector2(0.0f, 0.0f);
+    Info.ShadowEnabled = GetCastShadows() ? 1 : 0;
+    Info.Padding = 0.0f;
     return Info;
 }
 

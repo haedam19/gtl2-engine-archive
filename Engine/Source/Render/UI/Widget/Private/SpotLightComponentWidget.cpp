@@ -118,6 +118,16 @@ void USpotLightComponentWidget::RenderWidget()
     {
         ImGui::SetTooltip("라이트를 켜고 끕니다.\n끄면 조명 계산에서 제외됩니다.\n(Outliner O/X와는 별개)");
     }
+    // Cast Shadows 체크박스
+    bool CastShadows = SpotLightComponent->GetCastShadows();
+    if (ImGui::Checkbox("Cast Shadows", &CastShadows))
+    {
+        SpotLightComponent->SetCastShadows(CastShadows);
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("그림자 생성 여부를 설정합니다. 끄면 이 라이트는 그림자를 만들지 않습니다.");
+    }
 
     FVector LightColor = SpotLightComponent->GetLightColor();
     float LightColorRGB[3] = { LightColor.X * 255.0f, LightColor.Y * 255.0f, LightColor.Z * 255.0f };

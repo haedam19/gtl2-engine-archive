@@ -63,6 +63,8 @@ public:
     
     bool GetLightEnabled() const { return bLightEnabled; }
     void SetLightEnabled(bool InEnabled) { bLightEnabled = InEnabled; }
+    bool GetCastShadows() const { return bCastShadows; }
+    void SetCastShadows(bool InCastShadows) { bCastShadows = InCastShadows; }
 
 protected:
     /** Total energy that the light emits. */
@@ -74,6 +76,7 @@ protected:
      */
     FVector LightColor = { 1.0f, 1.0f, 1.0f };
 
+    bool bCastShadows = true;
     bool bVisible = true;
     bool bLightEnabled = true; // 조명 계산 포함 여부 (Outliner Visible과 독립)
 };

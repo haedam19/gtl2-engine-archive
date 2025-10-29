@@ -54,8 +54,6 @@ private:
 	FVector RelativeScale3D = FVector{ 1.f,1.f,1.f };
 	bool bIsUniformScale = false;
 
-	bool bCastShadows;
-
 	// SceneComponent Hierarchy Section
 public:
 	USceneComponent* GetAttachParent() const { return AttachParent; }

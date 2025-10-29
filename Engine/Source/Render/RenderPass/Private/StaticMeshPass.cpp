@@ -86,7 +86,7 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 		Pipeline->SetConstantBuffer(7, EShaderType::PS, ccb);
 
 		// Shadow Atlas Region 정보 수집
-		if (AtlasManager)
+		if (AtlasManager && DirLight->GetCastShadows())
 		{
 			const FShadowAtlasAllocation* Allocation = AtlasManager->GetLightAllocation(DirLight);
 			if (Allocation && Allocation->IsValid())
