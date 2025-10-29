@@ -100,25 +100,36 @@ void UConsoleWidget::RenderWidget()
 	if (ImGui::BeginChild("LogOutput", ImVec2(0, -ReservedHeight), ImGuiChildFlags_NavFlattened,
 	                      ImGuiWindowFlags_HorizontalScrollbar))
 	{
-		// 로그 리스트 출력
-		for (const auto& LogEntry : LogItems)
+		// ImGuiListClipper를 사용하여 가상 스크롤링 적용
+		// 화면에 보이는 로그만 렌더링하여 성능 최적화
+		ImGuiListClipper Clipper;
+		// 텍스트 높이를 미리 지정하여 첫 프레임에서 높이 측정 단계 건너뛰기
+		Clipper.Begin(static_cast<int>(LogItems.size()), ImGui::GetTextLineHeightWithSpacing());
+
+		while (Clipper.Step())
 		{
-			// ELogType을 기반으로 색상 결정
-			ImVec4 Color = GetColorByLogType(LogEntry.Type);
-			bool bShouldApplyColor = (LogEntry.Type != ELogType::Info);
-
-			if (bShouldApplyColor)
+			for (int i = Clipper.DisplayStart; i < Clipper.DisplayEnd; i++)
 			{
-				ImGui::PushStyleColor(ImGuiCol_Text, Color);
-			}
+				const auto& LogEntry = LogItems[i];
 
-			ImGui::TextUnformatted(LogEntry.Message.c_str());
+				// ELogType을 기반으로 색상 결정
+				ImVec4 Color = GetColorByLogType(LogEntry.Type);
+				bool bShouldApplyColor = (LogEntry.Type != ELogType::Info);
 
-			if (bShouldApplyColor)
-			{
-				ImGui::PopStyleColor();
+				if (bShouldApplyColor)
+				{
+					ImGui::PushStyleColor(ImGuiCol_Text, Color);
+				}
+
+				ImGui::TextUnformatted(LogEntry.Message.c_str());
+
+				if (bShouldApplyColor)
+				{
+					ImGui::PopStyleColor();
+				}
 			}
 		}
+		// Clipper.End()는 소멸자에서 자동 호출됨
 
 		// Auto Scroll
 		if (bIsScrollToBottom || (bIsAutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()))
