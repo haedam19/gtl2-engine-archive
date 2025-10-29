@@ -221,6 +221,15 @@ private:
     };
     TMap<UPointLightComponent*, FPointLightAllocationCache> PreviousPointAllocations;
 
+    // Point Light 할당을 위한 Reservation 구조체 (Two-Phase Allocation용)
+    struct FPointLightReservation
+    {
+        UPointLightComponent* Light = nullptr;
+        uint32 Resolution = 0;
+        std::array<uint32, 6> SliceIndices = {};  // 각 face가 할당될 slice index
+        bool bValid = false;
+    };
+
     // 현재 프레임의 모든 Light별 할당 정보 (DetailWindow 시각화용)
     TMap<ULightComponentBase*, FShadowAtlasAllocation> CurrentLightAllocations;
 
