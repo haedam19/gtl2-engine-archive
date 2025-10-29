@@ -829,75 +829,7 @@ FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
             }
         }
 
-        if (SpotActiveCount > 0)
-        {
-            // ========================================
-            // 🎯 Spot Light Dry-Run Simulation
-            // ========================================
-
-            // 1. 현재 atlas 상태 저장
-            TArray<FShadowAtlas> SimulatedAtlases;
-            for (const auto& AtlasInfo : PointSpotAtlases)
-            {
-                if (AtlasInfo.Atlas)
-                {
-                    SimulatedAtlases.push_back(AtlasInfo.Atlas->Clone());
-                }
-            }
-
-            // 2. Spot Light들을 시뮬레이션으로 할당해보기
-            uint32 RequiredSlices = static_cast<uint32>(SimulatedAtlases.size());
-            const uint32 MaxAllowedSlices = 16;
-
-            UE_LOG_INFO("ShadowAtlasManager: Spot Light Dry-Run Simulation 시작 (Starting Slices: %d)", RequiredSlices);
-
-            for (const FSpotEntry& Entry : SpotEntries)
-            {
-                bool bAllocated = false;
-
-                // 기존 slice들에서 할당 시도
-                for (uint32 SliceIdx = 0; SliceIdx < SimulatedAtlases.size(); ++SliceIdx)
-                {
-                    FShadowAtlasRegion DummyRegion;
-                    if (SimulatedAtlases[SliceIdx].Allocate(Entry.Resolution, Entry.Resolution, DummyRegion))
-                    {
-                        bAllocated = true;
-                        break;
-                    }
-                }
-
-                // 할당 실패하면 새 slice 필요
-                if (!bAllocated)
-                {
-                    if (RequiredSlices < MaxAllowedSlices)
-                    {
-                        FShadowAtlas NewSlice(PointSpotAtlasSize);
-                        FShadowAtlasRegion DummyRegion;
-                        if (NewSlice.Allocate(Entry.Resolution, Entry.Resolution, DummyRegion))
-                        {
-                            SimulatedAtlases.push_back(NewSlice);
-                            RequiredSlices++;
-                            bAllocated = true;
-                        }
-                    }
-                }
-            }
-
-            UE_LOG_INFO("ShadowAtlasManager: Spot Dry-Run Simulation 완료 - Required Slices: %d (Max: %d)",
-                RequiredSlices, MaxAllowedSlices);
-
-            // 3. 시뮬레이션 결과에 따라 실제 slice 생성
-            while (PointSpotArrayCapacity < RequiredSlices)
-            {
-                if (!ExpandAtlasArray(EShadowAtlasType::PointSpotLight))
-                {
-                    UE_LOG_ERROR("ShadowAtlasManager: SpotLight Atlas 사전 확장 실패 (VRAM 부족)");
-                    break;
-                }
-            }
-
-            SimulatedAtlases.clear();
-        }
+        // Spot Light Simulation은 Point Light Simulation에 통합됨 (아래 참조)
     }
 
     TArray<FPointEntry> PointEntries;
@@ -972,28 +904,49 @@ FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
             }
         }
 
-        if (PointActiveCount > 0)
+        if ((SpotActiveCount > 0 || PointActiveCount > 0) && (bSpotRequiresRebuild || bPointRequiresRebuild))
         {
             // ========================================
-            // 🎯 Complete Dry-Run Simulation
-            // MaxRects의 정확한 결과를 예측하기 위해 실제로 시뮬레이션 실행
+            // 🎯 Complete Dry-Run Simulation (Spot + Point)
+            // ⚠️ CRITICAL: Rebuild 시에만 실행, Clear 이후 상태를 시뮬레이션
             // ========================================
 
-            // 1. 현재 atlas 상태 저장 (Spot Light 할당 이후)
             TArray<FShadowAtlas> SimulatedAtlases;
-            for (const auto& AtlasInfo : PointSpotAtlases)
+            const uint32 MaxAllowedSlices = 16;
+
+            UE_LOG_INFO("ShadowAtlasManager: Dry-Run Simulation 시작 (Spot: %d, Point: %d)",
+                SpotActiveCount, PointActiveCount);
+
+            // 1. Spot Light 시뮬레이션
+            for (const FSpotEntry& Entry : SpotEntries)
             {
-                if (AtlasInfo.Atlas)
+                bool bAllocated = false;
+
+                for (uint32 SliceIdx = 0; SliceIdx < SimulatedAtlases.size(); ++SliceIdx)
                 {
-                    SimulatedAtlases.push_back(AtlasInfo.Atlas->Clone());
+                    FShadowAtlasRegion DummyRegion;
+                    if (SimulatedAtlases[SliceIdx].Allocate(Entry.Resolution, Entry.Resolution, DummyRegion))
+                    {
+                        bAllocated = true;
+                        break;
+                    }
+                }
+
+                if (!bAllocated && SimulatedAtlases.size() < MaxAllowedSlices)
+                {
+                    FShadowAtlas NewSlice(PointSpotAtlasSize);
+                    FShadowAtlasRegion DummyRegion;
+                    if (NewSlice.Allocate(Entry.Resolution, Entry.Resolution, DummyRegion))
+                    {
+                        SimulatedAtlases.push_back(NewSlice);
+                    }
                 }
             }
 
-            // 2. Point Light들을 시뮬레이션으로 할당해보기
-            uint32 RequiredSlices = static_cast<uint32>(SimulatedAtlases.size());
-            const uint32 MaxAllowedSlices = 16;
+            UE_LOG_INFO("ShadowAtlasManager: Spot Simulation 완료 - Slices: %d", SimulatedAtlases.size());
 
-            UE_LOG_INFO("ShadowAtlasManager: Point Light Dry-Run Simulation 시작 (Starting Slices: %d)", RequiredSlices);
+            // 2. Point Light 시뮬레이션 (Spot 이후 상태에서)
+            uint32 RequiredSlices = static_cast<uint32>(SimulatedAtlases.size());
 
             for (const FPointEntry& Entry : PointEntries)
             {
