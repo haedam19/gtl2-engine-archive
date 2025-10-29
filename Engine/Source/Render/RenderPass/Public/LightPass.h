@@ -50,6 +50,10 @@ public:
 	void Execute(FRenderingContext& Context) override;
 	void Release() override;
 
+	void CreatePointLightBuffers(uint32 RequiredCount);
+
+	void UpdatePointLightBufferData(const FRenderingContext& Context);
+
 	void ClusterGizmoUpdate()
 	{
 		bClusterGizmoSet = false;
@@ -80,6 +84,10 @@ public:
 	// 클러스터 컬링 결과 수집 (LOD 계산용)
 	TArray<FLightClusterInfluence> GetPointLightClusterInfluences() const;
 	TArray<FLightClusterInfluence> GetSpotLightClusterInfluences() const;
+
+
+	ID3D11ShaderResourceView* GetPointLightStructuredBufferSRV() const { return PointLightStructuredBufferSRV; }
+
 
 private:
 	uint32 GetClusterCount() const { return ClusterSliceNumX * ClusterSliceNumY * ClusterSliceNumZ; }

@@ -497,3 +497,50 @@ void FLightPass::Release()
 
 	ReleaseOptionBuffers();
 }
+void FLightPass::CreatePointLightBuffers(uint32 RequiredCount)
+{
+	if (PointLightBufferCount >= RequiredCount)
+		return;
+
+	// Size double until enough
+	while (PointLightBufferCount < RequiredCount)
+	{
+		PointLightBufferCount <<= 1;
+	}
+
+	UE_LOG("[LightPass] Realloc PointLightBufferCount = %u", PointLightBufferCount);
+
+	SafeRelease(PointLightStructuredBuffer);
+	SafeRelease(PointLightStructuredBufferSRV);
+
+	PointLightStructuredBuffer =
+		FRenderResourceFactory::CreateStructuredBuffer<FPointLightInfo>(PointLightBufferCount);
+
+	FRenderResourceFactory::CreateStructuredShaderResourceView(
+		PointLightStructuredBuffer, &PointLightStructuredBufferSRV);
+}
+void FLightPass::UpdatePointLightBufferData(const FRenderingContext& Context)
+{
+	TArray<FPointLightInfo> PointDatas;
+
+	PointDatas.reserve(Context.PointLights.size());
+
+	for (UPointLightComponent* Light : Context.PointLights)
+	{
+		if (!Light || !Light->GetVisible() || !Light->GetLightEnabled())
+			continue;
+
+		PointDatas.push_back(Light->GetPointlightInfo());
+	}
+
+	uint32 PLCount = PointDatas.size();
+	if (PLCount == 0)
+		return;
+
+	CreatePointLightBuffers(PLCount);
+
+	FRenderResourceFactory::UpdateStructuredBuffer(
+		PointLightStructuredBuffer,
+		PointDatas
+	);
+}

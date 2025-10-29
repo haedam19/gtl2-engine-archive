@@ -10,6 +10,7 @@
 #include "Render/Renderer/Public/Renderer.h"
 #include "Render/Renderer/Public/ShadowAtlasManager.h"
 #include "Texture/Public/Texture.h"
+#include"Render/RenderPass/Public/LightPass.h"
 
 FStaticMeshPass::FStaticMeshPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferCamera, ID3D11Buffer* InConstantBufferModel,
 	ID3D11Buffer* InConstantBufferLightViewProj,
@@ -161,10 +162,14 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 				TArray<FMatrix> ViewMatrices(CurrentInfo.LightViewMatrices, CurrentInfo.LightViewMatrices + 6);
 				TArray<FMatrix> ProjMatrices(CurrentInfo.LightProjectionMatrices, CurrentInfo.LightProjectionMatrices + 6);
 				PointLight->SetShadowAtlasInfo(StartIndex, ViewMatrices, ProjMatrices);
+				 CurrentInfo = PointLight->GetPointlightInfo();
+				 //Pipeline->SetShaderResourceView(8, EShaderType::VS | EShaderType::PS, Renderer.GetLightPass()->GetPointLightStructuredBufferSRV());
+				 
+
 			}
 		}
 	}
-
+	Renderer.GetLightPass()->UpdatePointLightBufferData(Context);
 	// SpotLight Shadow Atlas Region 정보 수집
 	if (AtlasManager)
 	{
