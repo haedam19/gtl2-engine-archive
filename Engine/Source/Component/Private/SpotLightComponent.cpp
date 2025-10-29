@@ -11,7 +11,7 @@ IMPLEMENT_CLASS(USpotLightComponent, UPointLightComponent)
 
 USpotLightComponent::USpotLightComponent()
 {
-	CreateShadowMapResources();
+	// CreateShadowMapResources(); // Atlas 시스템 사용시 불필요 - ShadowAtlasManager가 관리
 }
 
 USpotLightComponent::~USpotLightComponent()
@@ -95,9 +95,22 @@ void USpotLightComponent::CreateShadowMapResources()
 
 void USpotLightComponent::ReleaseShadowMapResources()
 {
-    SafeRelease(ShadowMapData.ShadowMapSRV);
-    SafeRelease(ShadowMapData.ShadowMapDSV);
-    SafeRelease(ShadowMapData.ShadowMapTexture);
+    // Atlas 시스템을 사용하는 경우 ShadowMapSRV는 ShadowAtlasManager가 소유
+    // SpotLight가 직접 생성한 Texture가 있는 경우에만 리소스 해제
+    if (ShadowMapData.ShadowMapTexture != nullptr)
+    {
+        // SpotLight가 직접 생성한 리소스들 해제
+        SafeRelease(ShadowMapData.ShadowMapSRV);
+        SafeRelease(ShadowMapData.ShadowMapDSV);
+        SafeRelease(ShadowMapData.ShadowMapTexture);
+    }
+    else
+    {
+        // Atlas를 사용하는 경우, SRV는 Atlas가 소유하므로 해제하지 않고 참조만 제거
+        ShadowMapData.ShadowMapSRV = nullptr;
+        ShadowMapData.ShadowMapDSV = nullptr;
+    }
+
     ShadowMapData.OwnerLight = nullptr;
     LightViewMatrix = FMatrix::Identity();
     LightProjectionMatrix = FMatrix::Identity();
