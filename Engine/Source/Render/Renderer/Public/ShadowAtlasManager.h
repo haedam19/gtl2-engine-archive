@@ -2,7 +2,9 @@
 
 #include "ShadowAtlas.h"
 #include "Component/Public/PointLightComponent.h"
+#include "Component/Public/SpotLightComponent.h"
 #include <d3d11.h>
+#include <array>
 #include <vector>
 
 class UDeviceResources;
@@ -58,8 +60,16 @@ struct FLightAllocationPair
     ULightComponent* Light = nullptr;
     FShadowAtlasAllocation Allocation;
     uint32 ShadowResolution = 0;
+    uint32 CubeFaceIndex = 0;
 
     bool IsValid() const { return Light && Allocation.IsValid(); }
+};
+
+// Spot/Point Light Allocation 결과 반환용 구조체
+struct FPointSpotAllocationResult
+{
+    TArray<FLightAllocationPair> PointLights;
+    TArray<FLightAllocationPair> SpotLights;
 };
 
 // Shadow Atlas 통합 관리 클래스 (동적 확장 지원)
@@ -84,15 +94,25 @@ public:
     // 레벨 전환 시 모든 할당 정보 완전 클리어 (댕글링 포인터 방지)
     void ClearAllLightAllocations();
 
+
+    // ============================================================
     // Light Sorting + Allocation (핵심 함수)
+    // ============================================================
+    
     // Directional Light들을 받아서 Sorting하고 Atlas에 할당
     TArray<FLightAllocationPair> AllocateDirectionalLights(const TArray<UDirectionalLightComponent*>& Lights);
-
-    TArray<FLightAllocationPair> AllocatePointSpotLights(
-        const TArray<UPointLightComponent*>& Lights,
-        const FVector& CameraPos = FVector(),
+	// Point/Spot Light들을 받아서 Sorting하고 Atlas에 할당
+    FPointSpotAllocationResult AllocatePointSpotLights(
+        const TArray<UPointLightComponent*>& PointLights,
+        const TArray<USpotLightComponent*>& SpotLights,
+        const FVector* CameraPos = nullptr,
         const TMap<uint32, uint32>* LightClusterInfluences = nullptr);
+    
 
+    // ============================================================
+    // Atlas Info & SRV Getters
+    // ============================================================
+    
     // Atlas 배열 접근
     const TArray<FShadowAtlasInfo>& GetAtlases(EShadowAtlasType Type) const;
 
@@ -101,13 +121,18 @@ public:
 
     // Light별 할당 정보 조회 (DetailWindow에서 사용)
     const FShadowAtlasAllocation* GetLightAllocation(ULightComponentBase* Light) const;
+    // Point Light의 경우 특정 Face의 할당 정보 조회할 수 있도록 별도 API 제공
+    bool GetPointLightFaceAllocation(UPointLightComponent* Light, uint32 FaceIndex, FShadowAtlasAllocation& OutAllocation, uint32& OutResolution) const;
 
     // Texture2DArray SRV 접근
     ID3D11ShaderResourceView* GetDirectionalAtlasArraySRV() const { return DirectionalAtlasArraySRV; }
     ID3D11ShaderResourceView* GetPointSpotAtlasArraySRV() const { return PointSpotAtlasArraySRV; }
+    ID3D11ShaderResourceView* GetSliceSRV(EShadowAtlasType type, uint32 sliceIndex);
 
-    ID3D11ShaderResourceView* GetSliceSRV(
-        EShadowAtlasType type, uint32 sliceIndex);
+
+    // ============================================================
+    // Atlas Stats
+    // ============================================================
 
     // Slice별 사용률 정보
     struct FSliceUsageInfo
@@ -138,6 +163,11 @@ public:
 
     FAtlasStats GetAtlasStats() const;
 
+
+    // ============================================================
+	// Atlas Size Management
+    // ============================================================
+
     // Atlas 크기 설정 (런타임 변경 가능)
     void SetPointSpotAtlasSize(uint32 NewSize);
     uint32 GetPointSpotAtlasSize() const { return PointSpotAtlasSize; }
@@ -154,6 +184,9 @@ private:
 
     // Point/Spot Light의 Shadow Map 해상도 계산 (기존)
     uint32 CalculatePointSpotLightResolution(UPointLightComponent* Light) const;
+    // Spot/Point Light Shadow Map 해상도 계산
+    uint32 CalculateSpotLightResolution(USpotLightComponent* Light) const;
+    uint32 CalculatePointLightResolution(UPointLightComponent* Light) const;
 
     // Point/Spot Light의 Shadow Map 해상도 계산 (LOD 적용)
     uint32 CalculatePointSpotLightResolutionLOD(
@@ -162,6 +195,9 @@ private:
         uint32 AffectedClusterCount) const;
 
     // Texture2DArray 생성 및 확장/축소
+    void ClearPointSpotAtlas();
+
+    // Texture2DArray 생성 및 확장
     bool CreateAtlasArray(EShadowAtlasType Type, uint32 Capacity);
     bool ExpandAtlasArray(EShadowAtlasType Type);
     bool ShrinkAtlasArray(EShadowAtlasType Type, uint32 NewCapacity);
@@ -177,7 +213,13 @@ private:
     TArray<FShadowAtlasInfo> PointSpotAtlases;        // Point/Spot Light용
 
     // 이전 프레임의 Light별 할당 정보 (더티 플래그 최적화용)
-    TMap<UPointLightComponent*, FShadowAtlasAllocation> PreviousPointSpotAllocations;
+    TMap<USpotLightComponent*, FShadowAtlasAllocation> PreviousSpotAllocations;
+    struct FPointLightAllocationCache
+    {
+        std::array<FShadowAtlasAllocation, 6> FaceAllocations = {};
+        uint32 ShadowResolution = 0;
+    };
+    TMap<UPointLightComponent*, FPointLightAllocationCache> PreviousPointAllocations;
 
     // 현재 프레임의 모든 Light별 할당 정보 (DetailWindow 시각화용)
     TMap<ULightComponentBase*, FShadowAtlasAllocation> CurrentLightAllocations;
@@ -199,4 +241,6 @@ private:
 
     // Release 중복 호출 방지
     bool bIsReleased = false;
+    bool bPointSpotAtlasClearedForSpot = false;
+    bool bPointSpotAtlasClearedForPoint = false;
 };

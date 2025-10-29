@@ -55,7 +55,11 @@ void FShadowAtlasManager::Release()
     SafeRelease(PointSpotAtlasArrayTexture);
 
     // 이전 할당 정보 클리어
-    PreviousPointSpotAllocations.clear();
+    PreviousSpotAllocations.clear();
+    PreviousPointAllocations.clear();
+    CurrentLightAllocations.clear();
+    bPointSpotAtlasClearedForSpot = false;
+    bPointSpotAtlasClearedForPoint = false;
 
     Device = nullptr;
     bIsReleased = true;
@@ -122,6 +126,7 @@ void FShadowAtlasManager::ClearAllAllocations()
     // 1단계: 이전 프레임의 Atlas 사용량 체크 및 축소 (렌더링 완료 후 안전)
     // ===========================================================================
     FramesSinceLastShrink++;
+    bool bAtlasShrunk = false;
 
     uint32 MaxUsedSlice = GetMaxUsedSliceIndex(EShadowAtlasType::PointSpotLight);
     uint32 RequiredCapacity = MaxUsedSlice + 1;  // 슬라이스 인덱스는 0부터 시작하므로 +1
@@ -138,6 +143,7 @@ void FShadowAtlasManager::ClearAllAllocations()
         if (ShrinkAtlasArray(EShadowAtlasType::PointSpotLight, NewCapacity))
         {
             FramesSinceLastShrink = 0;  // 쿨다운 리셋
+            bAtlasShrunk = true;
             UE_LOG_INFO("ShadowAtlasManager: Atlas 축소 완료 (다음 축소까지 %d 프레임)", ShrinkCooldownFrames);
         }
     }
@@ -161,18 +167,30 @@ void FShadowAtlasManager::ClearAllAllocations()
         }
     }
 
-    // 현재 프레임의 Light 할당 정보 초기화
+    // 현재 프레임의 Light 할당 정보 초기화 (캐시는 유지하여 더티 상태 추적)
     CurrentLightAllocations.clear();
+
+    if (bAtlasShrunk)
+    {
+        PreviousSpotAllocations.clear();
+        PreviousPointAllocations.clear();
+        bPointSpotAtlasClearedForSpot = true;
+        bPointSpotAtlasClearedForPoint = true;
+    }
 }
 
 void FShadowAtlasManager::ClearAllLightAllocations()
 {
     // 레벨 전환 시 모든 라이트 할당 정보 완전 클리어 (댕글링 포인터 방지)
     CurrentLightAllocations.clear();
-    PreviousPointSpotAllocations.clear();
+    PreviousSpotAllocations.clear();
+    PreviousPointAllocations.clear();
 
     // Atlas도 클리어
     ClearAllAllocations();
+
+    bPointSpotAtlasClearedForSpot = false;
+    bPointSpotAtlasClearedForPoint = false;
 
     UE_LOG_INFO("ShadowAtlasManager: All light allocations cleared (level transition)");
 }
@@ -413,7 +431,7 @@ void FShadowAtlasManager::SetPointSpotAtlasSize(uint32 NewSize)
     CreateNewAtlasSlice(EShadowAtlasType::PointSpotLight, PointSpotAtlasSize);
 
     // 이전 할당 정보 클리어
-    PreviousPointSpotAllocations.clear();
+    PreviousSpotAllocations.clear();
 
     UE_LOG_INFO("ShadowAtlasManager: PointSpot Atlas size changed successfully");
 }
@@ -520,6 +538,40 @@ uint32 FShadowAtlasManager::CalculatePointSpotLightResolution(UPointLightCompone
         return 512;  // 기본 해상도
     }
 
+    float Scale = Light->GetShadowResolutionScale();
+    uint32 BaseResolution = 512;
+    uint32 Resolution = static_cast<uint32>(BaseResolution * Scale);
+
+    if (Resolution <= 256) return 256;
+    else if (Resolution <= 512) return 512;
+    else if (Resolution <= 1024) return 1024;
+    else return 2048;
+}
+
+uint32 FShadowAtlasManager::CalculatePointLightResolution(UPointLightComponent* Light) const
+{
+    if (!Light)
+    {
+        return 512;
+    }
+
+    float Scale = Light->GetShadowResolutionScale();
+    uint32 BaseResolution = 512;
+    uint32 Resolution = static_cast<uint32>(BaseResolution * Scale);
+
+    if (Resolution <= 256) return 256;
+    else if (Resolution <= 512) return 512;
+    else if (Resolution <= 1024) return 1024;
+    else return 2048;
+}
+
+uint32 FShadowAtlasManager::CalculateSpotLightResolution(USpotLightComponent* Light) const
+{
+    if (!Light)
+    {
+        return 512;  // 기본 해상도
+    }
+
     // Shadow Resolution Scale에 따라 해상도 계산
     // Base resolution: 512, 최대 2048
     float Scale = Light->GetShadowResolutionScale();
@@ -605,96 +657,459 @@ uint32 FShadowAtlasManager::CalculatePointSpotLightResolutionLOD(
     else return 2048;
 }
 
-TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(
-    const TArray<UPointLightComponent*>& Lights,
-    const FVector& CameraPos,
+FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
+    const TArray<UPointLightComponent*>& PointLights,
+    const TArray<USpotLightComponent*>& SpotLights,
+    const FVector* CameraPos,
     const TMap<uint32, uint32>* LightClusterInfluences)
 {
-    TArray<FLightAllocationPair> Result;
+    FPointSpotAllocationResult Result;
 
-    // LOD 활성화 여부 (카메라 위치와 클러스터 정보가 있으면 LOD 사용)
-    bool bUseLOD = (LightClusterInfluences != nullptr);
+    const bool bHasPointLights = !PointLights.empty();
+    const bool bHasSpotLights = !SpotLights.empty();
 
-    // ===========================================================================
-    // 0-1단계: 필요한 총 Slice 개수를 미리 계산하여 한 번에 확장
-    // ===========================================================================
-    uint32 TotalLights = 0;
-    for (UPointLightComponent* Light : Lights)
+    if (!bHasPointLights && !bHasSpotLights)
     {
-        if (Light && Light->GetLightEnabled())
-        {
-            TotalLights++;
-        }
+        return Result;
     }
 
-    if (TotalLights > 0)
+    if (bHasSpotLights && bPointSpotAtlasClearedForSpot)
     {
-        // 실제 해상도를 기반으로 필요한 면적 계산 (더 정확하게)
-        uint32 AtlasSize = GetDefaultAtlasSize(EShadowAtlasType::PointSpotLight);
-        uint64 TotalRequiredArea = 0; // uint64로 오버플로우 방지
-
-        uint32 LightIndex = 0;
-        for (UPointLightComponent* Light : Lights)
+        for (USpotLightComponent* Light : SpotLights)
         {
             if (Light && Light->GetLightEnabled())
             {
-                uint32 Resolution = 0;
-
-                if (bUseLOD)
-                {
-                    // LOD 적용: 클러스터 영향도 조회
-                    uint32 AffectedClusters = 0;
-                    auto It = LightClusterInfluences->find(LightIndex);
-                    if (It != LightClusterInfluences->end())
-                    {
-                        AffectedClusters = It->second;
-                    }
-                    Resolution = CalculatePointSpotLightResolutionLOD(Light, CameraPos, AffectedClusters);
-                }
-                else
-                {
-                    // 기존 방식
-                    Resolution = CalculatePointSpotLightResolution(Light);
-                }
-
-                TotalRequiredArea += (uint64)Resolution * Resolution;
+                Light->MarkShadowDirty();
             }
-            LightIndex++;
+        }
+        bPointSpotAtlasClearedForSpot = false;
+    }
+
+    if (bHasPointLights && bPointSpotAtlasClearedForPoint)
+    {
+        for (UPointLightComponent* Light : PointLights)
+        {
+            if (Light && Light->GetLightEnabled())
+            {
+                Light->MarkShadowDirty();
+            }
+        }
+        bPointSpotAtlasClearedForPoint = false;
+    }
+
+    if (bHasSpotLights)
+    {
+        TArray<ULightComponentBase*> LightsToRemove;
+        for (auto& Pair : CurrentLightAllocations)
+        {
+            if (dynamic_cast<USpotLightComponent*>(Pair.first))
+            {
+                LightsToRemove.push_back(Pair.first);
+            }
+        }
+        for (auto* Light : LightsToRemove)
+        {
+            CurrentLightAllocations.erase(Light);
+        }
+    }
+
+    if (bHasPointLights)
+    {
+        TArray<ULightComponentBase*> LightsToRemove;
+        for (auto& Pair : CurrentLightAllocations)
+        {
+            if (dynamic_cast<UPointLightComponent*>(Pair.first))
+            {
+                LightsToRemove.push_back(Pair.first);
+            }
+        }
+        for (auto* Light : LightsToRemove)
+        {
+            CurrentLightAllocations.erase(Light);
+        }
+    }
+
+    const uint32 AtlasSize = GetDefaultAtlasSize(EShadowAtlasType::PointSpotLight);
+    const bool bUseLODForSpot = bHasSpotLights && (CameraPos != nullptr) && (LightClusterInfluences != nullptr);
+
+    struct FSpotEntry
+    {
+        USpotLightComponent* Light = nullptr;
+        uint32 Resolution = 0;
+    };
+
+    struct FPointEntry
+    {
+        UPointLightComponent* Light = nullptr;
+        uint32 Resolution = 0;
+    };
+
+    TArray<FSpotEntry> SpotEntries;
+    TArray<FLightAllocationPair> SpotReusedPairs;
+    TMap<USpotLightComponent*, FShadowAtlasAllocation> SpotReuseCache;
+    bool bSpotRequiresRebuild = false;
+    uint32 SpotActiveCount = 0;
+    uint64 SpotRequiredArea = 0;
+
+    if (bHasSpotLights)
+    {
+        SpotEntries.reserve(SpotLights.size());
+        SpotReusedPairs.reserve(SpotLights.size());
+
+        for (uint32 LightIndex = 0; LightIndex < SpotLights.size(); ++LightIndex)
+        {
+            USpotLightComponent* Light = SpotLights[LightIndex];
+            if (!Light || !Light->GetLightEnabled())
+            {
+                continue;
+            }
+
+            ++SpotActiveCount;
+
+            FSpotEntry Entry;
+            Entry.Light = Light;
+
+            if (bUseLODForSpot)
+            {
+                uint32 AffectedClusters = 0;
+                auto ClusterIt = LightClusterInfluences->find(LightIndex);
+                if (ClusterIt != LightClusterInfluences->end())
+                {
+                    AffectedClusters = ClusterIt->second;
+                }
+
+                Entry.Resolution = CalculatePointSpotLightResolutionLOD(
+                    static_cast<UPointLightComponent*>(Light),
+                    *CameraPos,
+                    AffectedClusters);
+            }
+            else
+            {
+                Entry.Resolution = CalculateSpotLightResolution(Light);
+            }
+
+            SpotEntries.push_back(Entry);
+            SpotRequiredArea += static_cast<uint64>(Entry.Resolution) * Entry.Resolution;
+
+            auto PrevIt = PreviousSpotAllocations.find(Light);
+            bool bNeedsRealloc = Light->IsShadowDirty() || (PrevIt == PreviousSpotAllocations.end());
+
+            if (!bNeedsRealloc && PrevIt != PreviousSpotAllocations.end())
+            {
+                if (!PrevIt->second.IsValid())
+                {
+                    bNeedsRealloc = true;
+                }
+            }
+
+            if (bNeedsRealloc)
+            {
+                bSpotRequiresRebuild = true;
+            }
+            else if (PrevIt != PreviousSpotAllocations.end())
+            {
+                FLightAllocationPair Pair;
+                Pair.Light = Entry.Light;
+                Pair.ShadowResolution = Entry.Resolution;
+                Pair.CubeFaceIndex = 0;
+                Pair.Allocation = PrevIt->second;
+
+                SpotReusedPairs.push_back(Pair);
+                SpotReuseCache[Light] = PrevIt->second;
+            }
         }
 
-        // Atlas 면적 기준으로 필요한 Slice 개수 계산 (85% 효율 가정, Packing 손실)
-        // MaxRects BSSF 알고리즘은 일반적으로 80~90% 효율을 보임
-        uint64 AtlasArea = (uint64)AtlasSize * AtlasSize;
-        uint64 EffectiveAtlasArea = (AtlasArea * 85) / 100; // 85% 효율
-        uint32 RequiredSlices = (uint32)((TotalRequiredArea + EffectiveAtlasArea - 1) / EffectiveAtlasArea);
-
-        // 최소 1개는 필요
-        if (RequiredSlices < 1) RequiredSlices = 1;
-
-        // 현재 Capacity가 부족하면 미리 확장
-        while (PointSpotArrayCapacity < RequiredSlices)
+        if (SpotActiveCount > 0)
         {
-            UE_LOG_INFO("ShadowAtlasManager: PointSpot Atlas 사전 확장 필요 (%d lights, %d slices needed, capacity: %d)",
-                TotalLights, RequiredSlices, PointSpotArrayCapacity);
-
-            if (!ExpandAtlasArray(EShadowAtlasType::PointSpotLight))
+            uint64 AtlasArea = static_cast<uint64>(AtlasSize) * AtlasSize;
+            uint64 EffectiveAtlasArea = (AtlasArea * 85) / 100;
+            uint32 RequiredSlices = static_cast<uint32>((SpotRequiredArea + EffectiveAtlasArea - 1) / EffectiveAtlasArea);
+            if (RequiredSlices < 1)
             {
-                UE_LOG_ERROR("ShadowAtlasManager: PointSpot Atlas 사전 확장 실패");
-                break;
+                RequiredSlices = 1;
+            }
+
+            while (PointSpotArrayCapacity < RequiredSlices)
+            {
+                UE_LOG_INFO("ShadowAtlasManager: PointSpot Atlas 사전 확장 (Spot) 필요 (%d lights, %d slices, capacity: %d)",
+                    SpotActiveCount, RequiredSlices, PointSpotArrayCapacity);
+
+                if (!ExpandAtlasArray(EShadowAtlasType::PointSpotLight))
+                {
+                    UE_LOG_ERROR("ShadowAtlasManager: SpotLight Atlas 사전 확장 실패");
+                    break;
+                }
             }
         }
     }
 
-    // ===========================================================================
-    // 0-2단계: CurrentLightAllocations에서 기존 PointSpot 할당 정보 제거
-    // (DirectionalLight 할당 정보는 유지)
-    // ===========================================================================
-    // PointSpot Light 할당 정보만 선택적으로 제거
+    TArray<FPointEntry> PointEntries;
+    TArray<FLightAllocationPair> PointReusedPairs;
+    TMap<UPointLightComponent*, FPointLightAllocationCache> PointReuseCache;
+    bool bPointRequiresRebuild = false;
+    uint32 PointActiveCount = 0;
+    uint64 PointRequiredArea = 0;
+
+    if (bHasPointLights)
+    {
+        PointEntries.reserve(PointLights.size());
+        PointReusedPairs.reserve(PointLights.size() * 6);
+
+        for (UPointLightComponent* Light : PointLights)
+        {
+            if (!Light || !Light->GetLightEnabled())
+            {
+                continue;
+            }
+
+            ++PointActiveCount;
+
+            FPointEntry Entry;
+            Entry.Light = Light;
+            Entry.Resolution = CalculatePointLightResolution(Light);
+
+            PointEntries.push_back(Entry);
+            PointRequiredArea += static_cast<uint64>(Entry.Resolution) * Entry.Resolution * 6;
+
+            auto PrevIt = PreviousPointAllocations.find(Light);
+            bool bNeedsRealloc = Light->IsShadowDirty() || (PrevIt == PreviousPointAllocations.end());
+
+            if (!bNeedsRealloc && PrevIt != PreviousPointAllocations.end())
+            {
+                const FPointLightAllocationCache& Cache = PrevIt->second;
+                if (Cache.ShadowResolution != Entry.Resolution)
+                {
+                    bNeedsRealloc = true;
+                }
+                else
+                {
+                    for (const FShadowAtlasAllocation& FaceAlloc : Cache.FaceAllocations)
+                    {
+                        if (!FaceAlloc.IsValid())
+                        {
+                            bNeedsRealloc = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (bNeedsRealloc)
+            {
+                bPointRequiresRebuild = true;
+            }
+            else if (PrevIt != PreviousPointAllocations.end())
+            {
+                const FPointLightAllocationCache& Cache = PrevIt->second;
+                for (uint32 Face = 0; Face < 6; ++Face)
+                {
+                    FLightAllocationPair Pair;
+                    Pair.Light = Entry.Light;
+                    Pair.ShadowResolution = Cache.ShadowResolution;
+                    Pair.CubeFaceIndex = Face;
+                    Pair.Allocation = Cache.FaceAllocations[Face];
+                    PointReusedPairs.push_back(Pair);
+                }
+
+                PointReuseCache[Light] = Cache;
+            }
+        }
+
+        if (PointActiveCount > 0)
+        {
+            uint64 AtlasArea = static_cast<uint64>(AtlasSize) * AtlasSize;
+            uint64 EffectiveAtlasArea = (AtlasArea * 85) / 100;
+            uint32 RequiredSlices = static_cast<uint32>((PointRequiredArea + EffectiveAtlasArea - 1) / EffectiveAtlasArea);
+            if (RequiredSlices < 1)
+            {
+                RequiredSlices = 1;
+            }
+
+            while (PointSpotArrayCapacity < RequiredSlices)
+            {
+                UE_LOG_INFO("ShadowAtlasManager: PointSpot Atlas 사전 확장 (Point) 필요 (%d lights, %d slices, capacity: %d)",
+                    PointActiveCount, RequiredSlices, PointSpotArrayCapacity);
+
+                if (!ExpandAtlasArray(EShadowAtlasType::PointSpotLight))
+                {
+                    UE_LOG_ERROR("ShadowAtlasManager: PointLight Atlas 사전 확장 실패");
+                    break;
+                }
+            }
+        }
+    }
+
+    const bool bNeedsFullRebuild = bSpotRequiresRebuild || bPointRequiresRebuild;
+
+    if (bNeedsFullRebuild)
+    {
+        ClearPointSpotAtlas();
+
+        bPointSpotAtlasClearedForSpot = false;
+        bPointSpotAtlasClearedForPoint = false;
+
+        for (const FSpotEntry& Entry : SpotEntries)
+        {
+            if (Entry.Light && Entry.Light->GetLightEnabled())
+            {
+                Entry.Light->MarkShadowDirty();
+            }
+        }
+
+        for (const FPointEntry& Entry : PointEntries)
+        {
+            if (Entry.Light && Entry.Light->GetLightEnabled())
+            {
+                Entry.Light->MarkShadowDirty();
+            }
+        }
+    }
+
+    if (!SpotEntries.empty())
+    {
+        std::sort(SpotEntries.begin(), SpotEntries.end(), [](const FSpotEntry& A, const FSpotEntry& B)
+        {
+            return A.Resolution > B.Resolution;
+        });
+
+        TMap<USpotLightComponent*, FShadowAtlasAllocation> NewSpotAllocations;
+
+        if (bNeedsFullRebuild)
+        {
+            for (const FSpotEntry& Entry : SpotEntries)
+            {
+                FShadowAtlasAllocation Allocation;
+                if (!AllocateRegion(EShadowAtlasType::PointSpotLight, Entry.Resolution, Entry.Resolution, Allocation))
+                {
+                    UE_LOG_WARNING("ShadowAtlasManager: Spot Light Shadow Map 할당 실패 (Resolution: %d)", Entry.Resolution);
+                    continue;
+                }
+
+                FLightAllocationPair Pair;
+                Pair.Light = Entry.Light;
+                Pair.ShadowResolution = Entry.Resolution;
+                Pair.CubeFaceIndex = 0;
+                Pair.Allocation = Allocation;
+
+                Result.SpotLights.push_back(Pair);
+                NewSpotAllocations[Entry.Light] = Allocation;
+                CurrentLightAllocations[Entry.Light] = Allocation;
+            }
+        }
+        else
+        {
+            Result.SpotLights = SpotReusedPairs;
+            for (const auto& CachePair : SpotReuseCache)
+            {
+                if (CachePair.first)
+                {
+                    CurrentLightAllocations[CachePair.first] = CachePair.second;
+                }
+            }
+            NewSpotAllocations = SpotReuseCache;
+        }
+
+        PreviousSpotAllocations = NewSpotAllocations;
+    }
+    else
+    {
+        PreviousSpotAllocations.clear();
+    }
+
+    if (!PointEntries.empty())
+    {
+        std::sort(PointEntries.begin(), PointEntries.end(), [](const FPointEntry& A, const FPointEntry& B)
+        {
+            return A.Resolution > B.Resolution;
+        });
+
+        TMap<UPointLightComponent*, FPointLightAllocationCache> NewPointAllocations;
+
+        if (bNeedsFullRebuild)
+        {
+            for (const FPointEntry& Entry : PointEntries)
+            {
+                FPointLightAllocationCache Cache;
+                Cache.ShadowResolution = Entry.Resolution;
+
+                size_t ResultStart = Result.PointLights.size();
+                bool bAllFacesAllocated = true;
+
+                for (uint32 Face = 0; Face < 6; ++Face)
+                {
+                    FShadowAtlasAllocation FaceAllocation;
+                    if (!AllocateRegion(EShadowAtlasType::PointSpotLight, Entry.Resolution, Entry.Resolution, FaceAllocation))
+                    {
+                        bAllFacesAllocated = false;
+                        break;
+                    }
+
+                    Cache.FaceAllocations[Face] = FaceAllocation;
+
+                    FLightAllocationPair Pair;
+                    Pair.Light = Entry.Light;
+                    Pair.ShadowResolution = Entry.Resolution;
+                    Pair.CubeFaceIndex = Face;
+                    Pair.Allocation = FaceAllocation;
+                    Result.PointLights.push_back(Pair);
+                }
+
+                if (bAllFacesAllocated)
+                {
+                    NewPointAllocations[Entry.Light] = Cache;
+                    if (Cache.FaceAllocations[0].IsValid())
+                    {
+                        CurrentLightAllocations[Entry.Light] = Cache.FaceAllocations[0];
+                    }
+                }
+                else
+                {
+                    Result.PointLights.resize(ResultStart);
+                    UE_LOG_WARNING("ShadowAtlasManager: Point Light Shadow Map 할당 실패 (Resolution: %d)", Entry.Resolution);
+                }
+            }
+        }
+        else
+        {
+            Result.PointLights = PointReusedPairs;
+            for (const auto& CachePair : PointReuseCache)
+            {
+                if (CachePair.first && CachePair.second.FaceAllocations[0].IsValid())
+                {
+                    CurrentLightAllocations[CachePair.first] = CachePair.second.FaceAllocations[0];
+                }
+            }
+            NewPointAllocations = PointReuseCache;
+        }
+
+        PreviousPointAllocations = NewPointAllocations;
+    }
+    else
+    {
+        PreviousPointAllocations.clear();
+    }
+
+    /*UE_LOG_INFO("ShadowAtlasManager: Point/Spot 재할당 완료 (PointFaces: %d, SpotLights: %d)",
+        Result.PointLights.size(), Result.SpotLights.size());*/
+
+    return Result;
+}
+
+void FShadowAtlasManager::ClearPointSpotAtlas()
+{
+    for (auto& Atlas : PointSpotAtlases)
+    {
+        if (Atlas.Atlas)
+        {
+            Atlas.Atlas->Clear();
+        }
+    }
+
     TArray<ULightComponentBase*> LightsToRemove;
     for (auto& Pair : CurrentLightAllocations)
     {
-        // PointLightComponent 또는 SpotLightComponent인 경우만 제거
-        if (dynamic_cast<UPointLightComponent*>(Pair.first))
+        if (dynamic_cast<USpotLightComponent*>(Pair.first) ||
+            dynamic_cast<UPointLightComponent*>(Pair.first))
         {
             LightsToRemove.push_back(Pair.first);
         }
@@ -704,190 +1119,34 @@ TArray<FLightAllocationPair> FShadowAtlasManager::AllocatePointSpotLights(
         CurrentLightAllocations.erase(Light);
     }
 
-    // ===========================================================================
-    // 1단계: 더티 플래그를 확인하여 재할당이 필요한 라이트만 수집
-    // ===========================================================================
-    struct FSortEntry
+    PreviousSpotAllocations.clear();
+    PreviousPointAllocations.clear();
+
+    bPointSpotAtlasClearedForSpot = true;
+    bPointSpotAtlasClearedForPoint = true;
+}
+
+
+bool FShadowAtlasManager::GetPointLightFaceAllocation(UPointLightComponent* Light
+    , uint32 FaceIndex, FShadowAtlasAllocation& OutAllocation
+    , uint32& OutResolution) const
+{
+    OutResolution = 0;
+    if (!Light || FaceIndex >= 6)
     {
-        UPointLightComponent* Light = nullptr;
-        uint32 Resolution = 0;
-        bool bIsDirty = false;
-
-        bool operator<(const FSortEntry& Other) const
-        {
-            // First-Fit Decreasing: 큰 해상도부터
-            return Resolution > Other.Resolution;
-        }
-    };
-
-    TArray<FSortEntry> SortEntries;
-    TMap<UPointLightComponent*, FShadowAtlasAllocation> NewAllocations;
-
-    uint32 LightIndex = 0;
-    for (UPointLightComponent* Light : Lights)
-    {
-        if (!Light || !Light->GetLightEnabled())
-        {
-            LightIndex++;
-            continue;
-        }
-
-        FSortEntry Entry;
-        Entry.Light = Light;
-
-        // LOD 적용 여부에 따라 해상도 계산
-        if (bUseLOD)
-        {
-            uint32 AffectedClusters = 0;
-            auto It = LightClusterInfluences->find(LightIndex);
-            if (It != LightClusterInfluences->end())
-            {
-                AffectedClusters = It->second;
-            }
-            Entry.Resolution = CalculatePointSpotLightResolutionLOD(Light, CameraPos, AffectedClusters);
-        }
-        else
-        {
-            Entry.Resolution = CalculatePointSpotLightResolution(Light);
-        }
-
-        Entry.bIsDirty = Light->IsShadowDirty();
-        LightIndex++;
-
-        // 더티 라이트이거나 이전에 할당된 적이 없는 라이트만 재할당 필요
-        auto It = PreviousPointSpotAllocations.find(Light);
-        bool bNeedsRealloc = Entry.bIsDirty || (It == PreviousPointSpotAllocations.end());
-
-        // SpotLight는 Dirty 없으면 재할당하지 않도록 조정 ✅
-        if (bNeedsRealloc)
-        {
-            SortEntries.push_back(Entry);
-        }
-        else
-        {
-            // 더티하지 않으면 이전 할당 재사용
-            FShadowAtlasAllocation PrevAlloc = It->second;
-
-            FLightAllocationPair Pair;
-            Pair.Light = Entry.Light;  // Point Light는 직접 사용하지 않으므로 nullptr
-            Pair.Allocation = PrevAlloc;
-            Pair.ShadowResolution = Entry.Resolution;
-
-            Result.push_back(Pair);
-            NewAllocations[Light] = PrevAlloc;
-            // ✅ CurrentLightAllocations에도 등록 (DetailWindow 시각화용)
-            CurrentLightAllocations[Light] = PrevAlloc;
-        }
+        return false;
     }
 
-    // ===========================================================================
-    // 2단계: Sorting (First-Fit Decreasing)
-    // ===========================================================================
-    std::sort(SortEntries.begin(), SortEntries.end());
-
-    // ===========================================================================
-    // 3단계: 더티 라이트만 Atlas에 재할당
-    // ===========================================================================
-    if (!SortEntries.empty())
+    auto It = PreviousPointAllocations.find(Light);
+    if (It == PreviousPointAllocations.end())
     {
-        // 더티 라이트가 있으면 Atlas를 클리어하고 모든 라이트를 재할당
-        // (부분 재할당은 Fragmentation 문제로 복잡함)
-        for (auto& Atlas : PointSpotAtlases)
-        {
-            if (Atlas.Atlas)
-            {
-                Atlas.Atlas->Clear();
-            }
-        }
-
-        // 이전 할당 정보도 클리어
-        NewAllocations.clear();
-        Result.clear();
-
-        // ✅ Atlas를 Clear했으므로 모든 라이트를 Dirty로 마킹하여 재렌더링 강제
-        for (UPointLightComponent* Light : Lights)
-        {
-            if (Light && Light->GetLightEnabled())
-            {
-                Light->MarkShadowDirty();
-            }
-        }
-
-        // 모든 활성화된 라이트를 다시 정렬하여 재할당
-        SortEntries.clear();
-        LightIndex = 0;
-        for (UPointLightComponent* Light : Lights)
-        {
-            if (!Light || !Light->GetLightEnabled())
-            {
-                LightIndex++;
-                continue;
-            }
-
-            FSortEntry Entry;
-            Entry.Light = Light;
-
-            // LOD 적용 여부에 따라 해상도 계산
-            if (bUseLOD)
-            {
-                uint32 AffectedClusters = 0;
-                auto It = LightClusterInfluences->find(LightIndex);
-                if (It != LightClusterInfluences->end())
-                {
-                    AffectedClusters = It->second;
-                }
-                Entry.Resolution = CalculatePointSpotLightResolutionLOD(Light, CameraPos, AffectedClusters);
-            }
-            else
-            {
-                Entry.Resolution = CalculatePointSpotLightResolution(Light);
-            }
-
-            SortEntries.push_back(Entry);
-            LightIndex++;
-        }
-
-        std::sort(SortEntries.begin(), SortEntries.end());
-
-        // 재할당 수행
-        for (const FSortEntry& Entry : SortEntries)
-        {
-            FLightAllocationPair Pair;
-            Pair.Light = Entry.Light;  // DirectionalLight용 필드이므로 nullptr
-            Pair.ShadowResolution = Entry.Resolution;
-
-            // Point Light는 6면 큐브맵이 필요하지만, 일단 단일 Shadow Map으로 구현
-            // TODO: 큐브맵 Shadow Map 지원
-            bool bSuccess = AllocateRegion(
-                EShadowAtlasType::PointSpotLight,
-                Entry.Resolution,
-                Entry.Resolution,
-                Pair.Allocation
-            );
-
-            if (bSuccess)
-            {
-                Result.push_back(Pair);
-                NewAllocations[Entry.Light] = Pair.Allocation;
-                // Light별 할당 정보 저장 (DetailWindow 시각화용)
-                CurrentLightAllocations[Entry.Light] = Pair.Allocation;
-
-                // ✅ 더티 플래그는 ShadowMapPass에서 렌더링 후에 클리어되도록 변경
-                // Entry.Light->ClearShadowDirty();  // 제거: 렌더링 전에 클리어하면 안됨
-            }
-            else
-            {
-                UE_LOG_WARNING("ShadowAtlasManager: Point/Spot Light Shadow Map 할당 실패 (Resolution: %d)", Entry.Resolution);
-            }
-        }
+        return false;
     }
 
-    // ===========================================================================
-    // 4단계: 이전 할당 정보 업데이트
-    // ===========================================================================
-    PreviousPointSpotAllocations = NewAllocations;
-
-    return Result;
+    const FPointLightAllocationCache& Cache = It->second;
+    OutResolution = Cache.ShadowResolution;
+    OutAllocation = Cache.FaceAllocations[FaceIndex];
+    return OutAllocation.IsValid();
 }
 
 const FShadowAtlasAllocation* FShadowAtlasManager::GetLightAllocation(ULightComponentBase* Light) const

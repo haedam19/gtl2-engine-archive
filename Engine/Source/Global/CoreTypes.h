@@ -196,7 +196,10 @@ struct FPointLightInfo
 	float Intensity;
 	float Range;
 	float DistanceFalloffExponent;
-	FVector2 padding;
+	uint32 AtlasIndex;        // Shadow Atlas 인덱스
+	uint32 ShadowEnabled;     // Shadow 활성화 여부
+	float ShadowBias;
+	FVector Padding;
 };
 
 //StructuredBuffer padding 없어도됨

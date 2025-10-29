@@ -751,6 +751,122 @@ float CalculateSpotShadow(FSpotLightInfo Info, float3 WorldPos)
 #endif
 }
 
+float CalculatePointShadow(FPointLightInfo Info, float3 WorldPos)
+{
+    float3 Direction = SafeNormalize3(WorldPos - Info.Position);
+    if (dot(Direction, Direction) < 1e-12)
+        return 1.0f;
+    
+    // Direction의 x, y, z 절댓값 중 가장 큰 게 무엇인지 찾기 (값 말고 어느 축인지) 
+    float3 AbsDirection = abs(Direction);
+    float MaxComponent = max(max(AbsDirection.x, AbsDirection.y), AbsDirection.z);
+    
+    // 절댓값 가장 큰 축의 부호를 체크 -> 6개의 큐브맵 면 중 어느 면인지 결정
+    // +X(0), -X(1), +Y(2), -Y(3), +Z(4), -Z(5)
+    uint CubeFaceIndex = 0;
+    
+    if (MaxComponent == AbsDirection.x)
+    {
+        CubeFaceIndex = (Direction.x > 0.0f) ? 0 : 1; // +X : -X
+    }
+    else if (MaxComponent == AbsDirection.y)
+    {
+        CubeFaceIndex = (Direction.y > 0.0f) ? 2 : 3; // +Y : -Y
+    }
+    else // MaxComponent == AbsDirection.z
+    {
+        CubeFaceIndex = (Direction.z > 0.0f) ? 4 : 5; // +Z : -Z
+    }
+
+// ============= 아래는 copilot가 작성한 코드. 미완성 코드임. =============
+    
+//    // 해당 큐브맵 면의 Shadow Region 정보 가져오기
+//    // Info.ShadowRegionIndex는 첫 번째 면(+X)의 인덱스이고, 
+//    // 나머지 5개 면은 연속된 인덱스에 저장되어 있음
+//    FShadowAtlasRegionInfo region = ShadowRegions[Info.ShadowRegionIndex + CubeFaceIndex];
+    
+//    // 선택된 큐브맵 면의 Light View/Projection Matrix 가져오기
+//    // FPointLightInfo에 6개 면의 행렬이 저장되어 있다고 가정
+//    // (실제 구현에서는 ShadowRegions에 행렬 정보가 포함되어야 함)
+//    row_major float4x4 LightViewMatrix = Info.LightViewMatrices[CubeFaceIndex];
+//    row_major float4x4 LightProjectionMatrix = Info.LightProjectionMatrices[CubeFaceIndex];
+    
+//    // Light Space로 변환
+//    float4 lightViewPos = mul(float4(WorldPos, 1.0f), LightViewMatrix);
+//    float4 lightClipPos = mul(lightViewPos, LightProjectionMatrix);
+    
+//    // Perspective divide 및 [0,1] 범위로 변환
+//    float3 projCoords = lightClipPos.xyz / lightClipPos.w;
+//    projCoords.x = projCoords.x * 0.5f + 0.5f;
+//    projCoords.y = -projCoords.y * 0.5f + 0.5f;
+    
+//    // Shadow Map 범위 밖이면 그림자 없음
+//    if (projCoords.x < 0.0f || projCoords.x > 1.0f ||
+//        projCoords.y < 0.0f || projCoords.y > 1.0f ||
+//        projCoords.z < 0.0f || projCoords.z > 1.0f)
+//    {
+//        return 1.0f;
+//    }
+    
+//    // Shadow Map UV를 Atlas UV로 변환
+//    float2 atlasUV = projCoords.xy * region.UVTransform.zw + region.UVTransform.xy;
+    
+//    float currentDepth = projCoords.z;
+//    float bias = Info.ShadowBias;
+    
+//#if SHADOW_FILTER_VSM
+//    // VSM: Variance Shadow Mapping
+//    float2 moments = PointSpotAtlases.Sample(ShadowSampler, float3(atlasUV, region.AtlasIndex));
+    
+//    float mean = moments.x;
+//    float variance = max(moments.y - mean * mean, 0.00001f);
+//    float depth = currentDepth - bias;
+    
+//    if (depth <= mean)
+//        return 1.0f;
+    
+//    float d = depth - mean;
+//    float p_max = variance / (variance + d * d);
+    
+//    // Light bleeding reduction
+//    const float LBR = 0.3f;
+//    p_max = saturate((p_max - LBR) / (1.0f - LBR));
+    
+//    // Shadow sharpening
+//    float sharpen = max(0.0f, Info.ShadowSharpen);
+//    float shadow = saturate((p_max - 0.5f) * (sharpen + 1.0f) + 0.5f);
+    
+//    return shadow;
+//#else
+//    // PCF: Percentage Closer Filtering
+//    float shadow = 0.0f;
+//    float2 texelSize = 1.0f / float2(4096.0f, 4096.0f);
+    
+//    [unroll]
+//    for (int x = -1; x <= 1; ++x)
+//    {
+//        [unroll]
+//        for (int y = -1; y <= 1; ++y)
+//        {
+//            float2 offset = float2(x, y) * texelSize;
+//            float shadowMapDepth = PointSpotAtlases.SampleLevel(ShadowSampler, float3(atlasUV + offset, region.AtlasIndex), 0).r;
+//            shadow += (currentDepth - bias) > shadowMapDepth ? 0.0f : 1.0f;
+//        }
+//    }
+    
+//    shadow /= 9.0f;
+//    shadow = saturate(shadow);
+    
+//    // Shadow sharpening
+//    float sharpen = max(0.0f, Info.ShadowSharpen);
+//    shadow = saturate((shadow - 0.5f) * (sharpen + 1.0f) + 0.5f);
+    
+//    return shadow;
+//#endif
+    
+    return 1.0f; // 임시로 항상 그림자 없음 반환
+}
+
 // Vertex Shader
 PS_INPUT Uber_VS(VS_INPUT Input)
 {
@@ -852,7 +968,6 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     
     if (bIsCSM.x < 0.5f)
     {
-        
         shadowFactor = CalculateShadow(Input.LightSpacePos);
     }
     else
@@ -887,6 +1002,11 @@ PS_OUTPUT Uber_PS(PS_INPUT Input) : SV_TARGET
     for (uint i = 0; i < PointLightCount ; i++)
     {
         FPointLightInfo PointLight = GetPointLight(LightIndicesOffset + i);
+        
+    
+        /* SHADOW FACTOR CALCULATION PLACE HOLDER*/
+        
+    
         ADD_ILLUM(Illumination, CalculatePointLight(PointLight, N, Input.WorldPosition, ViewWorldLocation));
     }
 

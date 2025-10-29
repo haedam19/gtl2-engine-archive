@@ -25,7 +25,10 @@ struct FPointLightInfo
     float Intensity;
     float Range;
     float DistanceFalloffExponent;
-    float2 Padding;
+    uint AtlasIndex;
+    uint ShadowEnabled;
+    float ShadowBias;
+    float3 Padding;
 };
 
 struct FSpotLightInfo
