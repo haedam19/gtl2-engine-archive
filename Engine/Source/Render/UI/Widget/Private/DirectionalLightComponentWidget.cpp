@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "Render/UI/Widget/Public/DirectionalLightComponentWidget.h"
 #include "Component/Public/DirectionalLightComponent.h"
 #include "Editor/Public/Editor.h"
@@ -214,6 +214,16 @@ void UDirectionalLightComponentWidget::RenderWidget()
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("0은 균등 분할, 1은 로그 분할에 가깝습니다.\n씬에 맞춰 적절한 분포를 찾으세요.");
+        }
+
+        bool bEnableTexelSnapping = DirectionalLightComponent->GetEnableTexelSnapping();
+        if (ImGui::Checkbox("Enable Texel Snapping", &bEnableTexelSnapping))
+        {
+            DirectionalLightComponent->SetEnableTexelSnapping(bEnableTexelSnapping);
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("텍셀 그리드 스냅을 활성화하여 카메라 움직임 시 그림자 떨림을 감소시킵니다. 끄면 더 부드럽지만 미세한 떨림이 발생할 수 있습니다.");
         }
 
         ImGui::Separator();

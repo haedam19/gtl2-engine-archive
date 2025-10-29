@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 
 #include "Component/Public/DirectionalLightComponent.h"
 #include "Render/UI/Widget/Public/DirectionalLightComponentWidget.h"
@@ -112,6 +112,16 @@ void UDirectionalLightComponent::Serialize(const bool bInIsLoading, JSON& InOutH
 {
     Super::Serialize(bInIsLoading, InOutHandle);
     
+    if (bInIsLoading)
+    {
+        FString EnableTexelSnappingString;
+        FJsonSerializer::ReadString(InOutHandle, "bEnableTexelSnapping", EnableTexelSnappingString, "true");
+        SetEnableTexelSnapping(EnableTexelSnappingString == "true");
+    }
+    else
+    {
+        InOutHandle["bEnableTexelSnapping"] = GetEnableTexelSnapping() ? "true" : "false";
+    }
 }
 
 UObject* UDirectionalLightComponent::Duplicate()

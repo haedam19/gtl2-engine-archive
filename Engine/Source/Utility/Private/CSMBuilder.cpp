@@ -62,7 +62,7 @@ void FCSMBuilder::CalculateFrustumCorners(UCamera* Camera, float NearPlane, floa
     OutCorners[7] = FarCenter - Up * FarHeight + Right * FarWidth;
 }
 
-void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, const FVector& LightDirection, const FVector& SceneMin, const FVector& SceneMax, bool bHasSceneBounds, FMatrix& OutView, FMatrix& OutProjection)
+void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, const FVector& LightDirection, const FVector& SceneMin, const FVector& SceneMax, bool bHasSceneBounds, bool bEnableTexelSnapping, FMatrix& OutView, FMatrix& OutProjection)
 {
     std::array<FVector, 8> SceneBoundsPoints{};
     if (bHasSceneBounds)
@@ -192,7 +192,8 @@ void FCSMBuilder::BuildCascadeMatrices(const std::array<FVector, 8>& Corners, co
     const float WorldUnitsPerTexelX = (EffectiveSize > 0.0f) ? (Width / EffectiveSize) : 0.0f;
     const float WorldUnitsPerTexelY = (EffectiveSize > 0.0f) ? (Height / EffectiveSize) : 0.0f;
 
-    if (WorldUnitsPerTexelX > 0.0f && WorldUnitsPerTexelY > 0.0f)
+    // ===== Texel Snapping (optional) =====
+    if (bEnableTexelSnapping && WorldUnitsPerTexelX > 0.0f && WorldUnitsPerTexelY > 0.0f)
     {
         const float invX = 1.0f / WorldUnitsPerTexelX;
         const float invY = 1.0f / WorldUnitsPerTexelY;
@@ -286,7 +287,7 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
         // 이전에 정의한 BuildCascadeMatrices 함수를 통해 Light의 View, Projection 행렬과 Cascade에 대한 Frustum 8 좌표를 얻는다
         FMatrix ViewMatrix;
         FMatrix ProjectionMatrix;
-        BuildCascadeMatrices(Corners, LightDirection, SceneMin, SceneMax, bHasSceneBounds, ViewMatrix, ProjectionMatrix);
+        BuildCascadeMatrices(Corners, LightDirection, SceneMin, SceneMax, bHasSceneBounds, Light->GetEnableTexelSnapping(), ViewMatrix, ProjectionMatrix);
 
         // 같은 라이트라고 하더라도 각 Cascade에 대해 다른 View, Projection 행렬이 계산된다.
         OutData.CascadesLightView[CascadeIndex] = ViewMatrix;

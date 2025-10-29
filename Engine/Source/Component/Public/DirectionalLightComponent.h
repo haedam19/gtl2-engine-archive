@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <algorithm>
 
@@ -70,6 +70,9 @@ public:
     void SetShadowCascadeLambda(float InLambda) { ShadowCascadeLambda = std::clamp(InLambda, 0.0f, 1.0f); }
     float GetShadowCascadeLambda() const { return ShadowCascadeLambda; }
 
+    void SetEnableTexelSnapping(bool InEnable) { bEnableTexelSnapping = InEnable; }
+    bool GetEnableTexelSnapping() const { return bEnableTexelSnapping; }
+
     // Shadow Resolution
     void SetShadowResolutionScale(float InScale) { ShadowResolutionScale = InScale; }
     float GetShadowResolutionScale() const { return ShadowResolutionScale; }
@@ -102,5 +105,8 @@ private:
     float ShadowBias = 0.001f;           // Depth bias
     float ShadowSlopeBias = 1.0f;        // Slope-scaled depth bias
     float ShadowSharpen = 1.0f;          // Edge sharpening
+
+    // CSM Stabilization
+    bool bEnableTexelSnapping = true;    // Texel grid snapping to reduce shimmering
 };
 

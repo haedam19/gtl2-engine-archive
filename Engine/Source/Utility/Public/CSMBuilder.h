@@ -31,7 +31,7 @@ public:
 private:
 	static FVector4 BuildCascadeScaleOffset(uint32 CascadeIndex);
 	static void CalculateFrustumCorners(UCamera* Camera, float NearPlane, float FarPlane, std::array<FVector, 8>& OutCorners);
-	static void BuildCascadeMatrices(const std::array<FVector, 8>& Corners, const FVector& LightDirection, const FVector& SceneMin, const FVector& SceneMax, bool bHasSceneBounds, FMatrix& OutView, FMatrix& OutProjection);
+	static void BuildCascadeMatrices(const std::array<FVector, 8>& Corners, const FVector& LightDirection, const FVector& SceneMin, const FVector& SceneMax, bool bHasSceneBounds, bool bEnableTexelSnapping, FMatrix& OutView, FMatrix& OutProjection);
 	static void FillFallbackCascade(UDirectionalLightComponent* Light, FCascadeShadowConstants& OutData);
 };
 
