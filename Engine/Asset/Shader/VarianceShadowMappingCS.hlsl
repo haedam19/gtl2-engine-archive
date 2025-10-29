@@ -1,65 +1,85 @@
-// Variance Shadow Mapping Compute Shaders
+// ============================================================================
+// Variance Shadow Mapping Compute Shaders (Texture2DArray Support)
+// ============================================================================
 // 3-pass architecture: DepthToMoment -> BlurHorizontal -> BlurVertical
+// Processes all atlas slices in parallel using 3D Dispatch (X, Y, NumSlices)
+// Optimized with 3x3 Gaussian kernel for better performance
+// ============================================================================
 
-// Gaussian 5x5 kernel weights (sigma=1.0)
-static const float Gaussian5[5] = { 0.06136, 0.24477, 0.38774, 0.24477, 0.06136 };
+// Gaussian 3x3 kernel weights (Optimized from 5x5)
+// [0.279, 0.442, 0.279] - separable kernel
+static const float Gaussian3[3] = { 0.27901, 0.44198, 0.27901 };
 
-// ========================================
-// Pass 1: Depth → Moment Map
-// ========================================
-Texture2D<float> DepthTexture : register(t0);
-RWTexture2D<float2> MomentOutput : register(u0);
+// ============================================================================
+// Constant Buffer (Atlas Parameters)
+// ============================================================================
+cbuffer VSMParams : register(b0)
+{
+    uint AtlasResolution;  // 4096 for DirectionalCSM, 4096 for PointSpot
+    uint MaxSliceIndex;    // 최대 slice index (0부터 시작)
+    uint2 Padding;
+}
+
+// ============================================================================
+// Pass 1: Depth → Moment Map (Texture2DArray)
+// ============================================================================
+Texture2DArray<float> DepthTextureArray : register(t0);
+RWTexture2DArray<float2> MomentOutputArray : register(u0);
 
 [numthreads(16, 16, 1)]
 void DepthToMoment(uint3 DTid : SV_DispatchThreadID)
 {
-    if (DTid.x >= 2048 || DTid.y >= 2048) return;
+    // DTid.z = slice index (0 to MaxSliceIndex)
+    if (DTid.x >= AtlasResolution || DTid.y >= AtlasResolution || DTid.z > MaxSliceIndex)
+        return;
 
-    float depth = DepthTexture[DTid.xy];
-    MomentOutput[DTid.xy] = float2(depth, depth * depth);
+    float depth = DepthTextureArray[DTid];  // Sample from slice DTid.z
+    MomentOutputArray[DTid] = float2(depth, depth * depth);
 }
 
-// ========================================
-// Pass 2: Horizontal Blur
-// ========================================
-Texture2D<float2> MomentInput : register(t0);
-RWTexture2D<float2> TempOutput : register(u0);
+// ============================================================================
+// Pass 2: Horizontal Blur (Texture2DArray) - 3x3 Kernel
+// ============================================================================
+Texture2DArray<float2> MomentInputArray : register(t0);
+RWTexture2DArray<float2> TempOutputArray : register(u0);
 
 [numthreads(16, 16, 1)]
 void BlurHorizontal(uint3 DTid : SV_DispatchThreadID)
 {
-    if (DTid.x >= 2048 || DTid.y >= 2048) return;
+    if (DTid.x >= AtlasResolution || DTid.y >= AtlasResolution || DTid.z > MaxSliceIndex)
+        return;
 
     float2 result = float2(0, 0);
 
     [unroll]
-    for (int i = -2; i <= 2; i++)
+    for (int i = -1; i <= 1; i++)
     {
-        int x = clamp((int)DTid.x + i, 0, 2047);
-        result += MomentInput[uint2(x, DTid.y)] * Gaussian5[i + 2];
+        int x = clamp((int)DTid.x + i, 0, (int)AtlasResolution - 1);
+        result += MomentInputArray[uint3(x, DTid.y, DTid.z)] * Gaussian3[i + 1];
     }
 
-    TempOutput[DTid.xy] = result;
+    TempOutputArray[DTid] = result;
 }
 
-// ========================================
-// Pass 3: Vertical Blur
-// ========================================
-Texture2D<float2> TempInput : register(t0);
+// ============================================================================
+// Pass 3: Vertical Blur (Texture2DArray) - 3x3 Kernel
+// ============================================================================
+Texture2DArray<float2> TempInputArray : register(t0);
 
 [numthreads(16, 16, 1)]
 void BlurVertical(uint3 DTid : SV_DispatchThreadID)
 {
-    if (DTid.x >= 2048 || DTid.y >= 2048) return;
+    if (DTid.x >= AtlasResolution || DTid.y >= AtlasResolution || DTid.z > MaxSliceIndex)
+        return;
 
     float2 result = float2(0, 0);
 
     [unroll]
-    for (int i = -2; i <= 2; i++)
+    for (int i = -1; i <= 1; i++)
     {
-        int y = clamp((int)DTid.y + i, 0, 2047);
-        result += TempInput[uint2(DTid.x, y)] * Gaussian5[i + 2];
+        int y = clamp((int)DTid.y + i, 0, (int)AtlasResolution - 1);
+        result += TempInputArray[uint3(DTid.x, y, DTid.z)] * Gaussian3[i + 1];
     }
 
-    MomentOutput[DTid.xy] = result;
+    MomentOutputArray[DTid] = result;
 }

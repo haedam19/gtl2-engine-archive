@@ -417,6 +417,13 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
 		ID3D11DepthStencilView* dsv = allocations.front()->Allocation.DSV;
 
+		// 🛡️ DSV Validation
+		if (!dsv)
+		{
+			UE_LOG_ERROR("ShadowMapPass: Point Light DSV is nullptr (SliceIndex: %d) - Skipping slice", sliceIndex);
+			continue;
+		}
+
 		ID3D11RenderTargetView* NullRTV = nullptr;
 		Pipeline->SetRenderTargets(1, &NullRTV, dsv);
 
@@ -557,6 +564,13 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		if (lights.empty()) continue;
 
 		ID3D11DepthStencilView* dsv = lights.front()->Allocation.DSV;
+
+		// 🛡️ DSV Validation
+		if (!dsv)
+		{
+			UE_LOG_ERROR("ShadowMapPass: Spot Light DSV is nullptr (SliceIndex: %d) - Skipping slice", sliceIndex);
+			continue;
+		}
 
 		// RTV 끄고 DSV만 바인딩
 		ID3D11RenderTargetView* NullRTV = nullptr;
@@ -709,6 +723,14 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 	// (CSM을 사용한 경우 TempCascadeData에 저장된 데이터가 있음)
 	FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, TempCascadeData);
 	Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
+
+	// ===========================================================================
+	// VSM 필터 실행 (VSM 모드일 때만)
+	// ===========================================================================
+	if (Renderer.GetShadowFilterMode() == EShadowFilterMode::VSM)
+	{
+		ExecuteVSMFilter();
+	}
 }
 
 void FShadowMapPass::Release()
@@ -718,90 +740,217 @@ void FShadowMapPass::Release()
 
 bool FShadowMapPass::CreateVSMResources()
 {
-	auto* Device = URenderer::GetInstance().GetDevice();
+	auto& Renderer = URenderer::GetInstance();
+	auto* Device = Renderer.GetDevice();
 	if (!Device)
 	{
+		UE_LOG_ERROR("[VSM] Device is null");
 		return false;
 	}
 
-	D3D11_TEXTURE2D_DESC desc = {};
-	desc.Width = 2048;
-	desc.Height = 2048;
-	desc.MipLevels = 1;
-	desc.ArraySize = 1;
-	desc.Format = DXGI_FORMAT_R32G32_FLOAT;
-	desc.SampleDesc.Count = 1;
-	desc.Usage = D3D11_USAGE_DEFAULT;
-	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+	auto* AtlasManager = Renderer.GetShadowAtlasManager();
+	if (!AtlasManager)
+	{
+		UE_LOG_ERROR("[VSM] ShadowAtlasManager is null");
+		return false;
+	}
+
+	// Atlas Capacity와 해상도 가져오기
+	const uint32 DirectionalCapacity = AtlasManager->GetDirectionalArrayCapacity();
+	const uint32 PointSpotCapacity = AtlasManager->GetPointSpotArrayCapacity();
+	const uint32 DirectionalAtlasSize = AtlasManager->GetAtlasResolution(EShadowAtlasType::DirectionalCSM);
+	const uint32 PointSpotAtlasSize = AtlasManager->GetAtlasResolution(EShadowAtlasType::PointSpotLight);
 
 	HRESULT hr = S_OK;
 
-	hr = Device->CreateTexture2D(&desc, nullptr, &VSMMomentMap);
-	if (FAILED(hr))
+	// ========================================================================
+	// DirectionalCSM Atlas용 VSM Resources 생성
+	// ========================================================================
 	{
-		UE_LOG_ERROR("[VSM] Failed to create VSMMomentMap: 0x%08X", hr);
-		return false;
+		D3D11_TEXTURE2D_DESC texDesc = {};
+		texDesc.Width = DirectionalAtlasSize;
+		texDesc.Height = DirectionalAtlasSize;
+		texDesc.MipLevels = 1;
+		texDesc.ArraySize = DirectionalCapacity;  // Texture2DArray
+		texDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
+		texDesc.SampleDesc.Count = 1;
+		texDesc.Usage = D3D11_USAGE_DEFAULT;
+		texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+
+		// Moment Map 생성
+		hr = Device->CreateTexture2D(&texDesc, nullptr, &VSMMomentMap_Directional);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create VSMMomentMap_Directional: 0x%08X", hr);
+			return false;
+		}
+
+		// Temp Map 생성
+		hr = Device->CreateTexture2D(&texDesc, nullptr, &VSMTempMap_Directional);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create VSMTempMap_Directional: 0x%08X", hr);
+			return false;
+		}
+
+		// SRV 생성 (nullptr descriptor = 전체 array)
+		hr = Device->CreateShaderResourceView(VSMMomentMap_Directional, nullptr, &VSMMomentMapSRV_Directional);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create VSMMomentMapSRV_Directional: 0x%08X", hr);
+			return false;
+		}
+
+		hr = Device->CreateShaderResourceView(VSMTempMap_Directional, nullptr, &VSMTempMapSRV_Directional);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create VSMTempMapSRV_Directional: 0x%08X", hr);
+			return false;
+		}
+
+		// UAV 생성 - ⚠️ 중요: Descriptor 명시 필수!
+		D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+		uavDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
+		uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2DARRAY;
+		uavDesc.Texture2DArray.MipSlice = 0;
+		uavDesc.Texture2DArray.FirstArraySlice = 0;
+		uavDesc.Texture2DArray.ArraySize = DirectionalCapacity;
+
+		hr = Device->CreateUnorderedAccessView(VSMMomentMap_Directional, &uavDesc, &VSMMomentMapUAV_Directional);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create VSMMomentMapUAV_Directional: 0x%08X", hr);
+			return false;
+		}
+
+		hr = Device->CreateUnorderedAccessView(VSMTempMap_Directional, &uavDesc, &VSMTempMapUAV_Directional);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create VSMTempMapUAV_Directional: 0x%08X", hr);
+			return false;
+		}
 	}
 
-	hr = Device->CreateTexture2D(&desc, nullptr, &VSMTempMap);
-	if (FAILED(hr))
+	// ========================================================================
+	// PointSpotLight Atlas용 VSM Resources 생성
+	// ========================================================================
 	{
-		UE_LOG_ERROR("[VSM] Failed to create VSMTempMap: 0x%08X", hr);
-		return false;
+		D3D11_TEXTURE2D_DESC texDesc = {};
+		texDesc.Width = PointSpotAtlasSize;
+		texDesc.Height = PointSpotAtlasSize;
+		texDesc.MipLevels = 1;
+		texDesc.ArraySize = PointSpotCapacity;  // Texture2DArray
+		texDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
+		texDesc.SampleDesc.Count = 1;
+		texDesc.Usage = D3D11_USAGE_DEFAULT;
+		texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+
+		// Moment Map 생성
+		hr = Device->CreateTexture2D(&texDesc, nullptr, &VSMMomentMap_PointSpot);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create VSMMomentMap_PointSpot: 0x%08X", hr);
+			return false;
+		}
+
+		// Temp Map 생성
+		hr = Device->CreateTexture2D(&texDesc, nullptr, &VSMTempMap_PointSpot);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create VSMTempMap_PointSpot: 0x%08X", hr);
+			return false;
+		}
+
+		// SRV 생성
+		hr = Device->CreateShaderResourceView(VSMMomentMap_PointSpot, nullptr, &VSMMomentMapSRV_PointSpot);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create VSMMomentMapSRV_PointSpot: 0x%08X", hr);
+			return false;
+		}
+
+		hr = Device->CreateShaderResourceView(VSMTempMap_PointSpot, nullptr, &VSMTempMapSRV_PointSpot);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create VSMTempMapSRV_PointSpot: 0x%08X", hr);
+			return false;
+		}
+
+		// UAV 생성 - ⚠️ 중요: Descriptor 명시 필수!
+		D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+		uavDesc.Format = DXGI_FORMAT_R32G32_FLOAT;
+		uavDesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2DARRAY;
+		uavDesc.Texture2DArray.MipSlice = 0;
+		uavDesc.Texture2DArray.FirstArraySlice = 0;
+		uavDesc.Texture2DArray.ArraySize = PointSpotCapacity;
+
+		hr = Device->CreateUnorderedAccessView(VSMMomentMap_PointSpot, &uavDesc, &VSMMomentMapUAV_PointSpot);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create VSMMomentMapUAV_PointSpot: 0x%08X", hr);
+			return false;
+		}
+
+		hr = Device->CreateUnorderedAccessView(VSMTempMap_PointSpot, &uavDesc, &VSMTempMapUAV_PointSpot);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create VSMTempMapUAV_PointSpot: 0x%08X", hr);
+			return false;
+		}
 	}
 
-	hr = Device->CreateShaderResourceView(VSMMomentMap, nullptr, &VSMMomentMapSRV);
-	if (FAILED(hr))
+	// ========================================================================
+	// VSM Constant Buffer 생성
+	// ========================================================================
 	{
-		UE_LOG_ERROR("[VSM] Failed to create VSMMomentMapSRV: 0x%08X", hr);
-		return false;
+		D3D11_BUFFER_DESC cbDesc = {};
+		cbDesc.ByteWidth = sizeof(uint32) * 4;  // { AtlasResolution, MaxSliceIndex, Padding[2] }
+		cbDesc.Usage = D3D11_USAGE_DYNAMIC;
+		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+		hr = Device->CreateBuffer(&cbDesc, nullptr, &ConstantBufferVSMParams);
+		if (FAILED(hr))
+		{
+			UE_LOG_ERROR("[VSM] Failed to create ConstantBufferVSMParams: 0x%08X", hr);
+			return false;
+		}
 	}
 
-	hr = Device->CreateShaderResourceView(VSMTempMap, nullptr, &VSMTempMapSRV);
-	if (FAILED(hr))
-	{
-		UE_LOG_ERROR("[VSM] Failed to create VSMTempMapSRV: 0x%08X", hr);
-		return false;
-	}
+	UE_LOG_SUCCESS("[VSM] All resources created successfully (DirectionalCSM: %u slices %ux%u, PointSpot: %u slices %ux%u)",
+		DirectionalCapacity, DirectionalAtlasSize, DirectionalAtlasSize,
+		PointSpotCapacity, PointSpotAtlasSize, PointSpotAtlasSize);
 
-	hr = Device->CreateUnorderedAccessView(VSMMomentMap, nullptr, &VSMMomentMapUAV);
-	if (FAILED(hr))
-	{
-		UE_LOG_ERROR("[VSM] Failed to create VSMMomentMapUAV: 0x%08X", hr);
-		return false;
-	}
-
-	hr = Device->CreateUnorderedAccessView(VSMTempMap, nullptr, &VSMTempMapUAV);
-	if (FAILED(hr))
-	{
-		UE_LOG_ERROR("[VSM] Failed to create VSMTempMapUAV: 0x%08X", hr);
-		return false;
-	}
-
-	UE_LOG("[VSM] All resources created successfully");
 	return true;
 }
 
 void FShadowMapPass::ReleaseVSMResources()
 {
-	if (VSMMomentMapSRV) { VSMMomentMapSRV->Release(); VSMMomentMapSRV = nullptr; }
-	if (VSMMomentMapUAV) { VSMMomentMapUAV->Release(); VSMMomentMapUAV = nullptr; }
-	if (VSMTempMapSRV) { VSMTempMapSRV->Release(); VSMTempMapSRV = nullptr; }
-	if (VSMTempMapUAV) { VSMTempMapUAV->Release(); VSMTempMapUAV = nullptr; }
-	if (VSMMomentMap) { VSMMomentMap->Release(); VSMMomentMap = nullptr; }
-	if (VSMTempMap) { VSMTempMap->Release(); VSMTempMap = nullptr; }
+	// DirectionalCSM Atlas VSM Resources
+	if (VSMMomentMapSRV_Directional) { VSMMomentMapSRV_Directional->Release(); VSMMomentMapSRV_Directional = nullptr; }
+	if (VSMMomentMapUAV_Directional) { VSMMomentMapUAV_Directional->Release(); VSMMomentMapUAV_Directional = nullptr; }
+	if (VSMTempMapSRV_Directional) { VSMTempMapSRV_Directional->Release(); VSMTempMapSRV_Directional = nullptr; }
+	if (VSMTempMapUAV_Directional) { VSMTempMapUAV_Directional->Release(); VSMTempMapUAV_Directional = nullptr; }
+	if (VSMMomentMap_Directional) { VSMMomentMap_Directional->Release(); VSMMomentMap_Directional = nullptr; }
+	if (VSMTempMap_Directional) { VSMTempMap_Directional->Release(); VSMTempMap_Directional = nullptr; }
+
+	// PointSpotLight Atlas VSM Resources
+	if (VSMMomentMapSRV_PointSpot) { VSMMomentMapSRV_PointSpot->Release(); VSMMomentMapSRV_PointSpot = nullptr; }
+	if (VSMMomentMapUAV_PointSpot) { VSMMomentMapUAV_PointSpot->Release(); VSMMomentMapUAV_PointSpot = nullptr; }
+	if (VSMTempMapSRV_PointSpot) { VSMTempMapSRV_PointSpot->Release(); VSMTempMapSRV_PointSpot = nullptr; }
+	if (VSMTempMapUAV_PointSpot) { VSMTempMapUAV_PointSpot->Release(); VSMTempMapUAV_PointSpot = nullptr; }
+	if (VSMMomentMap_PointSpot) { VSMMomentMap_PointSpot->Release(); VSMMomentMap_PointSpot = nullptr; }
+	if (VSMTempMap_PointSpot) { VSMTempMap_PointSpot->Release(); VSMTempMap_PointSpot = nullptr; }
+
+	// Constant Buffer
+	if (ConstantBufferVSMParams) { ConstantBufferVSMParams->Release(); ConstantBufferVSMParams = nullptr; }
+
+	UE_LOG_INFO("[VSM] All resources released successfully");
 }
 
 void FShadowMapPass::ExecuteVSMFilter()
 {
-	// NOTE: VSM은 현재 Shadow Atlas와 통합되지 않아 비활성화됨
-	// Shadow Atlas에서 Depth Texture를 가져와 VSM Moment Map으로 변환하는 로직이 필요함
-	// TODO: Shadow Atlas의 DirectionalAtlas Depth SRV를 가져와서 VSM 처리
-
-	UE_LOG_WARNING("[VSM] ExecuteVSMFilter is currently disabled for Shadow Atlas integration");
-	return;
-
-	// Validate all compute shaders and resources are available
+	// Validate compute shaders
 	if (!CSDepthToMoment || !CSBlurH || !CSBlurV)
 	{
 		UE_LOG_ERROR("[VSM] Compute Shaders not initialized! CS1=%p, CS2=%p, CS3=%p",
@@ -809,15 +958,9 @@ void FShadowMapPass::ExecuteVSMFilter()
 		return;
 	}
 
-	if (!VSMMomentMapUAV || !VSMTempMapUAV || !VSMMomentMapSRV || !VSMTempMapSRV)
-	{
-		UE_LOG_ERROR("[VSM] Resources not initialized!");
-		return;
-	}
-
 	auto& Renderer = URenderer::GetInstance();
 	auto* DeviceContext = Renderer.GetDeviceContext();
-	FShadowAtlasManager* AtlasManager = Renderer.GetShadowAtlasManager();
+	auto* AtlasManager = Renderer.GetShadowAtlasManager();
 
 	if (!AtlasManager)
 	{
@@ -825,47 +968,144 @@ void FShadowMapPass::ExecuteVSMFilter()
 		return;
 	}
 
-	// TODO: Shadow Atlas에서 DirectionalLight의 Depth Texture SRV 가져오기
-	ID3D11ShaderResourceView* ShadowDepthSRV = AtlasManager->GetDirectionalAtlasArraySRV();
-
-	if (!ShadowDepthSRV)
+	// ========================================================================
+	// Process DirectionalCSM Atlas
+	// ========================================================================
+	uint32 DirMaxSliceIndex = AtlasManager->GetDirectionalMaxUsedSliceIndex();
+	if (DirMaxSliceIndex != UINT32_MAX)  // 빈 atlas 스킵
 	{
-		UE_LOG_ERROR("[VSM] Shadow Depth SRV is null!");
-		return;
+		ID3D11ShaderResourceView* DirDepthSRV = AtlasManager->GetDirectionalAtlasArraySRV();
+		if (DirDepthSRV && VSMMomentMapUAV_Directional && VSMTempMapUAV_Directional &&
+			VSMMomentMapSRV_Directional && VSMTempMapSRV_Directional)
+		{
+			const uint32 DirAtlasSize = AtlasManager->GetAtlasResolution(EShadowAtlasType::DirectionalCSM);
+			const uint32 NumSlices = DirMaxSliceIndex + 1;
+			const uint32 DispatchX = (DirAtlasSize + 15) / 16;  // 256 for 4096
+			const uint32 DispatchY = (DirAtlasSize + 15) / 16;  // 256 for 4096
+
+			// Update Constant Buffer
+			struct FVSMParams { uint32 AtlasResolution; uint32 MaxSliceIndex; uint32 Padding[2]; };
+			FVSMParams params;
+			params.AtlasResolution = DirAtlasSize;
+			params.MaxSliceIndex = DirMaxSliceIndex;
+			params.Padding[0] = 0;
+			params.Padding[1] = 0;
+
+			D3D11_MAPPED_SUBRESOURCE mapped;
+			HRESULT hr = DeviceContext->Map(ConstantBufferVSMParams, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+			if (SUCCEEDED(hr))
+			{
+				memcpy(mapped.pData, &params, sizeof(FVSMParams));
+				DeviceContext->Unmap(ConstantBufferVSMParams, 0);
+			}
+
+			DeviceContext->CSSetConstantBuffers(0, 1, &ConstantBufferVSMParams);
+
+			ID3D11ShaderResourceView* nullSRV = nullptr;
+			ID3D11UnorderedAccessView* nullUAV = nullptr;
+
+			// Pass 1: Depth → Moment
+			DeviceContext->CSSetShader(CSDepthToMoment, nullptr, 0);
+			DeviceContext->CSSetShaderResources(0, 1, &DirDepthSRV);
+			DeviceContext->CSSetUnorderedAccessViews(0, 1, &VSMMomentMapUAV_Directional, nullptr);
+			DeviceContext->Dispatch(DispatchX, DispatchY, NumSlices);
+
+			// Unbind UAV before using as SRV
+			DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+
+			// Pass 2: Horizontal Blur
+			DeviceContext->CSSetShader(CSBlurH, nullptr, 0);
+			DeviceContext->CSSetShaderResources(0, 1, &VSMMomentMapSRV_Directional);
+			DeviceContext->CSSetUnorderedAccessViews(0, 1, &VSMTempMapUAV_Directional, nullptr);
+			DeviceContext->Dispatch(DispatchX, DispatchY, NumSlices);
+
+			// Unbind
+			DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
+			DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+
+			// Pass 3: Vertical Blur
+			DeviceContext->CSSetShader(CSBlurV, nullptr, 0);
+			DeviceContext->CSSetShaderResources(0, 1, &VSMTempMapSRV_Directional);
+			DeviceContext->CSSetUnorderedAccessViews(0, 1, &VSMMomentMapUAV_Directional, nullptr);
+			DeviceContext->Dispatch(DispatchX, DispatchY, NumSlices);
+
+			// Final Unbind
+			DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
+			DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+		}
 	}
 
-	ID3D11ShaderResourceView* nullSRV = nullptr;
-	ID3D11UnorderedAccessView* nullUAV = nullptr;
+	// ========================================================================
+	// Process PointSpotLight Atlas
+	// ========================================================================
+	uint32 PSMaxSliceIndex = AtlasManager->GetPointSpotMaxUsedSliceIndex();
+	if (PSMaxSliceIndex != UINT32_MAX)  // 빈 atlas 스킵
+	{
+		ID3D11ShaderResourceView* PSDepthSRV = AtlasManager->GetPointSpotAtlasArraySRV();
+		if (PSDepthSRV && VSMMomentMapUAV_PointSpot && VSMTempMapUAV_PointSpot &&
+			VSMMomentMapSRV_PointSpot && VSMTempMapSRV_PointSpot)
+		{
+			const uint32 PSAtlasSize = AtlasManager->GetAtlasResolution(EShadowAtlasType::PointSpotLight);
+			const uint32 NumSlices = PSMaxSliceIndex + 1;
+			const uint32 DispatchX = (PSAtlasSize + 15) / 16;  // 256 for 4096
+			const uint32 DispatchY = (PSAtlasSize + 15) / 16;  // 256 for 4096
 
-	// Pass 1: Depth → Moment
-	DeviceContext->CSSetShader(CSDepthToMoment, nullptr, 0);
-	DeviceContext->CSSetShaderResources(0, 1, &ShadowDepthSRV);
-	DeviceContext->CSSetUnorderedAccessViews(0, 1, &VSMMomentMapUAV, nullptr);
-	DeviceContext->Dispatch(128, 128, 1);  // 2048/16 = 128
+			// Update Constant Buffer
+			struct FVSMParams { uint32 AtlasResolution; uint32 MaxSliceIndex; uint32 Padding[2]; };
+			FVSMParams params;
+			params.AtlasResolution = PSAtlasSize;
+			params.MaxSliceIndex = PSMaxSliceIndex;
+			params.Padding[0] = 0;
+			params.Padding[1] = 0;
 
-	// Unbind UAV before using as SRV
-	DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+			D3D11_MAPPED_SUBRESOURCE mapped;
+			HRESULT hr = DeviceContext->Map(ConstantBufferVSMParams, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+			if (SUCCEEDED(hr))
+			{
+				memcpy(mapped.pData, &params, sizeof(FVSMParams));
+				DeviceContext->Unmap(ConstantBufferVSMParams, 0);
+			}
 
-	// Pass 2: Horizontal Blur
-	DeviceContext->CSSetShader(CSBlurH, nullptr, 0);
-	DeviceContext->CSSetShaderResources(0, 1, &VSMMomentMapSRV);
-	DeviceContext->CSSetUnorderedAccessViews(0, 1, &VSMTempMapUAV, nullptr);
-	DeviceContext->Dispatch(128, 128, 1);
+			DeviceContext->CSSetConstantBuffers(0, 1, &ConstantBufferVSMParams);
 
-	// Unbind resources before next pass
-	DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
-	DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+			ID3D11ShaderResourceView* nullSRV = nullptr;
+			ID3D11UnorderedAccessView* nullUAV = nullptr;
 
-	// Pass 3: Vertical Blur
-	DeviceContext->CSSetShader(CSBlurV, nullptr, 0);
-	DeviceContext->CSSetShaderResources(0, 1, &VSMTempMapSRV);
-	DeviceContext->CSSetUnorderedAccessViews(0, 1, &VSMMomentMapUAV, nullptr);
-	DeviceContext->Dispatch(128, 128, 1);
+			// Pass 1: Depth → Moment
+			DeviceContext->CSSetShader(CSDepthToMoment, nullptr, 0);
+			DeviceContext->CSSetShaderResources(0, 1, &PSDepthSRV);
+			DeviceContext->CSSetUnorderedAccessViews(0, 1, &VSMMomentMapUAV_PointSpot, nullptr);
+			DeviceContext->Dispatch(DispatchX, DispatchY, NumSlices);
 
-	// Unbind all CS resources
-	DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
-	DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
-	DeviceContext->CSSetShader(nullptr, nullptr, 0);  // Unbind compute shader
+			// Unbind UAV before using as SRV
+			DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
 
-	UE_LOG("[VSM] Filter executed successfully");
+			// Pass 2: Horizontal Blur
+			DeviceContext->CSSetShader(CSBlurH, nullptr, 0);
+			DeviceContext->CSSetShaderResources(0, 1, &VSMMomentMapSRV_PointSpot);
+			DeviceContext->CSSetUnorderedAccessViews(0, 1, &VSMTempMapUAV_PointSpot, nullptr);
+			DeviceContext->Dispatch(DispatchX, DispatchY, NumSlices);
+
+			// Unbind
+			DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
+			DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+
+			// Pass 3: Vertical Blur
+			DeviceContext->CSSetShader(CSBlurV, nullptr, 0);
+			DeviceContext->CSSetShaderResources(0, 1, &VSMTempMapSRV_PointSpot);
+			DeviceContext->CSSetUnorderedAccessViews(0, 1, &VSMMomentMapUAV_PointSpot, nullptr);
+			DeviceContext->Dispatch(DispatchX, DispatchY, NumSlices);
+
+			// Final Unbind
+			DeviceContext->CSSetShaderResources(0, 1, &nullSRV);
+			DeviceContext->CSSetUnorderedAccessViews(0, 1, &nullUAV, nullptr);
+		}
+	}
+
+	// Unbind compute shader
+	DeviceContext->CSSetShader(nullptr, nullptr, 0);
+
+	UE_LOG("[VSM] Filter executed successfully (DirectionalCSM: %u slices, PointSpot: %u slices)",
+		DirMaxSliceIndex != UINT32_MAX ? DirMaxSliceIndex + 1 : 0,
+		PSMaxSliceIndex != UINT32_MAX ? PSMaxSliceIndex + 1 : 0);
 }

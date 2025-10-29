@@ -58,6 +58,31 @@ bool FShadowAtlas::Allocate(uint32 Width, uint32 Height, FShadowAtlasRegion& Out
     return true;
 }
 
+bool FShadowAtlas::CanAllocate(uint32 Width, uint32 Height) const
+{
+    // Dry-Run: 할당 가능 여부만 확인 (상태 변경 없음)
+    uint32 BestShortSideFit = std::numeric_limits<int32>::max();
+    uint32 BestLongSideFit = std::numeric_limits<int32>::max();
+
+    int32 BestIndex = FindBestShortSideFit(Width, Height, BestShortSideFit, BestLongSideFit);
+
+    return BestIndex != -1;
+}
+
+FShadowAtlas FShadowAtlas::Clone() const
+{
+    FShadowAtlas Copy(AtlasSize);
+    Copy.FreeRectangles = this->FreeRectangles;
+    Copy.UsedArea = this->UsedArea;
+    return Copy;
+}
+
+void FShadowAtlas::RestoreState(const FShadowAtlas& Other)
+{
+    this->FreeRectangles = Other.FreeRectangles;
+    this->UsedArea = Other.UsedArea;
+}
+
 void FShadowAtlas::Clear()
 {
     FreeRectangles.clear();
