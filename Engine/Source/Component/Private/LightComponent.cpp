@@ -5,10 +5,17 @@
 
 #include "Component/Public/BillBoardComponent.h"
 #include "Actor/Public/Actor.h"
-
+#include "Render/Renderer/Public/Renderer.h"
+#include "Render/Renderer/Public/ShadowAtlasManager.h""
 #include <algorithm>
 
 IMPLEMENT_ABSTRACT_CLASS(ULightComponent, ULightComponentBase)
+
+ULightComponent::~ULightComponent()
+{
+	const URenderer& Renderer = URenderer::GetInstance();
+    Renderer.GetShadowAtlasManager()->ClearAllAllocations();
+}
 
 void ULightComponent::Serialize(const bool bInIsLoading, JSON& InOutHandle)
 {

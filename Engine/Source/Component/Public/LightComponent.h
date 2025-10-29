@@ -28,7 +28,7 @@ class ULightComponent : public ULightComponentBase
 public:
     ULightComponent() = default;
 
-    virtual ~ULightComponent() = default;
+    virtual ~ULightComponent();
     
     /*-----------------------------------------------------------------------------
         UObject Features
