@@ -221,6 +221,15 @@ private:
     };
     TMap<UPointLightComponent*, FPointLightAllocationCache> PreviousPointAllocations;
 
+    // Point Light 할당을 위한 Reservation 구조체 (Two-Phase Allocation용)
+    struct FPointLightReservation
+    {
+        UPointLightComponent* Light = nullptr;
+        uint32 Resolution = 0;
+        std::array<uint32, 6> SliceIndices = {};  // 각 face가 할당될 slice index
+        bool bValid = false;
+    };
+
     // 현재 프레임의 모든 Light별 할당 정보 (DetailWindow 시각화용)
     TMap<ULightComponentBase*, FShadowAtlasAllocation> CurrentLightAllocations;
 
@@ -234,6 +243,10 @@ private:
 
     // 동적 Atlas 크기 설정
     uint32 PointSpotAtlasSize = 4096;     // PointSpot Atlas 크기 (기본 4096, 변경 가능: 2048, 4096)
+
+    // VRAM 제한 설정 (0 = 무제한)
+    uint32 MaxAtlasSlices = 0;            // 최대 slice 수 (0 = 무제한, 시연용)
+                                          // 제한 없이 VRAM 허용 범위까지 사용
 
     // Atlas 축소 관련 (랙 방지)
     uint32 FramesSinceLastShrink = 0;     // 마지막 축소 이후 프레임 수

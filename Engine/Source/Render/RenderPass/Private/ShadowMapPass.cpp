@@ -417,6 +417,13 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 
 		ID3D11DepthStencilView* dsv = allocations.front()->Allocation.DSV;
 
+		// 🛡️ DSV Validation
+		if (!dsv)
+		{
+			UE_LOG_ERROR("ShadowMapPass: Point Light DSV is nullptr (SliceIndex: %d) - Skipping slice", sliceIndex);
+			continue;
+		}
+
 		ID3D11RenderTargetView* NullRTV = nullptr;
 		Pipeline->SetRenderTargets(1, &NullRTV, dsv);
 
@@ -557,6 +564,13 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		if (lights.empty()) continue;
 
 		ID3D11DepthStencilView* dsv = lights.front()->Allocation.DSV;
+
+		// 🛡️ DSV Validation
+		if (!dsv)
+		{
+			UE_LOG_ERROR("ShadowMapPass: Spot Light DSV is nullptr (SliceIndex: %d) - Skipping slice", sliceIndex);
+			continue;
+		}
 
 		// RTV 끄고 DSV만 바인딩
 		ID3D11RenderTargetView* NullRTV = nullptr;
