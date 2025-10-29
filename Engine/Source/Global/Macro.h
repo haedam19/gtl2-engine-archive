@@ -4,84 +4,125 @@
 
 // UE_LOG Macro 시스템
 // 기본 UE_LOG (Info 타입)
+// Note: 부작용(side effect) 이중 평가 방지를 위해 문자열을 먼저 포맷팅
+// (예: UE_LOG("%d", ++i) 시 i가 한 번만 증가)
+// Visual Studio Output: DEBUG, WARNING, ERROR, TERMINAL_ERROR만 출력 (나머지는 GUI 콘솔만)
 #define UE_LOG(fmt, ...) \
     do { \
-        printf(fmt "\n", ##__VA_ARGS__); \
+        char _ue_log_buffer[2048]; \
+        snprintf(_ue_log_buffer, sizeof(_ue_log_buffer), fmt, ##__VA_ARGS__); \
         try { \
-            UConsoleWindow::GetInstance().AddLog("" fmt, ##__VA_ARGS__); \
+            UConsoleWindow::GetInstance().AddLog("%s", _ue_log_buffer); \
         } catch(...) {} \
     } while(0)
 
 // 로그 타입별 매크로들
 #define UE_LOG_INFO(fmt, ...) \
     do { \
-        printf("[INFO] " fmt "\n", ##__VA_ARGS__); \
+        char _ue_log_buffer[2048]; \
+        snprintf(_ue_log_buffer, sizeof(_ue_log_buffer), fmt, ##__VA_ARGS__); \
         try { \
-            UConsoleWindow::GetInstance().AddLog(ELogType::Info, "" fmt, ##__VA_ARGS__); \
+            UConsoleWindow::GetInstance().AddLog(ELogType::Info, "%s", _ue_log_buffer); \
         } catch(...) {} \
     } while(0)
 
 #define UE_LOG_WARNING(fmt, ...) \
     do { \
-        printf("[WARNING] " fmt "\n", ##__VA_ARGS__); \
+        char _ue_log_buffer[2048]; \
+        snprintf(_ue_log_buffer, sizeof(_ue_log_buffer), fmt, ##__VA_ARGS__); \
+        OutputDebugStringW(L"[WARNING] "); \
+        { \
+            wchar_t _ue_log_wbuffer[2048]; \
+            MultiByteToWideChar(CP_UTF8, 0, _ue_log_buffer, -1, _ue_log_wbuffer, 2048); \
+            OutputDebugStringW(_ue_log_wbuffer); \
+        } \
+        OutputDebugStringW(L"\n"); \
         try { \
-            UConsoleWindow::GetInstance().AddLog(ELogType::Warning, "" fmt, ##__VA_ARGS__); \
+            UConsoleWindow::GetInstance().AddLog(ELogType::Warning, "%s", _ue_log_buffer); \
         } catch(...) {} \
     } while(0)
 
 #define UE_LOG_ERROR(fmt, ...) \
     do { \
-        printf("[ERROR] " fmt "\n", ##__VA_ARGS__); \
+        char _ue_log_buffer[2048]; \
+        snprintf(_ue_log_buffer, sizeof(_ue_log_buffer), fmt, ##__VA_ARGS__); \
+        OutputDebugStringW(L"[ERROR] "); \
+        { \
+            wchar_t _ue_log_wbuffer[2048]; \
+            MultiByteToWideChar(CP_UTF8, 0, _ue_log_buffer, -1, _ue_log_wbuffer, 2048); \
+            OutputDebugStringW(_ue_log_wbuffer); \
+        } \
+        OutputDebugStringW(L"\n"); \
         try { \
-            UConsoleWindow::GetInstance().AddLog(ELogType::Error, "" fmt, ##__VA_ARGS__); \
+            UConsoleWindow::GetInstance().AddLog(ELogType::Error, "%s", _ue_log_buffer); \
         } catch(...) {} \
     } while(0)
 
 #define UE_LOG_SUCCESS(fmt, ...) \
     do { \
-        printf("[SUCCESS] " fmt "\n", ##__VA_ARGS__); \
+        char _ue_log_buffer[2048]; \
+        snprintf(_ue_log_buffer, sizeof(_ue_log_buffer), fmt, ##__VA_ARGS__); \
         try { \
-            UConsoleWindow::GetInstance().AddLog(ELogType::Success, "" fmt, ##__VA_ARGS__); \
+            UConsoleWindow::GetInstance().AddLog(ELogType::Success, "%s", _ue_log_buffer); \
         } catch(...) {} \
     } while(0)
 
 #define UE_LOG_SYSTEM(fmt, ...) \
     do { \
-        printf("[SYSTEM] " fmt "\n", ##__VA_ARGS__); \
+        char _ue_log_buffer[2048]; \
+        snprintf(_ue_log_buffer, sizeof(_ue_log_buffer), fmt, ##__VA_ARGS__); \
         try { \
-            UConsoleWindow::GetInstance().AddLog(ELogType::System, "" fmt, ##__VA_ARGS__); \
+            UConsoleWindow::GetInstance().AddLog(ELogType::System, "%s", _ue_log_buffer); \
         } catch(...) {} \
     } while(0)
 
 #define UE_LOG_DEBUG(fmt, ...) \
     do { \
-        printf("[DEBUG] " fmt "\n", ##__VA_ARGS__); \
+        char _ue_log_buffer[2048]; \
+        snprintf(_ue_log_buffer, sizeof(_ue_log_buffer), fmt, ##__VA_ARGS__); \
+        OutputDebugStringW(L"[DEBUG] "); \
+        { \
+            wchar_t _ue_log_wbuffer[2048]; \
+            MultiByteToWideChar(CP_UTF8, 0, _ue_log_buffer, -1, _ue_log_wbuffer, 2048); \
+            OutputDebugStringW(_ue_log_wbuffer); \
+        } \
+        OutputDebugStringW(L"\n"); \
         try { \
-            UConsoleWindow::GetInstance().AddLog(ELogType::Debug, "" fmt, ##__VA_ARGS__); \
+            UConsoleWindow::GetInstance().AddLog(ELogType::Debug, "%s", _ue_log_buffer); \
         } catch(...) {} \
     } while(0)
 
 #define UE_LOG_COMMAND(fmt, ...) \
     do { \
-        printf("[CMD] " fmt "\n", ##__VA_ARGS__); \
+        char _ue_log_buffer[2048]; \
+        snprintf(_ue_log_buffer, sizeof(_ue_log_buffer), fmt, ##__VA_ARGS__); \
         try { \
-            UConsoleWindow::GetInstance().AddLog(ELogType::Command, "" fmt, ##__VA_ARGS__); \
+            UConsoleWindow::GetInstance().AddLog(ELogType::Command, "%s", _ue_log_buffer); \
         } catch(...) {} \
     } while(0)
 
 #define UE_LOG_TERMINAL(fmt, ...) \
     do { \
-        printf("[TERMINAL] " fmt "\n", ##__VA_ARGS__); \
+        char _ue_log_buffer[2048]; \
+        snprintf(_ue_log_buffer, sizeof(_ue_log_buffer), fmt, ##__VA_ARGS__); \
         try { \
-            UConsoleWindow::GetInstance().AddLog(ELogType::Terminal, "" fmt, ##__VA_ARGS__); \
+            UConsoleWindow::GetInstance().AddLog(ELogType::Terminal, "%s", _ue_log_buffer); \
         } catch(...) {} \
     } while(0)
 
 #define UE_LOG_TERMINAL_ERROR(fmt, ...) \
     do { \
-        printf("[TERMINAL_ERROR] " fmt "\n", ##__VA_ARGS__); \
+        char _ue_log_buffer[2048]; \
+        snprintf(_ue_log_buffer, sizeof(_ue_log_buffer), fmt, ##__VA_ARGS__); \
+        OutputDebugStringW(L"[TERMINAL_ERROR] "); \
+        { \
+            wchar_t _ue_log_wbuffer[2048]; \
+            MultiByteToWideChar(CP_UTF8, 0, _ue_log_buffer, -1, _ue_log_wbuffer, 2048); \
+            OutputDebugStringW(_ue_log_wbuffer); \
+        } \
+        OutputDebugStringW(L"\n"); \
         try { \
-            UConsoleWindow::GetInstance().AddLog(ELogType::TerminalError, "" fmt, ##__VA_ARGS__); \
+            UConsoleWindow::GetInstance().AddLog(ELogType::TerminalError, "%s", _ue_log_buffer); \
         } catch(...) {} \
     } while(0)
 
