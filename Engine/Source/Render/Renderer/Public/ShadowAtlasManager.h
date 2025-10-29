@@ -244,6 +244,10 @@ private:
     // 동적 Atlas 크기 설정
     uint32 PointSpotAtlasSize = 4096;     // PointSpot Atlas 크기 (기본 4096, 변경 가능: 2048, 4096)
 
+    // VRAM 제한 설정 (0 = 무제한)
+    uint32 MaxAtlasSlices = 0;            // 최대 slice 수 (0 = 무제한, 시연용)
+                                          // 제한 없이 VRAM 허용 범위까지 사용
+
     // Atlas 축소 관련 (랙 방지)
     uint32 FramesSinceLastShrink = 0;     // 마지막 축소 이후 프레임 수
     uint32 ShrinkCooldownFrames = 120;    // 축소 쿨다운 (120프레임 = 약 2초 @ 60fps)

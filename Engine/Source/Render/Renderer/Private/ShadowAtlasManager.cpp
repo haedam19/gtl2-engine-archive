@@ -293,13 +293,12 @@ bool FShadowAtlasManager::CreateNewAtlasSlice(EShadowAtlasType Type, uint32 Atla
         return false;
     }
 
-    // 🛡️ VRAM 보호: 최대 slice 수 제한
-    const uint32 MaxSlices = 16;
-    if (CurrentCount >= MaxSlices)
+    // 🛡️ VRAM 보호: 최대 slice 수 제한 (0 = 무제한)
+    if (MaxAtlasSlices > 0 && CurrentCount >= MaxAtlasSlices)
     {
-        UE_LOG_ERROR("ShadowAtlasManager: CreateNewAtlasSlice 실패 - 최대 slice 수 도달 (Max: %d)", MaxSlices);
-        uint64 TotalVRAM = static_cast<uint64>(MaxSlices) * AtlasSize * AtlasSize * 4;
-        UE_LOG_ERROR("  -> VRAM 사용량: %.1f MB. 더 이상 slice를 생성할 수 없습니다.", TotalVRAM / (1024.0f * 1024.0f));
+        UE_LOG_ERROR("ShadowAtlasManager: CreateNewAtlasSlice 실패 - 최대 slice 수 도달 (Max: %d)", MaxAtlasSlices);
+        uint64 TotalVRAM = static_cast<uint64>(MaxAtlasSlices) * AtlasSize * AtlasSize * 4;
+        UE_LOG_ERROR("  -> VRAM 사용량: %.1f MB. MaxAtlasSlices 설정을 늘려주세요.", TotalVRAM / (1024.0f * 1024.0f));
         return false;
     }
 
@@ -912,10 +911,9 @@ FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
             // ========================================
 
             TArray<FShadowAtlas> SimulatedAtlases;
-            const uint32 MaxAllowedSlices = 16;
 
-            UE_LOG_INFO("ShadowAtlasManager: Dry-Run Simulation 시작 (Spot: %d, Point: %d)",
-                SpotActiveCount, PointActiveCount);
+            UE_LOG_INFO("ShadowAtlasManager: Dry-Run Simulation 시작 (Spot: %d, Point: %d, Max Slices: %s)",
+                SpotActiveCount, PointActiveCount, MaxAtlasSlices == 0 ? "Unlimited" : std::to_string(MaxAtlasSlices).c_str());
 
             // 1. Spot Light 시뮬레이션
             for (const FSpotEntry& Entry : SpotEntries)
@@ -932,14 +930,24 @@ FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
                     }
                 }
 
-                if (!bAllocated && SimulatedAtlases.size() < MaxAllowedSlices)
+                if (!bAllocated)
                 {
-                    FShadowAtlas NewSlice(PointSpotAtlasSize);
-                    FShadowAtlasRegion DummyRegion;
-                    if (NewSlice.Allocate(Entry.Resolution, Entry.Resolution, DummyRegion))
+                    // 제한 확인 (0 = 무제한)
+                    if (MaxAtlasSlices == 0 || SimulatedAtlases.size() < MaxAtlasSlices)
                     {
-                        SimulatedAtlases.push_back(NewSlice);
+                        FShadowAtlas NewSlice(PointSpotAtlasSize);
+                        FShadowAtlasRegion DummyRegion;
+                        if (NewSlice.Allocate(Entry.Resolution, Entry.Resolution, DummyRegion))
+                        {
+                            SimulatedAtlases.push_back(NewSlice);
+                            bAllocated = true;
+                        }
                     }
+                }
+
+                if (!bAllocated)
+                {
+                    UE_LOG_WARNING("ShadowAtlasManager: Spot Light Simulation - 할당 실패 (Resolution: %d)", Entry.Resolution);
                 }
             }
 
@@ -971,7 +979,8 @@ FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
                     // 할당 실패하면 새 slice 필요
                     if (!bAllocated)
                     {
-                        if (RequiredSlices < MaxAllowedSlices)
+                        // 제한 확인 (0 = 무제한)
+                        if (MaxAtlasSlices == 0 || RequiredSlices < MaxAtlasSlices)
                         {
                             // 새 slice 추가
                             FShadowAtlas NewSlice(PointSpotAtlasSize);
@@ -999,8 +1008,8 @@ FPointSpotAllocationResult FShadowAtlasManager::AllocatePointSpotLights(
                 }
             }
 
-            UE_LOG_INFO("ShadowAtlasManager: Dry-Run Simulation 완료 - Required Slices: %d (Max: %d)",
-                RequiredSlices, MaxAllowedSlices);
+            UE_LOG_INFO("ShadowAtlasManager: Dry-Run Simulation 완료 - Required Slices: %d",
+                RequiredSlices);
 
             // 3. 시뮬레이션 결과에 따라 실제 slice 생성
             uint64 EstimatedVRAM = static_cast<uint64>(RequiredSlices) * PointSpotAtlasSize * PointSpotAtlasSize * 4;
@@ -1494,14 +1503,13 @@ bool FShadowAtlasManager::ExpandAtlasArray(EShadowAtlasType Type)
         return false;
     }
 
-    // 🛡️ VRAM 보호: 최대 capacity 제한
-    const uint32 MaxCapacity = 16;
-    if (NewCapacity > MaxCapacity)
+    // 🛡️ VRAM 보호: 최대 capacity 제한 (0 = 무제한)
+    if (MaxAtlasSlices > 0 && NewCapacity > MaxAtlasSlices)
     {
-        UE_LOG_ERROR("ShadowAtlasManager: Atlas Array 최대 capacity 도달 (Max: %d) - VRAM 보호를 위해 expansion 중단", MaxCapacity);
+        UE_LOG_ERROR("ShadowAtlasManager: Atlas Array 최대 capacity 도달 (Max: %d) - expansion 중단", MaxAtlasSlices);
         uint32 AtlasSize = (Type == EShadowAtlasType::PointSpotLight) ? PointSpotAtlasSize : 4096;
-        uint64 TotalVRAM = static_cast<uint64>(MaxCapacity) * AtlasSize * AtlasSize * 4;
-        UE_LOG_ERROR("  -> 현재 VRAM 사용량: %.1f MB", TotalVRAM / (1024.0f * 1024.0f));
+        uint64 TotalVRAM = static_cast<uint64>(MaxAtlasSlices) * AtlasSize * AtlasSize * 4;
+        UE_LOG_ERROR("  -> 현재 VRAM 사용량: %.1f MB. MaxAtlasSlices 설정을 늘려주세요.", TotalVRAM / (1024.0f * 1024.0f));
         return false;
     }
 
