@@ -107,8 +107,23 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 			}
 
 			// Shadow Atlas Texture2DArray SRV 바인딩 (t10, t11)
-			Pipeline->SetShaderResourceView(10, EShaderType::PS, AtlasManager->GetDirectionalAtlasArraySRV());
-			Pipeline->SetShaderResourceView(11, EShaderType::PS, AtlasManager->GetPointSpotAtlasArraySRV());
+			// VSM 모드일 때는 Moment Map, PCF 모드일 때는 Depth Atlas
+			if (Renderer.GetShadowFilterMode() == EShadowFilterMode::VSM)
+			{
+				// VSM: Moment Map 바인딩
+				auto* ShadowMapPass = Renderer.GetShadowMapPass();
+				if (ShadowMapPass)
+				{
+					Pipeline->SetShaderResourceView(10, EShaderType::PS, ShadowMapPass->GetVSMMomentMapSRV_Directional());
+					Pipeline->SetShaderResourceView(11, EShaderType::PS, ShadowMapPass->GetVSMMomentMapSRV_PointSpot());
+				}
+			}
+			else
+			{
+				// PCF: Depth Atlas 바인딩
+				Pipeline->SetShaderResourceView(10, EShaderType::PS, AtlasManager->GetDirectionalAtlasArraySRV());
+				Pipeline->SetShaderResourceView(11, EShaderType::PS, AtlasManager->GetPointSpotAtlasArraySRV());
+			}
 		}
 
 		// Shadow Sampler 바인딩 (s1)

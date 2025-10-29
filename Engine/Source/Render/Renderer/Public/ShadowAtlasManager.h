@@ -172,6 +172,21 @@ public:
     void SetPointSpotAtlasSize(uint32 NewSize);
     uint32 GetPointSpotAtlasSize() const { return PointSpotAtlasSize; }
 
+    // VSM을 위한 Atlas 용량 및 해상도 접근자
+    uint32 GetDirectionalArrayCapacity() const { return DirectionalArrayCapacity; }
+    uint32 GetPointSpotArrayCapacity() const { return PointSpotArrayCapacity; }
+    uint32 GetAtlasResolution(EShadowAtlasType Type) const { return GetDefaultAtlasSize(Type); }
+
+    // VSM을 위한 최대 사용 슬라이스 인덱스 반환 (빈 atlas의 경우 UINT32_MAX)
+    uint32 GetDirectionalMaxUsedSliceIndex() const
+    {
+        return DirectionalCSMAtlases.empty() ? UINT32_MAX : static_cast<uint32>(DirectionalCSMAtlases.size() - 1);
+    }
+    uint32 GetPointSpotMaxUsedSliceIndex() const
+    {
+        return PointSpotAtlases.empty() ? UINT32_MAX : static_cast<uint32>(PointSpotAtlases.size() - 1);
+    }
+
 private:
     // 새 Atlas Slice 생성 (Texture2DArray의 다음 슬라이스)
     bool CreateNewAtlasSlice(EShadowAtlasType Type, uint32 AtlasSize);
