@@ -249,68 +249,13 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
     // 디렉셔널 라이트의 방향 벡터
     FVector LightDirection = Light->GetForwardVector().GetNormalized();
 
-    FVector SceneMin(FLT_MAX, FLT_MAX, FLT_MAX);
-    FVector SceneMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-    bool bHasSceneBounds = false;
-    float MaxCasterDistance = 0.0f;
-    bool bHasCasterDistance = false;
+    // SceneBounds와 CasterDistance 제거 - View Frustum만 사용
+    const FVector SceneMin = FVector::ZeroVector();
+    const FVector SceneMax = FVector::ZeroVector();
+    const bool bHasSceneBounds = false;
 
-    if (!MeshComponents.empty())
-    {
-        const FVector CameraPosition = Camera->GetLocation();
-        const FVector CameraForward = Camera->GetForward().GetNormalized();
-        const float ShadowDistance = Light->GetShadowDistance();
-
-        for (UStaticMeshComponent* MeshComp : MeshComponents)
-        {
-            if (!MeshComp || !MeshComp->IsVisible() || !MeshComp->GetStaticMesh())
-            {
-                continue;
-            }
-
-            FVector BoundsMin;
-            FVector BoundsMax;
-            MeshComp->GetWorldAABB(BoundsMin, BoundsMax);
-
-            FVector BoundsCenter = (BoundsMin + BoundsMax) * 0.5f;
-            float DistanceAlongForward = (BoundsCenter - CameraPosition).Dot(CameraForward);
-            if (DistanceAlongForward < -ShadowDistance * 0.25f || DistanceAlongForward > ShadowDistance)
-            {
-                continue;
-            }
-
-            SceneMin.X = std::min(SceneMin.X, BoundsMin.X);
-            SceneMin.Y = std::min(SceneMin.Y, BoundsMin.Y);
-            SceneMin.Z = std::min(SceneMin.Z, BoundsMin.Z);
-
-            SceneMax.X = std::max(SceneMax.X, BoundsMax.X);
-            SceneMax.Y = std::max(SceneMax.Y, BoundsMax.Y);
-            SceneMax.Z = std::max(SceneMax.Z, BoundsMax.Z);
-
-            bHasSceneBounds = true;
-
-            const FVector BoundsExtents = (BoundsMax - BoundsMin) * 0.5f;
-            const float BoundingRadius = BoundsExtents.Length();
-            const float MeshMaxDistance = DistanceAlongForward + BoundingRadius;
-            if (MeshMaxDistance > MaxCasterDistance)
-            {
-                MaxCasterDistance = MeshMaxDistance;
-            }
-            bHasCasterDistance = true;
-        }
-    }
-
-    if (!bHasSceneBounds)
-    {
-        SceneMin = FVector::ZeroVector();
-        SceneMax = FVector::ZeroVector();
-    }
-
-    float DesiredFarClip = bHasCasterDistance ? MaxCasterDistance : MaxShadowDistance;
-    DesiredFarClip = std::min(DesiredFarClip, MaxShadowDistance);
-    float EffectiveFarClip = std::max(NearClip + 1.0f, DesiredFarClip);
-
-    const float FarClip = EffectiveFarClip;
+    // Cascade 범위는 Camera FarZ 사용 (동적 변화 제거로 안정성 향상)
+    const float FarClip = MaxShadowDistance;
     const float Range = FarClip - NearClip;
     const float Ratio = FarClip / NearClip;
     const float CascadeLambda = Light ? Light->GetShadowCascadeLambda() : DefaultCascadeSplitLambda;
