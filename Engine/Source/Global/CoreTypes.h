@@ -189,17 +189,20 @@ struct FDirectionalLightInfo
 };
 
 //StructuredBuffer padding 없어도됨
-struct FPointLightInfo
+struct alignas(16) FPointLightInfo
 {
 	FVector4 Color;
 	FVector Position;
 	float Intensity;
 	float Range;
 	float DistanceFalloffExponent;
-	uint32 AtlasIndex;        // Shadow Atlas 인덱스
-	uint32 ShadowEnabled;     // Shadow 활성화 여부
 	float ShadowBias;
-	FVector Padding;
+	float ShadowSharpen;
+	uint32 ShadowEnabled;
+	uint32 ShadowRegionIndex;  // ShadowRegions 버퍼의 시작 인덱스 (6개 면이 연속으로 저장됨)
+	FVector2 Padding;
+	FMatrix LightViewMatrices[6];      // 6개 면의 View Matrix
+	FMatrix LightProjectionMatrices[6]; // 6개 면의 Projection Matrix
 };
 
 //StructuredBuffer padding 없어도됨

@@ -10,6 +10,7 @@
 #include "Render/Renderer/Public/Renderer.h"
 #include "Render/Renderer/Public/ShadowAtlasManager.h"
 #include "Texture/Public/Texture.h"
+#include"Render/RenderPass/Public/LightPass.h"
 
 FStaticMeshPass::FStaticMeshPass(UPipeline* InPipeline, ID3D11Buffer* InConstantBufferCamera, ID3D11Buffer* InConstantBufferModel,
 	ID3D11Buffer* InConstantBufferLightViewProj,
@@ -114,6 +115,61 @@ void FStaticMeshPass::Execute(FRenderingContext& Context)
 		Pipeline->SetSamplerState(1, EShaderType::PS, Renderer.GetShadowSampler());
 	}
 
+	// PointLight Shadow Atlas Region 정보 수집 (6개 면)
+	if (AtlasManager)
+	{
+		for (UPointLightComponent* PointLight : Context.PointLights)
+		{
+			if (!PointLight || !PointLight->GetLightEnabled())
+			{
+				continue;
+			}
+
+			// PointLight는 6개 면을 가지므로 각 면마다 Allocation을 가져와야 함
+			// 첫 번째 면의 인덱스를 PointLight에 저장
+			uint32 StartIndex = static_cast<uint32>(ShadowRegions.size());
+
+			for (uint32 FaceIndex = 0; FaceIndex < 6; ++FaceIndex)
+			{
+				FShadowAtlasAllocation Allocation;
+				uint32 Resolution = 0;
+				if (AtlasManager->GetPointLightFaceAllocation(PointLight, FaceIndex, Allocation, Resolution))
+				{
+					FShadowAtlasRegionInfo RegionInfo;
+					RegionInfo.UVTransform = FVector4(
+						Allocation.Region.UMin,
+						Allocation.Region.VMin,
+						Allocation.Region.UMax - Allocation.Region.UMin,  // UScale
+						Allocation.Region.VMax - Allocation.Region.VMin   // VScale
+					);
+					
+					RegionInfo.AtlasType = static_cast<uint32>(Allocation.AtlasType);
+					RegionInfo.AtlasIndex = Allocation.AtlasIndex;
+					RegionInfo.CascadeIndex = 0;
+					RegionInfo.CubeFaceIndex = FaceIndex;
+
+					ShadowRegions.push_back(RegionInfo);
+				}
+			}
+
+			// PointLight에 Shadow Region 시작 인덱스를 업데이트
+			// ShadowMapPass에서 이미 View/Projection 행렬을 SetShadowAtlasInfo로 저장했으므로
+			// 여기서는 ShadowRegionStartIndex만 업데이트
+			if (ShadowRegions.size() > StartIndex)
+			{
+				// GetPointlightInfo()는 현재 저장된 행렬을 반환하므로 재사용
+				FPointLightInfo CurrentInfo = PointLight->GetPointlightInfo();
+				TArray<FMatrix> ViewMatrices(CurrentInfo.LightViewMatrices, CurrentInfo.LightViewMatrices + 6);
+				TArray<FMatrix> ProjMatrices(CurrentInfo.LightProjectionMatrices, CurrentInfo.LightProjectionMatrices + 6);
+				PointLight->SetShadowAtlasInfo(StartIndex, ViewMatrices, ProjMatrices);
+				 CurrentInfo = PointLight->GetPointlightInfo();
+				 //Pipeline->SetShaderResourceView(8, EShaderType::VS | EShaderType::PS, Renderer.GetLightPass()->GetPointLightStructuredBufferSRV());
+				 
+
+			}
+		}
+	}
+	Renderer.GetLightPass()->UpdatePointLightBufferData(Context);
 	// SpotLight Shadow Atlas Region 정보 수집
 	if (AtlasManager)
 	{

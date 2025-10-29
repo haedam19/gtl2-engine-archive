@@ -25,10 +25,13 @@ struct FPointLightInfo
     float Intensity;
     float Range;
     float DistanceFalloffExponent;
-    uint AtlasIndex;
-    uint ShadowEnabled;
     float ShadowBias;
-    float3 Padding;
+    float ShadowSharpen;
+    uint ShadowEnabled;
+    uint ShadowRegionIndex;  // ShadowRegions 버퍼의 시작 인덱스 (6개 면이 연속으로 저장됨)
+    float2 Padding;
+    row_major float4x4 LightViewMatrices[6];      // 6개 면의 View Matrix
+    row_major float4x4 LightProjectionMatrices[6]; // 6개 면의 Projection Matrix
 };
 
 struct FSpotLightInfo
