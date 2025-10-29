@@ -377,6 +377,12 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 	// 여러 번 클리어했다는 말은 Point Light 그린 slice를 Spot Light 그릴 때 다시 클리어했다는 뜻이므로 Point Light 섀도우 맵 사라지게 됨.
 	TSet<uint32> ClearedAtlasIndices = {};
 
+	// PointLight & SpotLight 렌더링 시작 전에 Cascade Shadow Constant Buffer 초기화 (CSM 데이터 제거)
+	FCascadeShadowConstants NonCSMData;
+	NonCSMData.bIsCSM = FVector4::Zero();
+	FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, NonCSMData);
+	Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
+
 	// ===========================================================================
 	// PointLight Shadow 렌더링 (Shadow Atlas 기반)
 	// ===========================================================================
@@ -491,12 +497,6 @@ void FShadowMapPass::Execute(FRenderingContext& Context)
 		if (!Pair.IsValid()) continue;
 		spotBySlice[Pair.Allocation.AtlasIndex].push_back(&Pair);
 	}
-
-	// SpotLight 렌더링 시작 전에 Cascade Shadow Constant Buffer 초기화 (CSM 데이터 제거)
-	FCascadeShadowConstants NonCSMData;
-	NonCSMData.bIsCSM = FVector4::Zero();
-	FRenderResourceFactory::UpdateConstantBufferData<FCascadeShadowConstants>(ConstantBufferCascadeShadow, NonCSMData);
-	Pipeline->SetConstantBuffer(7, EShaderType::VS, ConstantBufferCascadeShadow);
 
 	// 슬라이스 단위 렌더링
 	for (auto& kv : spotBySlice)
