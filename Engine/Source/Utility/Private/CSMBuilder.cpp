@@ -251,11 +251,6 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
     // 디렉셔널 라이트의 방향 벡터
     FVector LightDirection = Light->GetForwardVector().GetNormalized();
 
-    // SceneBounds와 CasterDistance 제거 - View Frustum만 사용
-    const FVector SceneMin = FVector::ZeroVector();
-    const FVector SceneMax = FVector::ZeroVector();
-    const bool bHasSceneBounds = false;
-
     // Cascade 범위는 Camera FarZ 사용 (동적 변화 제거로 안정성 향상)
     const float FarClip = MaxShadowDistance;
     const float Range = FarClip - NearClip;
@@ -285,10 +280,136 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
         std::array<FVector, 8> Corners;
         CalculateFrustumCorners(Camera, CascadeNear, CascadeFar, Corners);
 
-        // 이전에 정의한 BuildCascadeMatrices 함수를 통해 Light의 View, Projection 행렬과 Cascade에 대한 Frustum 8 좌표를 얻는다
+        // Frustum corners만으로 초기 뷰 행렬 생성
         FMatrix ViewMatrix;
         FMatrix ProjectionMatrix;
-        BuildCascadeMatrices(Corners, LightDirection, SceneMin, SceneMax, bHasSceneBounds, Light->GetEnableTexelSnapping(), ViewMatrix, ProjectionMatrix);
+        BuildCascadeMatrices(Corners, LightDirection, FVector::ZeroVector(), FVector::ZeroVector(), false, Light->GetEnableTexelSnapping(), ViewMatrix, ProjectionMatrix);
+
+        // 이 캐스케이드의 뷰 행렬로 모든 메시의 AABB를 변환하여 라이트 뷰 공간에서의 Z 범위 계산
+        float SceneLightViewMinZ = FLT_MAX;
+        float SceneLightViewMaxZ = -FLT_MAX;
+        bool bHasSceneBounds = false;
+
+        for (UStaticMeshComponent* MeshComp : MeshComponents)
+        {
+            if (!MeshComp || !MeshComp->IsVisible())
+                continue;
+
+            auto* StaticMesh = MeshComp->GetStaticMesh();
+            if (!StaticMesh)
+                continue;
+
+            auto* MeshAsset = StaticMesh->GetStaticMeshAsset();
+            if (!MeshAsset || MeshAsset->Vertices.empty())
+                continue;
+
+            // 메시의 월드 변환 행렬
+            FMatrix WorldTransform = MeshComp->GetWorldTransformMatrix();
+            
+            // 메시의 로컬 공간 AABB 계산 (간단하게 모든 버텍스 순회)
+            FVector LocalMin(FLT_MAX, FLT_MAX, FLT_MAX);
+            FVector LocalMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+            
+            for (const FNormalVertex& Vertex : MeshAsset->Vertices)
+            {
+                LocalMin.X = std::min(LocalMin.X, Vertex.Position.X);
+                LocalMin.Y = std::min(LocalMin.Y, Vertex.Position.Y);
+                LocalMin.Z = std::min(LocalMin.Z, Vertex.Position.Z);
+                LocalMax.X = std::max(LocalMax.X, Vertex.Position.X);
+                LocalMax.Y = std::max(LocalMax.Y, Vertex.Position.Y);
+                LocalMax.Z = std::max(LocalMax.Z, Vertex.Position.Z);
+            }
+
+            // AABB의 8개 코너를 월드 공간으로 변환한 뒤 라이트 뷰 공간으로 변환
+            FVector AABBCorners[8] = {
+                FVector(LocalMin.X, LocalMin.Y, LocalMin.Z),
+                FVector(LocalMin.X, LocalMin.Y, LocalMax.Z),
+                FVector(LocalMin.X, LocalMax.Y, LocalMin.Z),
+                FVector(LocalMin.X, LocalMax.Y, LocalMax.Z),
+                FVector(LocalMax.X, LocalMin.Y, LocalMin.Z),
+                FVector(LocalMax.X, LocalMin.Y, LocalMax.Z),
+                FVector(LocalMax.X, LocalMax.Y, LocalMin.Z),
+                FVector(LocalMax.X, LocalMax.Y, LocalMax.Z)
+            };
+
+            for (const FVector& Corner : AABBCorners)
+            {
+                // 로컬 -> 월드
+                FVector4 WorldPos = FMatrix::VectorMultiply(FVector4(Corner, 1.0f), WorldTransform);
+                // 월드 -> 라이트 뷰 공간
+                FVector4 LightViewPos = FMatrix::VectorMultiply(FVector4(WorldPos.X, WorldPos.Y, WorldPos.Z, 1.0f), ViewMatrix);
+                
+                // 라이트 뷰 공간에서의 Z값 기록
+                SceneLightViewMinZ = std::min(SceneLightViewMinZ, LightViewPos.Z);
+                SceneLightViewMaxZ = std::max(SceneLightViewMaxZ, LightViewPos.Z);
+            }
+
+            bHasSceneBounds = true;
+        }
+
+        // Scene bounds를 고려하여 프로젝션 행렬만 재계산 (뷰 행렬은 유지)
+        if (bHasSceneBounds)
+        {
+            // 기존 ViewMatrix로 Frustum corners를 다시 변환하여 X, Y 범위 계산
+            float MinX = FLT_MAX;
+            float MaxX = -FLT_MAX;
+            float MinY = FLT_MAX;
+            float MaxY = -FLT_MAX;
+
+            for (const FVector& Corner : Corners)
+            {
+                const FVector4 Transformed = FMatrix::VectorMultiply(FVector4(Corner, 1.0f), ViewMatrix);
+                MinX = std::min(MinX, Transformed.X);
+                MaxX = std::max(MaxX, Transformed.X);
+                MinY = std::min(MinY, Transformed.Y);
+                MaxY = std::max(MaxY, Transformed.Y);
+            }
+
+            // Width/Height 계산 (기존 로직과 동일)
+            float Width = MaxX - MinX;
+            float Height = MaxY - MinY;
+            
+            // Near/Far는 Scene bounds로 확장
+            float NearPlane = SceneLightViewMinZ;
+            float FarPlane = SceneLightViewMaxZ;
+
+            // Radius 기반 Side 계산 (안정성을 위해)
+            float Radius = 0.0f;
+            FVector Center = FVector::ZeroVector();
+            for (const FVector& Corner : Corners)
+            {
+                Center += Corner;
+            }
+            Center *= (1.0f / Corners.size());
+            
+            for (const FVector& Corner : Corners)
+            {
+                Radius = std::max(Radius, (Corner - Center).Length());
+            }
+            Radius = std::ceil(Radius * 16.0f) / 16.0f;
+
+            float Side = std::max(2.0f * Radius, 1.0f);
+
+            const float TileSize = CSMShadowMapResolution / CascadesPerRow;
+            const float EffectiveSize = std::max(TileSize - AtlasBorder * 2.0f, 1.0f);
+            const float BaseWorldUnitsPerTexel = (EffectiveSize > 0.0f) ? (Side / EffectiveSize) : 0.0f;
+            const float StabilizationMargin = BaseWorldUnitsPerTexel * 2.0f;
+            Side += StabilizationMargin;
+
+            Width = Side;
+            Height = Side;
+
+            Width = std::max(Width, 1.0f);
+            Height = std::max(Height, 1.0f);
+
+            if (FarPlane - NearPlane < 1.0f)
+            {
+                FarPlane = NearPlane + 1.0f;
+            }
+
+            // Projection 행렬만 재생성 (ViewMatrix는 그대로 유지)
+            ProjectionMatrix = FMatrix::OrthographicLH(Width, Height, NearPlane, FarPlane);
+        }
 
         // 같은 라이트라고 하더라도 각 Cascade에 대해 다른 View, Projection 행렬이 계산된다.
         OutData.CascadesLightView[CascadeIndex] = ViewMatrix;
@@ -301,7 +422,3 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
 
     return CSM_MAX_CASCADES;
 }
-
-
-
-
