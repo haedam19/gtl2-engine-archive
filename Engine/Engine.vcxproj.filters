@@ -51,6 +51,9 @@
     </FxCompile>
     <FxCompile Include="Asset\Shader\ShadowPreviewShader.hlsl" />
     <FxCompile Include="Asset\Shader\VarianceShadowMappingCS.hlsl" />
+    <FxCompile Include="Asset\Shader\ShadowDepthShader.hlsl">
+      <Filter>Asset\Shader</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Source\Utility\Private\ScopeCycleCounter.cpp">
