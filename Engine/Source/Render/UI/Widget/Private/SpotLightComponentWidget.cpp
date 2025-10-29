@@ -302,7 +302,7 @@ void USpotLightComponentWidget::RenderWidget()
     }
     else
     {
-        ImGui::TextDisabled("Shadow Atlas 할당 정보가 없습니다.\n한 프레임 렌더링 후 표시됩니다.");
+        ImGui::TextDisabled("Shadow Atlas 할당 정보가 없습니다.");
     }
 
     ImGui::Separator();
