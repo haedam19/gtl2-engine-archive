@@ -40,6 +40,9 @@ public:
 	void DisableNormalMap() { NormalMapEnabled = false; }
 	bool IsNormalMapEnabled() const { return NormalMapEnabled; }
 
+	// CSM 성능 최적화: World 공간 AABB 반환 (캐시된 Local AABB 사용)
+	FAABB GetWorldAABB() const;
+
 private:
 	UStaticMesh* StaticMesh;
 

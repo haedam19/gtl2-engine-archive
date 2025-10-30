@@ -296,49 +296,29 @@ uint32 FCSMBuilder::BuildCascadeData(UDirectionalLightComponent* Light, UCamera*
                 continue;
 
             auto* StaticMesh = MeshComp->GetStaticMesh();
-            if (!StaticMesh)
+            if (!StaticMesh || !StaticMesh->IsValid())
                 continue;
 
-            auto* MeshAsset = StaticMesh->GetStaticMeshAsset();
-            if (!MeshAsset || MeshAsset->Vertices.empty())
-                continue;
+            // ⚡ 성능 최적화: 캐시된 World AABB 사용 (버텍스 순회 제거!)
+            FAABB WorldAABB = MeshComp->GetWorldAABB();
 
-            // 메시의 월드 변환 행렬
-            FMatrix WorldTransform = MeshComp->GetWorldTransformMatrix();
-            
-            // 메시의 로컬 공간 AABB 계산 (간단하게 모든 버텍스 순회)
-            FVector LocalMin(FLT_MAX, FLT_MAX, FLT_MAX);
-            FVector LocalMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-            
-            for (const FNormalVertex& Vertex : MeshAsset->Vertices)
-            {
-                LocalMin.X = std::min(LocalMin.X, Vertex.Position.X);
-                LocalMin.Y = std::min(LocalMin.Y, Vertex.Position.Y);
-                LocalMin.Z = std::min(LocalMin.Z, Vertex.Position.Z);
-                LocalMax.X = std::max(LocalMax.X, Vertex.Position.X);
-                LocalMax.Y = std::max(LocalMax.Y, Vertex.Position.Y);
-                LocalMax.Z = std::max(LocalMax.Z, Vertex.Position.Z);
-            }
-
-            // AABB의 8개 코너를 월드 공간으로 변환한 뒤 라이트 뷰 공간으로 변환
+            // AABB의 8개 코너 계산
             FVector AABBCorners[8] = {
-                FVector(LocalMin.X, LocalMin.Y, LocalMin.Z),
-                FVector(LocalMin.X, LocalMin.Y, LocalMax.Z),
-                FVector(LocalMin.X, LocalMax.Y, LocalMin.Z),
-                FVector(LocalMin.X, LocalMax.Y, LocalMax.Z),
-                FVector(LocalMax.X, LocalMin.Y, LocalMin.Z),
-                FVector(LocalMax.X, LocalMin.Y, LocalMax.Z),
-                FVector(LocalMax.X, LocalMax.Y, LocalMin.Z),
-                FVector(LocalMax.X, LocalMax.Y, LocalMax.Z)
+                FVector(WorldAABB.Min.X, WorldAABB.Min.Y, WorldAABB.Min.Z),
+                FVector(WorldAABB.Min.X, WorldAABB.Min.Y, WorldAABB.Max.Z),
+                FVector(WorldAABB.Min.X, WorldAABB.Max.Y, WorldAABB.Min.Z),
+                FVector(WorldAABB.Min.X, WorldAABB.Max.Y, WorldAABB.Max.Z),
+                FVector(WorldAABB.Max.X, WorldAABB.Min.Y, WorldAABB.Min.Z),
+                FVector(WorldAABB.Max.X, WorldAABB.Min.Y, WorldAABB.Max.Z),
+                FVector(WorldAABB.Max.X, WorldAABB.Max.Y, WorldAABB.Min.Z),
+                FVector(WorldAABB.Max.X, WorldAABB.Max.Y, WorldAABB.Max.Z)
             };
 
             for (const FVector& Corner : AABBCorners)
             {
-                // 로컬 -> 월드
-                FVector4 WorldPos = FMatrix::VectorMultiply(FVector4(Corner, 1.0f), WorldTransform);
                 // 월드 -> 라이트 뷰 공간
-                FVector4 LightViewPos = FMatrix::VectorMultiply(FVector4(WorldPos.X, WorldPos.Y, WorldPos.Z, 1.0f), ViewMatrix);
-                
+                FVector4 LightViewPos = FMatrix::VectorMultiply(FVector4(Corner, 1.0f), ViewMatrix);
+
                 // 라이트 뷰 공간에서의 Z값 기록
                 SceneLightViewMinZ = std::min(SceneLightViewMinZ, LightViewPos.Z);
                 SceneLightViewMaxZ = std::max(SceneLightViewMaxZ, LightViewPos.Z);

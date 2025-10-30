@@ -3,6 +3,7 @@
 #include "Core/Public/Object.h"       // UObject 기반 클래스 및 매크로
 #include "Global/CoreTypes.h"        // TArray 등
 #include "Global/BVH.h"
+#include "Physics/Public/AABB.h"     // AABB for bounding box caching
 
 // 전방 선언: FStaticMesh의 전체 정의를 포함할 필요 없이 포인터만 사용
 struct FMeshSection
@@ -33,6 +34,38 @@ struct FStaticMesh
 	// --- 3. 연결 정보 (Sections) ---
 	// 각 재질을 어떤 기하 구간에 칠할지에 대한 지시서
 	TArray<FMeshSection> Sections;
+
+	// --- 4. Cached Local AABB (Performance Optimization) ---
+	// 로컬 공간 AABB - 로딩 시 1회만 계산, CSM 성능 향상용
+	FAABB LocalAABB;
+	bool bIsLocalAABBCached = false;
+
+	// AABB 계산 및 캐싱 (로딩 시 또는 버텍스 변경 시 호출)
+	void CacheLocalAABB()
+	{
+		if (Vertices.empty())
+		{
+			LocalAABB = FAABB(FVector::ZeroVector(), FVector::ZeroVector());
+			bIsLocalAABBCached = true;
+			return;
+		}
+
+		FVector Min(FLT_MAX, FLT_MAX, FLT_MAX);
+		FVector Max(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+		for (const FNormalVertex& Vertex : Vertices)
+		{
+			Min.X = std::min(Min.X, Vertex.Position.X);
+			Min.Y = std::min(Min.Y, Vertex.Position.Y);
+			Min.Z = std::min(Min.Z, Vertex.Position.Z);
+			Max.X = std::max(Max.X, Vertex.Position.X);
+			Max.Y = std::max(Max.Y, Vertex.Position.Y);
+			Max.Z = std::max(Max.Z, Vertex.Position.Z);
+		}
+
+		LocalAABB = FAABB(Min, Max);
+		bIsLocalAABBCached = true;
+	}
 };
 
 

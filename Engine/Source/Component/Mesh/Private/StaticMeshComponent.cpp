@@ -161,3 +161,28 @@ void UStaticMeshComponent::DuplicateSubObjects(UObject* DuplicatedObject)
 {
 	Super::DuplicateSubObjects(DuplicatedObject);
 }
+
+FAABB UStaticMeshComponent::GetWorldAABB() const
+{
+	// StaticMesh가 없으면 빈 AABB 반환
+	if (!StaticMesh || !StaticMesh->IsValid())
+	{
+		return FAABB(FVector::ZeroVector(), FVector::ZeroVector());
+	}
+
+	FStaticMesh* MeshAsset = StaticMesh->GetStaticMeshAsset();
+	if (!MeshAsset)
+	{
+		return FAABB(FVector::ZeroVector(), FVector::ZeroVector());
+	}
+
+	// AABB가 캐시되지 않았으면 지금 계산 (로딩 시 한 번만 발생)
+	if (!MeshAsset->bIsLocalAABBCached)
+	{
+		MeshAsset->CacheLocalAABB();
+	}
+
+	// 캐시된 Local AABB를 World 공간으로 변환
+	// Transform()은 FAABB::Transform() 사용 (이미 구현됨)
+	return MeshAsset->LocalAABB.Transform(GetWorldTransformMatrix(), false);
+}
