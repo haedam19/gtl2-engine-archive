@@ -636,6 +636,7 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
+    <ClInclude Include="Source\Runtime\Core\Misc\SkeletalTypes.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\SpringArmComponent.h" />
     <ClInclude Include="Source\Runtime\Core\EngineTypes\CameraType.h" />
     <ClInclude Include="Source\Runtime\Engine\GameFramework\CameraModifier.h" />
