@@ -72,7 +72,7 @@ struct FSceneGlobals
 class FSceneRenderer
 {
 public:
-	FSceneRenderer(UWorld* InWorld, FSceneView* InView, URenderer* InOwnerRenderer);
+	FSceneRenderer(UWorld* InWorld, FSceneView* InView, URenderer* InOwnerRenderer, FViewport* InViewport);
 	~FSceneRenderer();
 
 	/** @brief 이 씬 렌더러의 모든 렌더링 파이프라인을 실행합니다. */
@@ -141,6 +141,7 @@ private:
 	FSceneView* View;
 	URenderer* OwnerRenderer;
 	D3D11RHI* RHIDevice;
+	FViewport* Viewport;
 
 	// 수집된 렌더링 대상 목록
 	FVisibleRenderProxySet Proxies;

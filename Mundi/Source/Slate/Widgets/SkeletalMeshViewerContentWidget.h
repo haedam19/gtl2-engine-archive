@@ -2,6 +2,10 @@
 #include "Widget.h"
 
 class UBoneHierarchyWidget;
+class FViewport;
+class FViewportClient;
+class UWorld;
+class ACameraActor;
 
 /**
  * @brief Main content widget for Skeletal Mesh Viewer
@@ -32,6 +36,12 @@ private:
 
     // Sub-widgets
     UBoneHierarchyWidget* BoneHierarchyWidget = nullptr;
+
+    // 3D Viewport
+    FViewport* Viewport = nullptr;
+    FViewportClient* ViewportClient = nullptr;
+    UWorld* ViewerWorld = nullptr;  // Viewer 전용 독립 World
+    ACameraActor* ViewerCamera = nullptr;
 
     // UI State
     bool bShowGizmo = true;

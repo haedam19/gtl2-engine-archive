@@ -45,11 +45,12 @@
 #include "WorldPhysics.h"
 #include "PlayerCameraManager.h"
 
-FSceneRenderer::FSceneRenderer(UWorld* InWorld, FSceneView* InView, URenderer* InOwnerRenderer)
+FSceneRenderer::FSceneRenderer(UWorld* InWorld, FSceneView* InView, URenderer* InOwnerRenderer, FViewport* InViewport)
 	: World(InWorld)
 	, View(InView) // 전달받은 FSceneView 저장
 	, OwnerRenderer(InOwnerRenderer)
 	, RHIDevice(InOwnerRenderer->GetRHIDevice())
+	, Viewport(InViewport)
 {
 	//OcclusionCPU = std::make_unique<FOcclusionCullingManagerCPU>();
 
@@ -87,7 +88,7 @@ void FSceneRenderer::Render()
 		View->ViewMode == EViewModeIndex::VMI_Lit_Lambert ||
 		View->ViewMode == EViewModeIndex::VMI_Lit_Phong)
 	{
-		FLightManager* LightManager = GWorld->GetLightManager();
+		FLightManager* LightManager = World->GetLightManager();
 
 		// 섀도우가 그려질 라이트들에 대해서 ShadowList에서의 Index 업데이트.
 		FShadowSystem* ShadowSystem = OwnerRenderer->GetShadowSystem();
@@ -164,8 +165,13 @@ void FSceneRenderer::Render()
 	ApplyScreenEffectsPass();
 
 	ApplyCameraFadeInOut();
-	// 최종적으로 Scene에 그려진 텍스쳐를 Back 버퍼에 그힌다
-	CompositeToBackBuffer();
+
+	// 최종적으로 Scene에 그려진 텍스쳐를 Back 버퍼에 그린다
+	// Viewport에 RenderTarget이 있으면 이미 거기에 렌더링되었으므로 건너뜀
+	if (!Viewport || !Viewport->HasRenderTarget())
+	{
+		CompositeToBackBuffer();
+	}
 }
 
 //====================================================================================
@@ -174,7 +180,21 @@ void FSceneRenderer::Render()
 
 void FSceneRenderer::RenderLitPath()
 {
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	// Viewport에 RenderTarget이 있으면 다시 바인딩 (Shadow pass 이후 AllNull 상태일 수 있음)
+	if (Viewport && Viewport->HasRenderTarget())
+	{
+		ID3D11DeviceContext* Context = RHIDevice->GetDeviceContext();
+		ID3D11RenderTargetView* RTV = Viewport->GetRenderTargetView();
+		ID3D11DepthStencilView* DSV = Viewport->GetDepthStencilView();
+		Context->OMSetRenderTargets(1, &RTV, DSV);
+
+		UE_LOG("[VIEWER] RenderLitPath: Re-bound Viewport RenderTarget");
+	}
+	// Viewport에 RenderTarget이 없을 때만 메인 백버퍼로 설정
+	else if (!Viewport || !Viewport->HasRenderTarget())
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	}
 
 	// Base Pass
 	RenderOpaquePass(View->ViewMode);
@@ -185,13 +205,19 @@ void FSceneRenderer::RenderWireframePath()
 {
 	// 깊이 버퍼 초기화 후 ID만 그리기
 	RHIDevice->RSSetState(ERasterizerMode::Solid);
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneIdTarget);
+	if (!Viewport || !Viewport->HasRenderTarget())
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneIdTarget);
+	}
 	RenderOpaquePass(EViewModeIndex::VMI_Unlit);
 
 	// Wireframe으로 그리기
 	RHIDevice->ClearDepthBuffer(1.0f, 0);
 	RHIDevice->RSSetState(ERasterizerMode::Wireframe);
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTarget);
+	if (!Viewport || !Viewport->HasRenderTarget())
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTarget);
+	}
 	RenderOpaquePass(EViewModeIndex::VMI_Unlit);
 
 	// 상태 복구
@@ -208,7 +234,10 @@ void FSceneRenderer::RenderSceneDepthPath()
 		vpBefore.Width, vpBefore.Height, vpBefore.TopLeftX, vpBefore.TopLeftY);
 
 	// 1. Scene RTV와 Depth Buffer Clear
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	if (!Viewport || !Viewport->HasRenderTarget())
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	}
 
 	// ✅ 디버그: SceneRTV 전환 후 viewport 확인
 	D3D11_VIEWPORT vpAfter;
@@ -229,8 +258,12 @@ void FSceneRenderer::RenderSceneDepthPath()
 		vpBefore.Width, vpBefore.Height);
 
 	// 3. BackBuffer Clear
-	RHIDevice->OMSetRenderTargets(ERTVMode::BackBufferWithoutDepth);
-	RHIDevice->GetDeviceContext()->ClearRenderTargetView(RHIDevice->GetBackBufferRTV(), ClearColor);
+	// Viewport에 RenderTarget이 없을 때만 BackBuffer로 전환
+	if (!Viewport || !Viewport->HasRenderTarget())
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::BackBufferWithoutDepth);
+		RHIDevice->GetDeviceContext()->ClearRenderTargetView(RHIDevice->GetBackBufferRTV(), ClearColor);
+	}
 
 	// ✅ 디버그: BackBuffer 전환 후 viewport 확인
 	RHIDevice->GetDeviceContext()->RSGetViewports(&numVP, &vpAfter);
@@ -297,7 +330,7 @@ void FSceneRenderer::PrepareView()
 	}
 
 	// 매 프레임 한 번만 업데이트
-	GWorld->GetLevel()->UpdateSceneAABB();
+	World->GetLevel()->UpdateSceneAABB();
 
 	ViewProjBuffer = ViewProjBufferType(View->ViewMatrix, View->ProjectionMatrix, InvView, InvProjection);
 
@@ -318,20 +351,19 @@ void FSceneRenderer::GatherVisibleProxies()
 	const bool bUseAntiAliasing = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_FXAA);
 	const bool bUseBillboard = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Billboard);
 
+	// Viewer World 디버깅용 (custom RenderTarget 사용 시에만 로그)
+	bool bIsViewerWorld = (Viewport && Viewport->HasRenderTarget());
+
 	// Helper lambda to collect components from an actor
 	auto CollectComponentsFromActor = [&](AActor* Actor, bool bIsEditorActor)
 		{
 			if (!Actor || !Actor->IsActorVisible())
-			{
 				return;
-			}
 
 			for (USceneComponent* Component : Actor->GetSceneComponents())
 			{
 				if (!Component || !Component->IsVisible())
-				{
 					continue;
-				}
 
 				// 엔진 에디터 액터 컴포넌트
 				if (bIsEditorActor)
@@ -367,10 +399,6 @@ void FSceneRenderer::GatherVisibleProxies()
 						{
 							bShouldAdd = bDrawStaticMeshes;
 						}
-						// else if (USkeletalMeshComponent* SkeletalMeshComponent = ...)
-						// {
-						//     bShouldAdd = bDrawSkeletalMeshes;
-						// }
 
 						if (bShouldAdd)
 						{
@@ -406,6 +434,13 @@ void FSceneRenderer::GatherVisibleProxies()
 	for (AActor* Actor : World->GetActors())
 	{
 		CollectComponentsFromActor(Actor, false);
+	}
+
+	// Viewer World 디버깅 - custom RenderTarget 사용 시에만 로그 출력
+	if (bIsViewerWorld)
+	{
+		UE_LOG("[VIEWER] Collected: Meshes=%zu, EditorLines=%zu, Billboards=%zu, EditorPrimitives=%zu",
+		       Proxies.Meshes.size(), Proxies.EditorLines.size(), Proxies.Billboards.size(), Proxies.EditorPrimitives.size());
 	}
 }
 
@@ -459,7 +494,7 @@ void FSceneRenderer::RenderDirectionalCSMShadowMap(FCSM* CSMSystem)
 	const TArray<ID3D11DepthStencilView*>& DSVViews = CSMSystem->GetCSMDSV();
 	uint32 NumLights = CSMSystem->GetDSVNum();
 
-	CSMSystem->UpdateMatrices(GWorld->GetLightManager()->GetDirectionalLight()->GetLightInfo().Direction, View);
+	CSMSystem->UpdateMatrices(World->GetLightManager()->GetDirectionalLight()->GetLightInfo().Direction, View);
 	for(int idx = 0; idx < NumLights; idx++)
 	{
 		//// ShadowViewports의 index는 FShadowBufferType.ShadowInfoList의 index와 매칭됨.
@@ -517,7 +552,7 @@ void FSceneRenderer::RenderShadowMap(FShadowSystem* InShadowSystem)
 {
 	assert(InShadowSystem && "RenderShadowMap: InShadowSystem is null");
 
-	FLightManager* LightManager = GWorld->GetLightManager();
+	FLightManager* LightManager = World->GetLightManager();
 	// --- 원래 뷰포트 설정 저장: 뷰포트 원상복구용 ---
 	UINT OriginNumViewports = 1;
 	D3D11_VIEWPORT OriginViewport = {};
@@ -835,13 +870,13 @@ void FSceneRenderer::PerformTileLightCulling()
     if (bTileCullingEnabled && OwnerRenderer->GetTileLightCuller())
     {
         // LightManager가 직전 UpdateLightBuffer에서 반영한 개수 사용 (중복 가시성 체크 제거)
-        uint32 pointCount = GWorld->GetLightManager()->GetPointLightCount();
-        uint32 spotCount  = GWorld->GetLightManager()->GetSpotLightCount();
+        uint32 pointCount = World->GetLightManager()->GetPointLightCount();
+        uint32 spotCount  = World->GetLightManager()->GetSpotLightCount();
 
         // Compute Shader 컬링 수행 (객체 내부에서 디스패치/버퍼 관리)
         OwnerRenderer->GetTileLightCuller()->CullLights(
-            GWorld->GetLightManager()->GetPointLightSRV(),
-            GWorld->GetLightManager()->GetSpotLightSRV(),
+            World->GetLightManager()->GetPointLightSRV(),
+            World->GetLightManager()->GetSpotLightSRV(),
             pointCount, spotCount,
             View->ViewMatrix, View->ProjectionMatrix,
             View->ZNear, View->ZFar,
@@ -885,6 +920,12 @@ void FSceneRenderer::RenderOpaquePass(EViewModeIndex InRenderViewMode)
 	TArray<FShaderMacro> ShaderMacros;
 	FString ShaderPath = "Shaders/Materials/UberLit.hlsl";
 	bool bNeedsShaderOverride = true; // 뷰 모드가 셰이더를 강제하는지 여부
+
+	// Viewer의 custom RenderTarget을 사용 중이면 ID Buffer 출력 비활성화
+	if (Viewport && Viewport->HasRenderTarget())
+	{
+		ShaderMacros.push_back({ "DISABLE_ID_BUFFER", "1" });
+	}
 
 	// 섀도우 필터 매크로 설정
 	auto Mode = World->GetRenderSettings().GetShadowFilterMode();
@@ -948,6 +989,23 @@ void FSceneRenderer::RenderOpaquePass(EViewModeIndex InRenderViewMode)
 		MeshComponent->CollectMeshBatches(MeshBatchElements, View);
 	}
 
+	// Viewer World 디버깅
+	if (Viewport && Viewport->HasRenderTarget())
+	{
+		UE_LOG("[VIEWER] RenderOpaquePass: Collected %zu MeshBatchElements from %zu Meshes",
+		       MeshBatchElements.size(), Proxies.Meshes.size());
+
+		// View/Projection Matrix 디버깅
+		UE_LOG("[VIEWER] View Matrix row0: (%.2f, %.2f, %.2f, %.2f)",
+		       View->ViewMatrix.M[0][0], View->ViewMatrix.M[0][1], View->ViewMatrix.M[0][2], View->ViewMatrix.M[0][3]);
+		UE_LOG("[VIEWER] View Matrix row3: (%.2f, %.2f, %.2f, %.2f)",
+		       View->ViewMatrix.M[3][0], View->ViewMatrix.M[3][1], View->ViewMatrix.M[3][2], View->ViewMatrix.M[3][3]);
+		UE_LOG("[VIEWER] Projection Matrix row0: (%.2f, %.2f, %.2f, %.2f)",
+		       View->ProjectionMatrix.M[0][0], View->ProjectionMatrix.M[0][1], View->ProjectionMatrix.M[0][2], View->ProjectionMatrix.M[0][3]);
+		UE_LOG("[VIEWER] Projection Matrix row2: (%.2f, %.2f, %.2f, %.2f)",
+		       View->ProjectionMatrix.M[2][0], View->ProjectionMatrix.M[2][1], View->ProjectionMatrix.M[2][2], View->ProjectionMatrix.M[2][3]);
+	}
+
 	// --- UMeshComponent 셰이더 오버라이드 ---
 	if (bNeedsShaderOverride && ShaderVariant)
 	{
@@ -974,8 +1032,15 @@ void FSceneRenderer::RenderOpaquePass(EViewModeIndex InRenderViewMode)
 	// --- 2. 정렬 (Sort) ---
 	MeshBatchElements.Sort();
 
+	// Viewer World 디버깅
+	if (Viewport && Viewport->HasRenderTarget())
+	{
+		UE_LOG("[VIEWER] RenderOpaquePass: About to draw %zu batches", MeshBatchElements.size());
+	}
+
 	// --- 3. 그리기 (Draw) ---
 	DrawMeshBatches(MeshBatchElements, true);
+
 }
 
 void FSceneRenderer::RenderDecalPass()
@@ -1125,7 +1190,11 @@ void FSceneRenderer::RenderPostProcessingPasses()
 	FSwapGuard SwapGuard(RHIDevice, 0, 2);
 
 	// 렌더 타겟 설정
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithoutDepth);
+	// Viewport에 RenderTarget이 없을 때만 Scene 렌더 타겟으로 전환
+	if (!Viewport || !Viewport->HasRenderTarget())
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithoutDepth);
+	}
 
 	// Depth State: Depth Test/Write 모두 OFF
 	RHIDevice->OMSetDepthStencilState(EComparisonFunc::Always);
@@ -1329,7 +1398,11 @@ void FSceneRenderer::RenderTileCullingDebug()
 	FSwapGuard SwapGuard(RHIDevice, 0, 1);
 
 	// 렌더 타겟 설정 (Depth 없이 SceneColor에 블렌딩)
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithoutDepth);
+	// Viewport에 RenderTarget이 없을 때만 Scene 렌더 타겟으로 전환
+	if (!Viewport || !Viewport->HasRenderTarget())
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithoutDepth);
+	}
 
 	// Depth State: Depth Test/Write 모두 OFF
 	RHIDevice->OMSetDepthStencilState(EComparisonFunc::Always);
@@ -1390,7 +1463,18 @@ void FSceneRenderer::RenderTileCullingDebug()
 // 빌보드, 에디터 화살표 그리기 (상호 작용, 피킹 O)
 void FSceneRenderer::RenderEditorPrimitivesPass()
 {
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	// Viewport RenderTarget이 있으면 다시 바인딩 (PostProcess 이후 변경되었을 수 있음)
+	if (Viewport && Viewport->HasRenderTarget())
+	{
+		ID3D11DeviceContext* Context = RHIDevice->GetDeviceContext();
+		ID3D11RenderTargetView* RTV = Viewport->GetRenderTargetView();
+		ID3D11DepthStencilView* DSV = Viewport->GetDepthStencilView();
+		Context->OMSetRenderTargets(1, &RTV, DSV);
+	}
+	else if (!Viewport || !Viewport->HasRenderTarget())
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	}
 	for (UPrimitiveComponent* GizmoComp : Proxies.EditorPrimitives)
 	{
 		GizmoComp->CollectMeshBatches(MeshBatchElements, View);
@@ -1401,12 +1485,23 @@ void FSceneRenderer::RenderEditorPrimitivesPass()
 // 경계, 외곽선 등 표시 (상호 작용, 피킹 X)
 void FSceneRenderer::RenderDebugPass()
 {
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTarget);
+	// Viewport RenderTarget이 있으면 다시 바인딩 (PostProcess 이후 변경되었을 수 있음)
+	if (Viewport && Viewport->HasRenderTarget())
+	{
+		ID3D11DeviceContext* Context = RHIDevice->GetDeviceContext();
+		ID3D11RenderTargetView* RTV = Viewport->GetRenderTargetView();
+		ID3D11DepthStencilView* DSV = Viewport->GetDepthStencilView();
+		Context->OMSetRenderTargets(1, &RTV, DSV);
+	}
+	else if (!Viewport || !Viewport->HasRenderTarget())
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTarget);
+	}
 
 	// 그리드 라인 수집
 	for (ULineComponent* LineComponent : Proxies.EditorLines)
 	{
-		if (GWorld->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Grid))
+		if (World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Grid))
 		{
 			LineComponent->CollectLineBatches(OwnerRenderer);
 		}
@@ -1447,7 +1542,18 @@ void FSceneRenderer::RenderDebugPass()
 void FSceneRenderer::RenderOverayEditorPrimitivesPass()
 {
 	// 후처리된 최종 이미지 위에 원본 씬의 뎁스 버퍼를 사용하여 3D 오버레이를 렌더링합니다.
-	RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	// Viewport RenderTarget이 있으면 다시 바인딩 (PostProcess 이후 변경되었을 수 있음)
+	if (Viewport && Viewport->HasRenderTarget())
+	{
+		ID3D11DeviceContext* Context = RHIDevice->GetDeviceContext();
+		ID3D11RenderTargetView* RTV = Viewport->GetRenderTargetView();
+		ID3D11DepthStencilView* DSV = Viewport->GetDepthStencilView();
+		Context->OMSetRenderTargets(1, &RTV, DSV);
+	}
+	else if (!Viewport || !Viewport->HasRenderTarget())
+	{
+		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
+	}
 
 	// 뎁스 버퍼를 Clear하고 LessEqual로 그리기 때문에 오버레이로 표시되는데
 	// 오버레이 끼리는 깊이 테스트가 가능함
@@ -1465,10 +1571,28 @@ void FSceneRenderer::RenderOverayEditorPrimitivesPass()
 // 수집한 Batch 그리기
 void FSceneRenderer::DrawMeshBatches(TArray<FMeshBatchElement>& InMeshBatches, bool bClearListAfterDraw)
 {
-	if (InMeshBatches.IsEmpty()) return;
+	// Viewer World 디버깅
+	bool bIsViewerWorld = (Viewport && Viewport->HasRenderTarget());
+	if (bIsViewerWorld)
+	{
+		UE_LOG("[VIEWER] DrawMeshBatches: Called with %zu batches", InMeshBatches.size());
+	}
+
+	if (InMeshBatches.IsEmpty())
+		return;
 
 	// --- 초기 상태 ---
-	RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
+	// Viewer World는 디버깅을 위해 Depth test 비활성화 + Culling 비활성화
+	if (bIsViewerWorld)
+	{
+		RHIDevice->OMSetDepthStencilState(EComparisonFunc::Always);  // 항상 통과
+		RHIDevice->RSSetState(ERasterizerMode::Solid_NoCull);  // Culling 비활성화
+		UE_LOG("[VIEWER] Depth test & culling disabled for debugging");
+	}
+	else
+	{
+		RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
+	}
 
 	// PS 리소스 초기화
 	ID3D11ShaderResourceView* nullSRVs[3] = { nullptr};
@@ -1698,6 +1822,13 @@ void FSceneRenderer::DrawMeshBatches(TArray<FMeshBatchElement>& InMeshBatches, b
 
 		// --- 5️⃣ Draw Call ---
 		RHIDevice->GetDeviceContext()->DrawIndexed(Batch.IndexCount, Batch.StartIndex, Batch.BaseVertexIndex);
+
+		// Viewer World 디버깅
+		if (Viewport && Viewport->HasRenderTarget())
+		{
+			UE_LOG("[VIEWER] DrawIndexed: IndexCount=%d, StartIndex=%d, BaseVertex=%d",
+			       Batch.IndexCount, Batch.StartIndex, Batch.BaseVertexIndex);
+		}
 	}
 
 	RHIDevice->GetDeviceContext()->PSSetShaderResources(0, 3, nullSRVs);
@@ -1774,7 +1905,7 @@ void FSceneRenderer::ApplyScreenEffectsPass()
 
 void FSceneRenderer::ApplyCameraFadeInOut()
 {
-	if (APlayerController* PlayerController = GWorld->GetPlayerController())
+	if (APlayerController* PlayerController = World->GetPlayerController())
 	{
 		APlayerCameraManager* PlayerCameraManager = PlayerController->GetPlayerCameraManager();
 		if (PlayerCameraManager && PlayerCameraManager->IsFade())
