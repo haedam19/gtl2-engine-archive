@@ -343,7 +343,6 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     <ClCompile Include="Source\Runtime\Renderer\TileLightCuller.cpp" />
     <ClCompile Include="Source\Slate\Bezier.cpp" />
     <ClCompile Include="Source\Slate\Widgets\GameOverWidget.cpp" />
-    <ClCompile Include="Source\Slate\Widgets\GameReadyUI.cpp" />
     <ClCompile Include="Source\Slate\Widgets\GameUIWidget.cpp" />
     <ClCompile Include="Source\Slate\Widgets\PropertyRenderer.cpp" />
     <ClCompile Include="ThirdParty\ImGui\imgui.cpp">
@@ -697,7 +696,6 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     <ClInclude Include="Source\Runtime\RHI\ConstantBufferType.h" />
     <ClInclude Include="Source\Slate\Bezier.h" />
     <ClInclude Include="Source\Slate\Widgets\GameOverWidget.h" />
-    <ClInclude Include="Source\Slate\Widgets\GameReadyUI.h" />
     <ClInclude Include="Source\Slate\Widgets\GameUIWidget.h" />
     <ClInclude Include="Source\Slate\Widgets\PropertyRenderer.h" />
     <ClInclude Include="ThirdParty\ImGui\imconfig.h" />

@@ -472,9 +472,6 @@
     </ClCompile>
     <ClCompile Include="Source\Slate\Bezier.cpp" />
     <ClCompile Include="Source\Slate\SplashScreen.cpp" />
-    <ClCompile Include="Source\Slate\Widgets\GameReadyUI.cpp">
-      <Filter>Source\Slate\Widgets</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
@@ -976,9 +973,6 @@
     </ClInclude>
     <ClInclude Include="Source\Slate\Bezier.h" />
     <ClInclude Include="Source\Slate\SplashScreen.h" />
-    <ClInclude Include="Source\Slate\Widgets\GameReadyUI.h">
-      <Filter>Source\Slate\Widgets</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Source">
