@@ -477,10 +477,13 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     <ClCompile Include="Source\Slate\StatsOverlayD2D.cpp" />
     <ClCompile Include="Source\Slate\UIManager.cpp" />
     <ClCompile Include="Source\Slate\USlateManager.cpp" />
+    <ClCompile Include="Source\Slate\Widgets\BoneHierarchyWidget.cpp" />
+    <ClCompile Include="Source\Slate\Widgets\SkeletalMeshViewerContentWidget.cpp" />
     <ClCompile Include="Source\Slate\Widgets\ConsoleWidget.cpp" />
     <ClCompile Include="Source\Slate\Widgets\InputInformationWidget.cpp" />
     <ClCompile Include="Source\Slate\Widgets\MainToolbarWidget.cpp" />
     <ClCompile Include="Source\Slate\Widgets\SceneManagerWidget.cpp" />
+    <ClCompile Include="Source\Slate\Widgets\SkeletalMeshViewerLauncherWidget.cpp" />
     <ClCompile Include="Source\Slate\Widgets\TargetActorTransformWidget.cpp" />
     <ClCompile Include="Source\Slate\Widgets\Widget.cpp" />
     <ClCompile Include="Source\Slate\Windows\ConsoleWindow.cpp" />
@@ -490,6 +493,7 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     <ClCompile Include="Source\Slate\Windows\SceneWindow.cpp" />
     <ClCompile Include="Source\Slate\Windows\SControlPanel.cpp" />
     <ClCompile Include="Source\Slate\Windows\SDetailsWindow.cpp" />
+    <ClCompile Include="Source\Slate\Windows\SSkeletalMeshViewerWindow.cpp" />
     <ClCompile Include="Source\Slate\Windows\SSplitter.cpp" />
     <ClCompile Include="Source\Slate\Windows\SSplitterH.cpp" />
     <ClCompile Include="Source\Slate\Windows\SSplitterV.cpp" />
@@ -797,10 +801,13 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     <ClInclude Include="Source\Slate\StatsOverlayD2D.h" />
     <ClInclude Include="Source\Slate\UIManager.h" />
     <ClInclude Include="Source\Slate\USlateManager.h" />
+    <ClInclude Include="Source\Slate\Widgets\BoneHierarchyWidget.h" />
+    <ClInclude Include="Source\Slate\Widgets\SkeletalMeshViewerContentWidget.h" />
     <ClInclude Include="Source\Slate\Widgets\ConsoleWidget.h" />
     <ClInclude Include="Source\Slate\Widgets\InputInformationWidget.h" />
     <ClInclude Include="Source\Slate\Widgets\MainToolbarWidget.h" />
     <ClInclude Include="Source\Slate\Widgets\SceneManagerWidget.h" />
+    <ClInclude Include="Source\Slate\Widgets\SkeletalMeshViewerLauncherWidget.h" />
     <ClInclude Include="Source\Slate\Widgets\TargetActorTransformWidget.h" />
     <ClInclude Include="Source\Slate\Widgets\Widget.h" />
     <ClInclude Include="Source\Slate\Windows\ConsoleWindow.h" />
@@ -810,6 +817,7 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     <ClInclude Include="Source\Slate\Windows\SceneWindow.h" />
     <ClInclude Include="Source\Slate\Windows\SControlPanel.h" />
     <ClInclude Include="Source\Slate\Windows\SDetailsWindow.h" />
+    <ClInclude Include="Source\Slate\Windows\SSkeletalMeshViewerWindow.h" />
     <ClInclude Include="Source\Slate\Windows\SSplitter.h" />
     <ClInclude Include="Source\Slate\Windows\SSplitterH.h" />
     <ClInclude Include="Source\Slate\Windows\SSplitterV.h" />

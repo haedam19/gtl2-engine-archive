@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "ExperimentalFeatureWindow.h"
 #include "Widgets/InputInformationWidget.h"
+#include "Widgets/SkeletalMeshViewerLauncherWidget.h"
 
 //// UE_LOG 대체 매크로
 //#define UE_LOG(fmt, ...)
@@ -27,6 +28,7 @@ UExperimentalFeatureWindow::UExperimentalFeatureWindow()
 	SetConfig(Config);
 
 	AddWidget(NewObject<UInputInformationWidget>());
+	AddWidget(NewObject<USkeletalMeshViewerLauncherWidget>());
 }
 
 /**

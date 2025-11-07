@@ -6,6 +6,7 @@
 #include "Windows/PropertyWindow.h"
 #include "Windows/ExperimentalFeatureWindow.h"
 #include "Windows/SceneWindow.h"
+#include "Windows/SSkeletalMeshViewerWindow.h"
 #include "GlobalConsole.h"
 
 IMPLEMENT_CLASS(UUIWindowFactory)
@@ -45,6 +46,29 @@ UExperimentalFeatureWindow* UUIWindowFactory::CreateExperimentalFeatureWindow(EU
 	return Window;
 }
 
+UUIWindow* UUIWindowFactory::CreateSkeletalMeshViewerWindow(EUIDockDirection InDockDirection)
+{
+	SSkeletalMeshViewerWindow* Window = new SSkeletalMeshViewerWindow();
+
+	FUIWindowConfig& Config = Window->GetMutableConfig();
+	Config.WindowTitle = "Skeletal Mesh Viewer";
+	Config.DefaultSize = ImVec2(1200, 800);
+	Config.DefaultPosition = ImVec2(100, 100);
+	Config.DockDirection = InDockDirection;  // None = Floating window
+	Config.bResizable = true;
+	Config.bMovable = true;
+	Config.bCollapsible = true;
+
+	// Floating Window 설정 (도킹 방지)
+	Config.WindowFlags = ImGuiWindowFlags_NoCollapse;
+
+	// NOTE: Initialize()는 UIManager::RegisterUIWindow()에서 호출됨
+	// 여기서 호출하면 중복 호출되어 위젯이 2번 추가됨!
+	// Window->Initialize();
+
+	return Window;
+}
+
 void UUIWindowFactory::CreateDefaultUILayout()
 {
 	auto& UIManager = UUIManager::GetInstance();
@@ -59,12 +83,14 @@ void UUIWindowFactory::CreateDefaultUILayout()
 	// 콘솔 설정 후 테스트 메시지
 	UE_LOG("GlobalConsole 설정 완료 - ConsoleWidget 연결됨");
 	UE_LOG("Console 시스템이 정상적으로 동작하고 있습니다");
-	
+
 	/* SWindow를 통해 UI를 표시하기 위해 주석 처리 */
 	// UIManager.RegisterUIWindow(CreateControlPanelWindow(EUIDockDirection::Left));
 	// UIManager.RegisterUIWindow(CreatePropertyWindow(EUIDockDirection::Top));
 	// UIManager.RegisterUIWindow(CreateSceneWindow(EUIDockDirection::Center));
-	// UIManager.RegisterUIWindow(CreateExperimentalFeatureWindow(EUIDockDirection::Right));
+
+	// Skeletal Mesh Viewer 런처를 위해 ExperimentalFeatureWindow 활성화
+	UIManager.RegisterUIWindow(CreateExperimentalFeatureWindow(EUIDockDirection::Right));
 	
 	// 모든 UI 생성 완료 메시지
 	UE_LOG("기본적인 UI 생성이 성공적으로 완료되었습니다");
