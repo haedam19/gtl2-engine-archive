@@ -15,11 +15,12 @@ struct FSkinWeight4
 
 struct FSkeletalVertex
 {
+    // FNormalVertex와의 공통 요소는 최대한 순서 맞춰서 정의
     FVector    Position;
     FVector    Normal;
-    FVector2D  UV0;               // 필요시만 사용
-    FVector4   TangentSign;       // (x,y,z,w) — OBJ의 FNormalVertex 스타일
-    FSkinWeight4 Skin;            // 최대 4개 인플루언스
+    FVector2D  Tex;
+    FVector4   Tangent;
+    FSkinWeight4 Skin;    // 최대 4개 인플루언스
 };
 
 struct FBone
@@ -33,10 +34,7 @@ struct FBone
     FVector BindS = FVector(1, 1, 1);
 
     // 스키닝용 인버스 바인드(행렬 4x4; row-major 가정)
-    float   InverseBind[16] = {
-        1,0,0,0,  0,1,0,0,
-        0,0,1,0,  0,0,0,1
-    };
+    FMatrix InverseBind = FMatrix::Identity();
 };
 
 struct FSkeleton
@@ -45,9 +43,7 @@ struct FSkeleton
 
     int32 FindBoneIndex(const FString& Name) const
     {
-		int32 a = Bones.Num();
-
-        for (int32 i = 0; i < Bones.size(); ++i)
+        for (int32 i = 0; i < Bones.Num(); ++i)
         {
             if (Bones[i].Name == Name)
                 return i;
