@@ -8,7 +8,6 @@ class UImGuiHelper;
 class UWidget;
 class UWorld;
 class UTargetActorTransformWidget;
-class UGameReadyUI;
 
 // Forward declarations for compatibility
 struct ID3D11Device;
@@ -98,14 +97,11 @@ public:
 	void SetRestartCallback(sol::function Callback);
 	void InitializeGameUI(); // 게임 UI 위젯 초기화
 	void CleanupGameUI(); // 게임 UI 위젯 정리 (PIE 종료 시 호출)
-	void PrepareGameStart(); // Ready UI 표시 및 시간 정지
-	void SetGameReadyUIVisibility(bool bVisible);
-	bool IsGameReadyUIVisible() const;
-	bool IsGameStarted() const { return bIsGameStarted; }
 
 	// 게임 상태 확인
 	bool IsGameOver() const { return bIsGameOver; }
 	void SetGameOver(bool bInGameOver);
+	bool IsGameStarted() const { return bIsGameStarted; }
 
 public:
 	UUIManager();
@@ -145,12 +141,8 @@ private:
 	// Game UI Widget references
 	class UGameUIWidget* GameUIWidgetRef = nullptr;
 	class UGameOverWidget* GameOverWidgetRef = nullptr;
-	class UGameReadyUI* GameReadyWidgetRef = nullptr;
 
 	// 게임 상태
 	bool bIsGameOver = false;
 	bool bIsGameStarted = false;
-
-	void HandleGameStartRequest();
-	void HandleGameExitRequest();
 };

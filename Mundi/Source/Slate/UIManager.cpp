@@ -10,7 +10,6 @@
 #include "Widgets/TargetActorTransformWidget.h"
 #include "Widgets/GameUIWidget.h"
 #include "Widgets/GameOverWidget.h"
-#include "Widgets/GameReadyUI.h"
 #ifdef _EDITOR
 #include "EditorEngine.h"
 #endif
@@ -199,11 +198,6 @@ void UUIManager::Render()
 	if (GameOverWidgetRef)
 	{
 		GameOverWidgetRef->RenderWidget();
-	}
-
-	if (GameReadyWidgetRef)
-	{
-		GameReadyWidgetRef->RenderWidget();
 	}
 }
 void UUIManager::EndFrame() 
@@ -428,24 +422,6 @@ void UUIManager::InitializeGameUI()
 		UE_LOG("UIManager: GameOverWidget initialized");
 	}
 
-	if (!GameReadyWidgetRef)
-	{
-		GameReadyWidgetRef = NewObject<UGameReadyUI>();
-		GameReadyWidgetRef->Initialize();
-		UE_LOG("UIManager: GameReadyUI initialized");
-	}
-
-	if (GameReadyWidgetRef)
-	{
-		GameReadyWidgetRef->SetStartCallback([this]()
-		{
-			HandleGameStartRequest();
-		});
-		GameReadyWidgetRef->SetExitCallback([this]()
-		{
-			HandleGameExitRequest();
-		});
-	}
 }
 
 void UUIManager::SetInGameUIVisibility(bool bVisible)
@@ -638,114 +614,8 @@ void UUIManager::CleanupGameUI()
 		GameOverWidgetRef = nullptr;
 	}
 
-	if (GameReadyWidgetRef)
-	{
-		DeleteObject(GameReadyWidgetRef);
-		GameReadyWidgetRef = nullptr;
-	}
-
 	UE_LOG("UIManager: Game UI widgets cleaned up successfully");
 }
-
-void UUIManager::PrepareGameStart()
-{
-	InitializeGameUI();
-
-	bIsGameOver = false;
-	bIsGameStarted = false;
-
-	if (GameUIWidgetRef)
-	{
-		GameUIWidgetRef->Initialize();
-		GameUIWidgetRef->SetVisible(false);
-	}
-
-	if (GameOverWidgetRef)
-	{
-		GameOverWidgetRef->SetVisible(false);
-	}
-
-	SetGameReadyUIVisibility(true);
-
-	if (WorldRef)
-	{
-		WorldRef->SetGlobalTimeDilation(0.0f);
-		UE_LOG("UIManager: Global time dilation set to 0.0f (waiting for game start)");
-	}
-	else
-	{
-		UE_LOG("UIManager: Warning: PrepareGameStart called without valid World reference");
-	}
-}
-
-void UUIManager::SetGameReadyUIVisibility(bool bVisible)
-{
-	if (!GameReadyWidgetRef)
-	{
-		InitializeGameUI();
-	}
-
-	if (GameReadyWidgetRef)
-	{
-		GameReadyWidgetRef->SetVisible(bVisible);
-		UE_LOG("UIManager: GameReady UI visibility set to %s", bVisible ? "true" : "false");
-	}
-}
-
-bool UUIManager::IsGameReadyUIVisible() const
-{
-	if (!GameReadyWidgetRef)
-	{
-		return false;
-	}
-
-	return GameReadyWidgetRef->IsVisible();
-}
-
-void UUIManager::HandleGameStartRequest()
-{
-	if (bIsGameStarted)
-	{
-		UE_LOG("UIManager: Start request ignored because the game is already running");
-		return;
-	}
-
-	bIsGameStarted = true;
-	SetGameReadyUIVisibility(false);
-	SetInGameUIVisibility(true);
-
-	if (GameOverWidgetRef)
-	{
-		GameOverWidgetRef->SetVisible(false);
-	}
-
-	if (WorldRef)
-	{
-		WorldRef->SetGlobalTimeDilation(1.0f);
-		UE_LOG("UIManager: Global time dilation restored to 1.0f");
-	}
-	else
-	{
-		UE_LOG("UIManager: Warning: HandleGameStartRequest called without valid World reference");
-	}
-}
-
-void UUIManager::HandleGameExitRequest()
-{
-#if !defined(_RELEASE_STANDALONE) && defined(_EDITOR)
-	extern UEditorEngine GEngine;
-	if (GEngine.IsPIEActive())
-	{
-		UE_LOG("UIManager: Exit requested - ending PIE session");
-		GEngine.EndPIE();
-		return;
-	}
-#endif
-
-	UE_LOG("UIManager: Exit requested - closing application");
-	PostQuitMessage(0);
-}
-
 
 void UUIManager::SetGameOver(bool bInGameOver)
 {
@@ -754,7 +624,6 @@ void UUIManager::SetGameOver(bool bInGameOver)
 	if (bIsGameOver)
 	{
 		bIsGameStarted = false;
-		SetGameReadyUIVisibility(false);
 
 		int FinalScore = GetScore();
 		UE_LOG("[GameManager] ===== 게임 오버 처리 시작 =====");
