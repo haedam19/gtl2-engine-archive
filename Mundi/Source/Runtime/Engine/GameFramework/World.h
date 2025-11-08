@@ -42,6 +42,7 @@ public:
     ~UWorld() override;
 
     bool bPie = false;
+    bool bSuppressEditorComponents = false; // true일 때 Billboard, Gizmo 등 에디터 전용 컴포넌트 생성 억제
 
 public:
     /** 초기화 */

@@ -46,7 +46,6 @@ void ULevel::SpawnDefaultActors()
     AAmbientLightActor* AmbientLightActor = NewObject<AAmbientLightActor>();
     this->AddActor(AmbientLightActor);
     AmbientLightActor->GetLightComponent()->SetIntensity(0.1f);
-   
 }
 
 void ULevel::UpdateSceneAABB()

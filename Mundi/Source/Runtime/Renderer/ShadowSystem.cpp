@@ -115,7 +115,8 @@ void FShadowSystem::UpdateShadowIndex(UDirectionalLightComponent* DirectionalLig
 	const TArray<UPointLightComponent*>& PointLightList,
 	const TArray<USpotLightComponent*>& SpotLightList,
 	D3D11RHI* RHIDevice,
-	FSceneView* View)
+	FSceneView* View,
+	UWorld* World)
 {
 	if (DirectionalShadowMapDSV)
 	{
@@ -132,7 +133,7 @@ void FShadowSystem::UpdateShadowIndex(UDirectionalLightComponent* DirectionalLig
 			RHIDevice->GetDeviceContext()->ClearDepthStencilView(PointShadowCubeMapDSVs[Index][FaceIndex], D3D11_CLEAR_DEPTH, 1.0f, 0);
 		}
 	}
-    SelectLightCandidates(PointLightList, SpotLightList, View);
+    SelectLightCandidates(PointLightList, SpotLightList, View, World);
 
 	//FShadowBufferType Buffer{}; // 멤버변수로 변경(cpu에서도 ShadowIndex에 해당하는 ShadowInfo를 얻기 위함)
 
@@ -192,7 +193,7 @@ void FShadowSystem::UpdateShadowIndex(UDirectionalLightComponent* DirectionalLig
 
 	if (DirectionalLight)
 	{
-		FMatrix DirectionalVPMatrix = GetDirectionalShadowVPMatrix(DirectionalLight, View, RHIDevice);
+		FMatrix DirectionalVPMatrix = GetDirectionalShadowVPMatrix(DirectionalLight, View, RHIDevice, World);
 		ShadowBufferData.ShadowInfoList[NumPointShadow + NumSpotShadow].ViewProjectionMatrix = DirectionalVPMatrix;
 		ShadowBufferData.ShadowInfoList[NumPointShadow + NumSpotShadow].ShadowBias = DirectionalLight->GetShadowBias();
 		ShadowBufferData.ShadowInfoList[NumPointShadow + NumSpotShadow].ShadowSlopeBias = DirectionalLight->GetShadowSlopeBias();
@@ -213,9 +214,10 @@ void FShadowSystem::UpdateShadowIndex(UDirectionalLightComponent* DirectionalLig
 void FShadowSystem::SelectLightCandidates(
 	const TArray<UPointLightComponent*>& PointLightList,
 	const TArray<USpotLightComponent*>& SpotLightList,
-	FSceneView* View)
+	FSceneView* View,
+	UWorld* World)
 {
-    CheckLightFrustumCulling(PointLightList, SpotLightList, View);
+    CheckLightFrustumCulling(PointLightList, SpotLightList, View, World);
     // SelectCandidatesWithWeight();
 }
 
@@ -592,7 +594,8 @@ void FShadowSystem::CreateSpotShadowMomentRTV(D3D11RHI* InDevice)
 
 void FShadowSystem::CheckLightFrustumCulling(const TArray<UPointLightComponent*>& PointLightList,
 	const TArray<USpotLightComponent*>& SpotLightList,
-	FSceneView* View)
+	FSceneView* View,
+	UWorld* World)
 {
     FFrustum Frustum = View->ViewFrustum;
 	SpotLightCandidates.clear();
@@ -991,10 +994,11 @@ void FShadowSystem::SplitNode(FViewportInfo& NodeToSplit, FViewportInfo& Viewpor
 	}
 }
 
-void FShadowSystem::CaptureSelectedLightShadowMap(D3D11RHI* RHIDevice)
+void FShadowSystem::CaptureSelectedLightShadowMap(D3D11RHI* RHIDevice, UWorld* World)
 {
 	// ✅ 섀도우 렌더링 완료 직후, 선택된 라이트의 쉐도우맵 스냅샷 캡처
-	if (USelectionManager* SelectionMgr = GWorld->GetSelectionManager())
+	if (!World) return;
+	if (USelectionManager* SelectionMgr = World->GetSelectionManager())
 	{
 		UActorComponent* SelectedComp = SelectionMgr->GetSelectedActorComponent();
 
@@ -1019,11 +1023,11 @@ void FShadowSystem::CaptureSelectedLightShadowMap(D3D11RHI* RHIDevice)
 	}
 }
 
-FMatrix FShadowSystem::GetDirectionalShadowVPMatrix(UDirectionalLightComponent* DirectionalLight, FSceneView* CameraView, D3D11RHI* InDevice)
+FMatrix FShadowSystem::GetDirectionalShadowVPMatrix(UDirectionalLightComponent* DirectionalLight, FSceneView* CameraView, D3D11RHI* InDevice, UWorld* World)
 {
 	FDirectionalLightInfo DirectionalLightInfo = DirectionalLight->GetLightInfo();
 	TArray<FVector> PointsOnFrustum = CameraView->GetPointsOnCameraFrustum();
-	FAABB SceneAABB = GWorld->GetLevel()->GetSceneAABB();
+	FAABB SceneAABB = World ? World->GetLevel()->GetSceneAABB() : FAABB();
 	
 	TArray<FVector> PointsOnSceneAABB = SceneAABB.GetPoints();
 

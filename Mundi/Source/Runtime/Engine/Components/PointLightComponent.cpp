@@ -49,7 +49,10 @@ void UPointLightComponent::OnRegister(UWorld* InWorld)
 
 void UPointLightComponent::OnUnregister()
 {
-	GWorld->GetLightManager()->DeRegisterLight(this);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->DeRegisterLight(this);
+	}
 }
 
 void UPointLightComponent::RenderDebugVolume(URenderer* Renderer) const

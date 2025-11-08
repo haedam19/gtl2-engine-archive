@@ -42,17 +42,15 @@ void UDirectionalLightComponent::OnRegister(UWorld* InWorld)
 {
 	Super_t::OnRegister(InWorld);
 
-	UE_LOG("DirectionalLightComponent::OnRegister called");
-
 	if (SpriteComponent)
 	{
 		SpriteComponent->SetTextureName(GDataDir + "/UI/Icons/S_LightDirectional.dds");
 	}
 
 	// Create Direction Gizmo if not already created
-	if (!DirectionGizmo && !InWorld->bPie)
+	// bPie 모드이거나 bSuppressEditorComponents가 true면 생성 안 함
+	if (!DirectionGizmo && !InWorld->bPie && !InWorld->bSuppressEditorComponents)
 	{
-		UE_LOG("Creating DirectionGizmo...");
 		CREATE_EDITOR_COMPONENT(DirectionGizmo, UGizmoArrowComponent);
 
 		// Set gizmo mesh (using the same mesh as GizmoActor's arrow)
@@ -67,18 +65,18 @@ void UDirectionalLightComponent::OnRegister(UWorld* InWorld)
 
 		// Update gizmo properties to match light
 		UpdateDirectionGizmo();
-		UE_LOG("DirectionGizmo created successfully");
 	}
-	else
-	{
-		UE_LOG("DirectionGizmo already exists");
-	}
+
+	// Register to LightManager
 	InWorld->GetLightManager()->RegisterLight(this);
 }
 
 void UDirectionalLightComponent::OnUnregister()
 {
-	GWorld->GetLightManager()->DeRegisterLight(this);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->DeRegisterLight(this);
+	}
 }
 
 void UDirectionalLightComponent::OnSerialized()

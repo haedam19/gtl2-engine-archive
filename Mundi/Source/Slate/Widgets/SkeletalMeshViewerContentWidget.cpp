@@ -10,6 +10,7 @@
 #include "D3D11RHI.h"
 #include "EditorEngine.h"
 #include "DirectionalLightActor.h"
+#include "DirectionalLightComponent.h"
 #include "StaticMeshActor.h"
 #include "StaticMeshComponent.h"
 #include "Grid/GridActor.h"
@@ -19,6 +20,9 @@
 #include "Picking.h"
 #include "Actor.h"
 #include "Enums.h"
+#include "SceneComponent.h"
+#include "BillboardComponent.h"
+#include "Gizmo/GizmoArrowComponent.h"
 
 // 전역 EditorEngine 접근
 extern UEditorEngine GEngine;
@@ -91,8 +95,40 @@ void USkeletalMeshViewerContentWidget::Initialize()
     ViewerWorld = NewObject<UWorld>();
     if (ViewerWorld)
     {
+
+        // 에디터 전용 컴포넌트(Billboard, Gizmo 등) 생성 억제
+        ViewerWorld->bSuppressEditorComponents = true;
+
         ViewerWorld->Initialize();
-        UE_LOG("SkeletalMeshViewerContentWidget: Independent Viewer World created");
+
+        // ========================================
+        // 기본 생성된 액터들 제거 (깨끗한 상태로 시작)
+        // ========================================
+        // Level Actors 제거 (ULevel::SpawnDefaultActors()에서 자동 생성된 DirectionalLight 등)
+        TArray<AActor*> DefaultActorsToRemove;
+        for (AActor* Actor : ViewerWorld->GetActors())
+        {
+            DefaultActorsToRemove.Add(Actor);
+        }
+        for (AActor* Actor : DefaultActorsToRemove)
+        {
+            ViewerWorld->DestroyActor(Actor);
+        }
+
+        // Editor Actors 제거 (Grid, Gizmo 등)
+        TArray<AActor*> EditorActorsToRemove;
+        for (AActor* Actor : ViewerWorld->GetEditorActors())
+        {
+            EditorActorsToRemove.Add(Actor);
+        }
+        for (AActor* Actor : EditorActorsToRemove)
+        {
+            UE_LOG("SkeletalMeshViewerContentWidget: Removing editor actor: %s", Actor->GetClass()->Name);
+            ViewerWorld->DestroyActor(Actor);
+        }
+
+        UE_LOG("SkeletalMeshViewerContentWidget: Default actors removed (Level: %d, Editor: %d)",
+            DefaultActorsToRemove.Num(), EditorActorsToRemove.Num());
 
         // ========================================
         // RenderSettings ShowFlags 활성화 (필수!)
@@ -101,7 +137,11 @@ void USkeletalMeshViewerContentWidget::Initialize()
         RenderSettings.EnableShowFlag(EEngineShowFlags::SF_StaticMeshes);
         RenderSettings.EnableShowFlag(EEngineShowFlags::SF_Lighting);
         RenderSettings.EnableShowFlag(EEngineShowFlags::SF_Grid);
-        UE_LOG("SkeletalMeshViewerContentWidget: RenderSettings ShowFlags enabled");
+
+        // Billboard와 에디터 전용 컴포넌트 렌더링 비활성화
+        RenderSettings.DisableShowFlag(EEngineShowFlags::SF_Billboard);
+
+        UE_LOG("SkeletalMeshViewerContentWidget: RenderSettings ShowFlags configured (Billboard disabled)");
 
         // Viewer World에 Camera 생성
         ViewerCamera = ViewerWorld->SpawnActor<ACameraActor>();
@@ -169,13 +209,48 @@ void USkeletalMeshViewerContentWidget::Initialize()
         // Viewer World에 테스트용 액터들 추가
         // ========================================
 
+        // LightManager 완전히 클리어 (DestroyActor로 제거해도 LightManager에 남아있을 수 있음)
+        ViewerWorld->GetLightManager()->ClearAllLightList();
+
         // 1. Directional Light (조명 필수!)
-        ADirectionalLightActor* Light = ViewerWorld->SpawnActor<ADirectionalLightActor>();
-        if (Light)
+        ViewerDirectionalLight = ViewerWorld->SpawnActor<ADirectionalLightActor>();
+        if (ViewerDirectionalLight)
         {
-            Light->SetActorRotation(FVector(-45.0f, 45.0f, 0.0f));  // 각도 조정
-            UE_LOG("SkeletalMeshViewerContentWidget: Directional Light created - Components: %zu",
-                   Light->GetSceneComponents().size());
+            // 주의: SetActorHiddenInEditor(true)를 사용하면 IsActorVisible() == false가 되어
+            // LightManager::UpdateLightBuffer()에서 라이트가 업데이트되지 않음
+            // 피킹 방지는 피킹 로직에서 처리
+
+            // 에디터 전용 컴포넌트는 bSuppressEditorComponents 플래그로 애초에 생성되지 않음
+
+            // 목표: 좌상단(+X, +Y, +Z)에서 원점을 향해 빛이 비춤
+            // 셰이더에서 lightDir = -Direction을 사용하므로
+            // 빛이 (-X, -Y, -Z) 방향에서 오려면 Direction = (+X, +Y, +Z)
+            // Y축이 반전되므로 입력은 -Y 사용
+            FVector TargetDirection(1.0f, 0.0f, 0.0f);
+            TargetDirection = TargetDirection.GetNormalized();
+
+            // XY 평면에서의 각도 (Yaw, Z축 회전) - 부호 반전
+            float yaw = -RadiansToDegrees(std::atan2(TargetDirection.Y, TargetDirection.X));
+
+            // 수직 각도 (Pitch) - Z가 +이므로 위를 향함
+            float xyLength = std::sqrt(TargetDirection.X * TargetDirection.X + TargetDirection.Y * TargetDirection.Y);
+            float pitch = RadiansToDegrees(std::atan2(TargetDirection.Z, xyLength));
+
+            ViewerDirectionalLight->SetActorRotation(FVector(0.0f, pitch, yaw));  // (Roll, Pitch, Yaw)
+
+            // 실제 라이트 방향 확인
+            if (UDirectionalLightComponent* LightComp = ViewerDirectionalLight->GetLightComponent())
+            {
+                FVector ActualDirection = LightComp->GetLightDirection();
+                FVector LightInfoDirection = LightComp->GetLightInfo().Direction;
+
+                UE_LOG("SkeletalMeshViewerContentWidget: Directional Light configured");
+                UE_LOG("  Input Direction: (%.3f, %.3f, %.3f)", TargetDirection.X, TargetDirection.Y, TargetDirection.Z);
+                UE_LOG("  GetLightDirection(): (%.3f, %.3f, %.3f)", ActualDirection.X, ActualDirection.Y, ActualDirection.Z);
+                UE_LOG("  GetLightInfo().Direction: (%.3f, %.3f, %.3f)", LightInfoDirection.X, LightInfoDirection.Y, LightInfoDirection.Z);
+                UE_LOG("  Goal: Light from (+X, +Y, +Z) toward origin = Direction(+X, +Y, +Z) = (0.577, 0.577, 0.577)");
+                UE_LOG("  Rotation - Yaw: %.2f, Pitch: %.2f", yaw, pitch);
+            }
         }
         else
         {
@@ -284,6 +359,7 @@ void USkeletalMeshViewerContentWidget::Initialize()
             }
         }
     }
+
 }
 
 void USkeletalMeshViewerContentWidget::RenderWidget()
@@ -512,6 +588,16 @@ void USkeletalMeshViewerContentWidget::RenderSidebar()
     {
         RenderBoneProperties();
     }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Lighting controls section
+    if (ImGui::CollapsingHeader("Lighting Controls", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        RenderLightingControls();
+    }
 }
 
 void USkeletalMeshViewerContentWidget::RenderMeshList()
@@ -631,6 +717,104 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
         ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No actor/bone selected");
         ImGui::Spacing();
         ImGui::Text("Click on an object in the viewport to select it");
+    }
+
+    ImGui::EndChild();
+}
+
+void USkeletalMeshViewerContentWidget::RenderLightingControls()
+{
+    ImGui::BeginChild("LightingControlsArea", ImVec2(0, 200), true);
+
+    if (ViewerDirectionalLight)
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.4f, 1.0f), "Directional Light");
+        ImGui::Spacing();
+
+        // Get current rotation
+        FVector currentRot = ViewerDirectionalLight->GetActorRotation().ToEulerZYXDeg();
+        float rotArray[3] = { currentRot.X, currentRot.Y, currentRot.Z };  // Roll, Pitch, Yaw
+
+        ImGui::Text("Rotation (degrees)");
+        ImGui::Spacing();
+
+        bool bRotationChanged = false;
+
+        // Roll slider
+        if (ImGui::SliderFloat("Roll", &rotArray[0], -180.0f, 180.0f, "%.1f"))
+        {
+            bRotationChanged = true;
+        }
+
+        // Pitch slider
+        if (ImGui::SliderFloat("Pitch", &rotArray[1], -89.0f, 89.0f, "%.1f"))
+        {
+            bRotationChanged = true;
+        }
+
+        // Yaw slider
+        if (ImGui::SliderFloat("Yaw", &rotArray[2], -180.0f, 180.0f, "%.1f"))
+        {
+            bRotationChanged = true;
+        }
+
+        // Apply rotation if changed
+        if (bRotationChanged)
+        {
+            ViewerDirectionalLight->SetActorRotation(FVector(rotArray[0], rotArray[1], rotArray[2]));
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Intensity slider
+        if (UDirectionalLightComponent* LightComp = ViewerDirectionalLight->GetLightComponent())
+        {
+            ImGui::Text("Intensity");
+            ImGui::Spacing();
+
+            float currentIntensity = LightComp->GetIntensity();
+            if (ImGui::SliderFloat("##Intensity", &currentIntensity, 0.0f, 10.0f, "%.2f"))
+            {
+                LightComp->SetIntensity(currentIntensity);
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // Shadow Bias slider
+            ImGui::Text("Shadow Bias");
+            ImGui::Spacing();
+
+            float currentBias = LightComp->GetShadowBias();
+            if (ImGui::SliderFloat("Bias##ShadowBias", &currentBias, 0.0f, 0.01f, "%.5f"))
+            {
+                LightComp->SetShadowBias(currentBias);
+            }
+
+            float currentSlopeBias = LightComp->GetShadowSlopeBias();
+            if (ImGui::SliderFloat("Slope Bias##SlopeBias", &currentSlopeBias, 0.0f, 10.0f, "%.2f"))
+            {
+                LightComp->SetShadowSlopeBias(currentSlopeBias);
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // Display current light direction (for debugging)
+            FVector ActualDirection = LightComp->GetLightDirection();
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Light Direction:");
+            ImGui::Text("  X: %.3f", ActualDirection.X);
+            ImGui::Text("  Y: %.3f", ActualDirection.Y);
+            ImGui::Text("  Z: %.3f", ActualDirection.Z);
+        }
+    }
+    else
+    {
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No directional light in viewer");
     }
 
     ImGui::EndChild();
@@ -1035,18 +1219,26 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
 
                     if (pickedActor)
                     {
-                        SelectedActor = pickedActor;
-                        SelectedActor->SetIsPicked(true);  // 시각적 하이라이트
-
-                        // ViewerWorld의 SelectionManager에 등록 (기즈모 표시용)
-                        if (ViewerWorld && ViewerWorld->GetSelectionManager())
+                        // DirectionalLight는 피킹 제외 (라이팅 조절 전용)
+                        if (pickedActor == ViewerDirectionalLight)
                         {
-                            ViewerWorld->GetSelectionManager()->SelectActor(pickedActor);
-                            UE_LOG("SkeletalMeshViewerContentWidget: Actor selected in ViewerWorld SelectionManager");
+                            UE_LOG("SkeletalMeshViewerContentWidget: DirectionalLight picked - ignoring");
                         }
+                        else
+                        {
+                            SelectedActor = pickedActor;
+                            SelectedActor->SetIsPicked(true);  // 시각적 하이라이트
 
-                        UE_LOG("SkeletalMeshViewerContentWidget: Actor picked - %s",
-                               pickedActor->GetName().ToString().c_str());
+                            // ViewerWorld의 SelectionManager에 등록 (기즈모 표시용)
+                            if (ViewerWorld && ViewerWorld->GetSelectionManager())
+                            {
+                                ViewerWorld->GetSelectionManager()->SelectActor(pickedActor);
+                                UE_LOG("SkeletalMeshViewerContentWidget: Actor selected in ViewerWorld SelectionManager");
+                            }
+
+                            UE_LOG("SkeletalMeshViewerContentWidget: Actor picked - %s",
+                                   pickedActor->GetName().ToString().c_str());
+                        }
                     }
                     else
                     {

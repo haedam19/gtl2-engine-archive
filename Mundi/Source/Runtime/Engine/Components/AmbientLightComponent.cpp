@@ -37,9 +37,12 @@ void UAmbientLightComponent::OnRegister(UWorld* InWorld)
 
 void UAmbientLightComponent::OnUnregister()
 {
-	if (FLightManager* LightManager = GWorld->GetLightManager())
+	if (UWorld* World = GetWorld())
 	{
-		LightManager->DeRegisterLight(this);
+		if (FLightManager* LightManager = World->GetLightManager())
+		{
+			LightManager->DeRegisterLight(this);
+		}
 	}
 }
 

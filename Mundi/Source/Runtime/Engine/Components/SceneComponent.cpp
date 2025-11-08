@@ -405,7 +405,8 @@ void USceneComponent::Serialize(const bool bInIsLoading, JSON& InOutHandle)
 
 void USceneComponent::OnRegister(UWorld* InWorld)
 {
-    if (!std::strcmp(this->GetClass()->Name , USceneComponent::StaticClass()->Name) && !SpriteComponent)
+    // bSuppressEditorComponents가 true면 에디터 전용 컴포넌트 생성 안 함
+    if (!std::strcmp(this->GetClass()->Name , USceneComponent::StaticClass()->Name) && !SpriteComponent && !InWorld->bSuppressEditorComponents)
     {
         CREATE_EDITOR_COMPONENT(SpriteComponent, UBillboardComponent);
         SpriteComponent->SetTextureName(GDataDir + "/UI/Icons/EmptyActor.dds");

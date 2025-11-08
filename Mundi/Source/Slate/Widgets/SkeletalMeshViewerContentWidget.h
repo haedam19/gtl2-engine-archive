@@ -38,6 +38,7 @@ private:
     void RenderMeshList();
     void RenderBoneHierarchy();
     void RenderBoneProperties();
+    void RenderLightingControls();  // DirectionalLight Rotation 조작 UI
 
     // Sub-widgets
     UBoneHierarchyWidget* BoneHierarchyWidget = nullptr;
@@ -47,6 +48,7 @@ private:
     FViewportClient* ViewportClient = nullptr;
     UWorld* ViewerWorld = nullptr;  // Viewer 전용 독립 World
     ACameraActor* ViewerCamera = nullptr;
+    class ADirectionalLightActor* ViewerDirectionalLight = nullptr;  // Viewer World의 DirectionalLight
 
     // UI State
     bool bShowGizmo = true;

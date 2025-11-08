@@ -38,6 +38,7 @@ public:
     void BuildCascadeMatrices(
         const FCascadeSettings& Settings,
         const FSceneView* View,
+        UWorld* World,
         const FVector& LightDir, float& NearZ, float& FarZ,
         /* Out */ FFrustumInfo& OutFrustum);
 
@@ -90,9 +91,9 @@ public:
 
     /* Constant 연결*/
     // Depth, Uberlit Buffer랑 연결
-    void UpdateMatrices(FVector LightDirection, const FSceneView* View);
+    void UpdateMatrices(FVector LightDirection, const FSceneView* View, UWorld* World);
     void UpdateDepthConstant(D3D11RHI* RHIDevice, int DSVIndex);
-    void UpdateUberConstant(D3D11RHI* RHIDevice);
+    void UpdateUberConstant(D3D11RHI* RHIDevice, UWorld* World);
 
     /* Debug */
     void CreateDebugCSMSliceTextures(D3D11RHI* InDevice, int NumCascades);

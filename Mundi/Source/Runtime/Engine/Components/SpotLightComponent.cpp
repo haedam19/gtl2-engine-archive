@@ -139,7 +139,10 @@ void USpotLightComponent::OnRegister(UWorld* InWorld)
 
 void USpotLightComponent::OnUnregister()
 {
-	GWorld->GetLightManager()->DeRegisterLight(this);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetLightManager()->DeRegisterLight(this);
+	}
 }
 
 void USpotLightComponent::UpdateDirectionGizmo()

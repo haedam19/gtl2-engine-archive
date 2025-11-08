@@ -89,13 +89,13 @@ void FCSM::BuildCascadeSplits(float NearZ, float FarZ, int32 Num,
     }
 }
 
-void FCSM::BuildCascadeMatrices(const FCascadeSettings& Settings, const FSceneView* View, const FVector& LightDir, float& NearZ, float& FarZ, FFrustumInfo& OutFrustum)
+void FCSM::BuildCascadeMatrices(const FCascadeSettings& Settings, const FSceneView* View, UWorld* World, const FVector& LightDir, float& NearZ, float& FarZ, FFrustumInfo& OutFrustum)
 {
     // Light View Matrix
     // Frustum 별 Corner 저장
     FVector FrustumCornersWS[8] = {};
     bool bHasValidView = false;
-    FAABB SceneAABB = GWorld->GetLevel()->GetSceneAABB();
+    FAABB SceneAABB = World ? World->GetLevel()->GetSceneAABB() : FAABB();
 
     if (View)
     {
@@ -160,12 +160,15 @@ void FCSM::BuildCascadeMatrices(const FCascadeSettings& Settings, const FSceneVi
     ShadowAABB.Min.Z = SceneAABBLight.Min.Z;    // 씬 전방 (더 깊게)
     ShadowAABB.Max.Z = std::min(FrustumAABBLight.Max.Z, SceneAABBLight.Max.Z);  // 프러스텀 후방
 
-    // Artifact를 보정 
+    // Artifact를 보정
     {
         // 1. Texel Snap
         FVector Center = (ShadowAABB.Min + ShadowAABB.Max) * 0.5f;
         FVector Extent = (ShadowAABB.Min - ShadowAABB.Max) * 0.5f;
-        if (!GWorld->GetLightManager()->GetDirectionalLight()->GetSceneAABB())
+
+        // World의 DirectionalLight를 체크 (nullptr 체크 포함)
+        UDirectionalLightComponent* DirectionalLight = World ? World->GetLightManager()->GetDirectionalLight() : nullptr;
+        if (!DirectionalLight || !DirectionalLight->GetSceneAABB())
         {
             Extent*=2.0f;
         }
@@ -353,21 +356,21 @@ void FCSM::UpdateDebugCopies(D3D11RHI* InDevice, int NumCascades)
     }
 }
 
-void FCSM::UpdateMatrices(FVector LightDirection, const FSceneView* View)
+void FCSM::UpdateMatrices(FVector LightDirection, const FSceneView* View, UWorld* World)
 {
     // Cascade Near, Far 제작 : (0~Num-1 - near) (Num ~ Num*2-1 - far)
     // TODO : Dirty bit으로 전환, CascadeSetting과 연동
-    
+
     float CameraNearZ = View->ZNear;
     float CameraFarZ = View->ZFar;
-    
+
     Splits.resize(Settings.NumCascades+1);
     BuildCascadeSplits(CameraNearZ, CameraFarZ, Settings.NumCascades, Lambda, Splits);
-    
+
     // Frustum들 업데이트, 짧은 순으로 제작
     for (int i=0; i<Settings.NumCascades; i++)
     {
-        BuildCascadeMatrices(Settings, View, LightDirection, Splits[i], Splits[i+1], Frustum[i]);
+        BuildCascadeMatrices(Settings, View, World, LightDirection, Splits[i], Splits[i+1], Frustum[i]);
     }
 }
 
@@ -380,7 +383,7 @@ void FCSM::UpdateDepthConstant(D3D11RHI* RHIDevice, int DSVIndex)
     RHIDevice->SetAndUpdateConstantBuffer(ViewProMatrix);
 }
 
-void FCSM::UpdateUberConstant(D3D11RHI* RHIDevice)
+void FCSM::UpdateUberConstant(D3D11RHI* RHIDevice, UWorld* World)
 {
     /* Copy Texture Arrays*/
     UpdateDebugCopies(RHIDevice, Settings.NumCascades);
@@ -423,7 +426,9 @@ void FCSM::UpdateUberConstant(D3D11RHI* RHIDevice)
     UberConstants.UseDebugging = IsDebugging ? 1 : 0;
     UberConstants.NumCascades = Settings.NumCascades;
 
-    if(GWorld->GetLightManager()->GetDirectionalLight()->GetCastShadow())
+    // World의 DirectionalLight를 체크 (nullptr 체크 포함)
+    UDirectionalLightComponent* DirectionalLight = World ? World->GetLightManager()->GetDirectionalLight() : nullptr;
+    if(DirectionalLight && DirectionalLight->GetCastShadow())
     {
         UberConstants.UseShadow = 1;
     }

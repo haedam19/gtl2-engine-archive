@@ -116,7 +116,8 @@ void ULightComponent::OnRegister(UWorld* InWorld)
 {
 	Super_t::OnRegister(InWorld);
 	UE_LOG("LightComponent::OnRegister called");
-	if (!SpriteComponent && !InWorld->bPie)
+	// bPie 모드이거나 bSuppressEditorComponents가 true면 생성 안 함
+	if (!SpriteComponent && !InWorld->bPie && !InWorld->bSuppressEditorComponents)
 	{
 		UE_LOG("Creating SpriteComponent (Billboard)...");
 		CREATE_EDITOR_COMPONENT(SpriteComponent, UBillboardComponent);
@@ -124,7 +125,7 @@ void ULightComponent::OnRegister(UWorld* InWorld)
 	}
 	else
 	{
-		UE_LOG("SpriteComponent already exists, skipping creation");
+		UE_LOG("SpriteComponent already exists or suppressed, skipping creation");
 	}
 }
 

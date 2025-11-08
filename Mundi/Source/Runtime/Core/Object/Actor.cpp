@@ -505,7 +505,14 @@ void AActor::SetActorHiddenInEditor(bool bNewHidden)
 
 bool AActor::IsActorVisible() const
 {
-	return GWorld->bPie ? !bHiddenInGame : !bHiddenInEditor;
+	// CRITICAL: Use GetWorld() instead of GWorld for multi-world support
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		// Fallback to GWorld if actor is not yet registered to a world
+		return GWorld ? (GWorld->bPie ? !bHiddenInGame : !bHiddenInEditor) : !bHiddenInEditor;
+	}
+	return World->bPie ? !bHiddenInGame : !bHiddenInEditor;
 }
 
 void AActor::PostDuplicate()

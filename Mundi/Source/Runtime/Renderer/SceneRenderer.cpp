@@ -88,13 +88,14 @@ void FSceneRenderer::Render()
 		View->ViewMode == EViewModeIndex::VMI_Lit_Lambert ||
 		View->ViewMode == EViewModeIndex::VMI_Lit_Phong)
 	{
+		extern UWorld* GWorld;
 		FLightManager* LightManager = World->GetLightManager();
 
 		// 섀도우가 그려질 라이트들에 대해서 ShadowList에서의 Index 업데이트.
 		FShadowSystem* ShadowSystem = OwnerRenderer->GetShadowSystem();
 
         ShadowSystem->UpdateShadowIndex(LightManager->GetDirectionalLight(), LightManager->GetPointLightList(),
-            LightManager->GetSpotLightList(), RHIDevice, View);
+            LightManager->GetSpotLightList(), RHIDevice, View, World);
 
         // 새도우 업데이트 후 라이트 업데이트해야함 (새도우에 대한 참조 인덱스를 라이트가 저장하기 때문)
         LightManager->UpdateLightBuffer(RHIDevice);	//라이트 구조체 버퍼 업데이트, 바인딩
@@ -110,7 +111,7 @@ void FSceneRenderer::Render()
 		}
 		else
 		{
-			ShadowSystem->CaptureSelectedLightShadowMap(RHIDevice); // 쉐도우맵이 클리어된 상태(FShadowSystem::UpdateShadowIndex에서 해줌)에서 캡처
+			ShadowSystem->CaptureSelectedLightShadowMap(RHIDevice, World); // 쉐도우맵이 클리어된 상태(FShadowSystem::UpdateShadowIndex에서 해줌)에서 캡처
 		}
 
 		if (World->GetRenderSettings().GetDirectionaliShadowMode() == EDirectionalShadowMode::CSM)
@@ -494,7 +495,16 @@ void FSceneRenderer::RenderDirectionalCSMShadowMap(FCSM* CSMSystem)
 	const TArray<ID3D11DepthStencilView*>& DSVViews = CSMSystem->GetCSMDSV();
 	uint32 NumLights = CSMSystem->GetDSVNum();
 
-	CSMSystem->UpdateMatrices(World->GetLightManager()->GetDirectionalLight()->GetLightInfo().Direction, View);
+	// DirectionalLight nullptr 체크
+	UDirectionalLightComponent* DirectionalLight = World->GetLightManager()->GetDirectionalLight();
+	if (!DirectionalLight)
+	{
+		UE_LOG("RenderDirectionalCSMShadowMap: No DirectionalLight in World, skipping CSM rendering");
+		RHIDevice->GetDeviceContext()->RSSetViewports(OriginNumViewports, &OriginViewport);
+		return;
+	}
+
+	CSMSystem->UpdateMatrices(DirectionalLight->GetLightInfo().Direction, View, World);
 	for(int idx = 0; idx < NumLights; idx++)
 	{
 		//// ShadowViewports의 index는 FShadowBufferType.ShadowInfoList의 index와 매칭됨.
@@ -535,7 +545,7 @@ void FSceneRenderer::RenderDirectionalCSMShadowMap(FCSM* CSMSystem)
 	}
 	
 	/* Uber Constant에 Matrix 업데이트 */
-	CSMSystem->UpdateUberConstant(RHIDevice);
+	CSMSystem->UpdateUberConstant(RHIDevice, World);
 
 	// ViewProjBuffer 다시 원래대로 되돌림
 	RHIDevice->SetAndUpdateConstantBuffer(ViewProjBufferType(ViewProjBuffer));
@@ -795,7 +805,7 @@ void FSceneRenderer::RenderShadowMap(FShadowSystem* InShadowSystem)
 	RHIDevice->OMSetRenderTargets(ERTVMode::AllNull);
 
 	// ✅ 섀도우 렌더링 완료 직후, 선택된 라이트의 쉐도우맵 스냅샷 캡처
-	InShadowSystem->CaptureSelectedLightShadowMap(RHIDevice);
+	InShadowSystem->CaptureSelectedLightShadowMap(RHIDevice, World);
 
 	// 뷰포트 복원
 	RHIDevice->GetDeviceContext()->RSSetViewports(OriginNumViewports, &OriginViewport);

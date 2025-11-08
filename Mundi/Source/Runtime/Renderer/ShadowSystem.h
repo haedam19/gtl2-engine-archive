@@ -27,14 +27,16 @@ public:
 
 	// 라이트 리스트에서 그림자를 생성할 라이트에 대해 섀도우 인덱스를 구해줌(섀도우가 없으면 -1)
 	void UpdateShadowIndex(UDirectionalLightComponent* DirectionalLightInfo,
-		const TArray<UPointLightComponent*>& PointLightList, 
+		const TArray<UPointLightComponent*>& PointLightList,
 		const TArray<USpotLightComponent*>& SpotLightList,
 		D3D11RHI* RHIDevice,
-		FSceneView* View);
+		FSceneView* View,
+		UWorld* World);
 	
 	void SelectLightCandidates(const TArray<UPointLightComponent*>& PointLightList,
 		const TArray<USpotLightComponent*>& SpotLightList,
-		FSceneView* View);
+		FSceneView* View,
+		UWorld* World);
 
 	void SetMaxLightCount(int MaxLightCnt) { MAXLIGHTS = MaxLightCnt; }
 	int GetMaxLightCount() { return MAXLIGHTS; }
@@ -81,7 +83,7 @@ public:
 	void CaptureDebugSnapshotForPointLight(D3D11RHI* RHIDevice, uint32 cubeMapIndex);
 
 	// 선택된 라이트의 섀도우 맵을 캡쳐
-	void CaptureSelectedLightShadowMap(D3D11RHI* RHIDevice);
+	void CaptureSelectedLightShadowMap(D3D11RHI* RHIDevice, UWorld* World);
 
 	// Point VSM Cube Map resources
 	const TArray<TArray<ID3D11RenderTargetView*>>& GetPointShadowVSMCubeMapRTVs() { return PointShadowVSMCubeMapRTVs; }
@@ -109,7 +111,7 @@ public:
 private:
 
 	//void UpdateShadowMapIndex(D3D11RHI* InDevice, const FMatrix& DirectionalVPMatrix);
-	FMatrix GetDirectionalShadowVPMatrix(UDirectionalLightComponent* DirectionalLightInfo, FSceneView* CameraView, D3D11RHI* InDevice);
+	FMatrix GetDirectionalShadowVPMatrix(UDirectionalLightComponent* DirectionalLightInfo, FSceneView* CameraView, D3D11RHI* InDevice, UWorld* World);
 
 	void CreateDirectionalShadowMap(D3D11RHI* InDevice);
 	void CreateDirectionalShadowMapSRV(D3D11RHI* InDevice);
@@ -131,7 +133,8 @@ private:
 	void CreateSpotShadowMomentRTV(D3D11RHI* InDevice);
 	void CheckLightFrustumCulling(const TArray<UPointLightComponent*>& PointLightList,
 		const TArray<USpotLightComponent*>& SpotLightList,
-		FSceneView* View);
+		FSceneView* View,
+		UWorld* World);
     void SelectCandidates();
     float CalculatePaddedRadius(float Radius);
 

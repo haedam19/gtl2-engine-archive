@@ -105,6 +105,16 @@ UWorld::~UWorld()
 
 void UWorld::Initialize()
 {
+	extern UWorld* GWorld;
+	if (this == GWorld)
+	{
+		UE_LOG("[Init] Initializing GWorld");
+	}
+	else
+	{
+		UE_LOG("[Init] Initializing NON-GWorld (ViewerWorld?)");
+	}
+
 	CreateLevel();
 
 	InitializeGrid();
@@ -118,6 +128,15 @@ void UWorld::Initialize()
 	if (!bPie)
 	{
 		UAudioManager::GetInstance().Initialize();
+	}
+
+	if (this == GWorld)
+	{
+		UE_LOG("[Init] GWorld initialization DONE");
+	}
+	else
+	{
+		UE_LOG("[Init] NON-GWorld initialization DONE");
 	}
 }
 
@@ -876,7 +895,7 @@ inline FString RemoveObjExtension(const FString& FileName)
 void UWorld::CreateLevel()
 {
 	if (SelectionMgr) SelectionMgr->ClearSelection();
-	
+
 	SetLevel(ULevelService::CreateNewLevel());
 	// 이름 카운터 초기화: 씬을 새로 시작할 때 각 BaseName 별 suffix를 0부터 다시 시작
 	ObjectTypeCounts.clear();
