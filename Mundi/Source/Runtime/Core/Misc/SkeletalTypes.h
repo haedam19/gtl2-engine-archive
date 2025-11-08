@@ -30,7 +30,7 @@ struct FBone
 
     // 로컬 바인드 포즈(간단 TRS) — 에디터 기즈모에 직접 노출하기 쉬움
     FVector BindT = FVector(0, 0, 0);
-    FVector BindR_EulerRad = FVector(0, 0, 0);
+    FQuat BindR = FQuat(0, 0, 0);
     FVector BindS = FVector(1, 1, 1);
 
     // 스키닝용 인버스 바인드(행렬 4x4; row-major 가정)
@@ -52,7 +52,8 @@ struct FSkeleton
     }
 };
 
-struct FSkeletalMesh     // OBJ의 FStaticMesh와 1:1 대응되는 “스켈레탈 버전”
+// OBJ의 FStaticMesh와 1:1 대응되는 “스켈레탈 버전”
+struct FSkeletalMesh 
 {
     FString PathFileName;   // 원본 FBX 경로
     FString CacheFilePath;  // 예: .../Derived/xxx.fbx.bin
@@ -63,6 +64,6 @@ struct FSkeletalMesh     // OBJ의 FStaticMesh와 1:1 대응되는 “스켈레�
     TArray<uint32> Indices;
 
     // OBJ와 동일한 그룹/머티리얼 관리(렌더/머티리얼 파이프라인 재사용)
-    TArray<FGroupInfo> GroupInfos;     // StartIndex/IndexCount/InitialMatName
+    TArray<FGroupInfo> GroupInfos; // StartIndex/IndexCount/InitialMatName
     bool bHasMaterial = true;
 };
