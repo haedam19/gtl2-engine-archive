@@ -25,6 +25,7 @@ struct FSkeletalVertex
     FVector    Normal;
     FVector2D  Tex;
     FVector4   Tangent;
+    FVector4   Color;
     // =========== 인덱스 / 인덱스별 가중치 (스키닝 데이터) ===============
     FSkinWeight4 Skin;    // 최대 4개 인플루언스
 };

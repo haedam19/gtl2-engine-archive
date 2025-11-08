@@ -309,8 +309,9 @@ enum class EVertexLayoutType : uint8
     None,
 
     PositionColor,
-    PositionColorTexturNormal,
-
+    PositionColorTextureNormal,       // for static mesh
+    PositionColorTextureNormalSkin,   // for skeletal mesh
+    
     PositionTextBillBoard,
     PositionCollisionDebug,
     PositionBillBoard,
