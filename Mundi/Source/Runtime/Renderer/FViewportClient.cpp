@@ -120,7 +120,14 @@ void FViewportClient::Tick(float DeltaTime)
 
 void FViewportClient::Draw(FViewport* Viewport)
 {
-	if (!Viewport || !World) return;
+	if (!Viewport || !World)
+	{
+		UE_LOG("[VIEWER] FViewportClient::Draw - Viewport=%p, World=%p, Camera=%p", Viewport, World, Camera);
+		return;
+	}
+
+	UE_LOG("[VIEWER] FViewportClient::Draw - World has %zu actors, %zu editor actors",
+	       World->GetActors().size(), World->GetEditorActors().size());
 
 	// 1. 뷰 타입에 따라 카메라 설정 등 사전 작업을 먼저 수행
 	switch (ViewportType)

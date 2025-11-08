@@ -182,7 +182,7 @@ void UUIWindow::RenderWindow()
 	ImGui::End();
 
 	// 윈도우가 닫혔는지 확인
-	if (!bIsWindowOpen && bIsWindowOpen)
+	if (!bIsOpen && bIsWindowOpen)
 	{
 		if (OnWindowClose())
 		{

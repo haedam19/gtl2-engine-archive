@@ -10,6 +10,7 @@ class USceneWindow;
 class UCameraPanelWindow;
 class USceneManagerWidget;
 class UDetailsPanelWidget;
+class SSkeletalMeshViewerWindow;
 
 /**
  * @brief UI 윈도우 도킹 방향
@@ -39,7 +40,10 @@ public:
 	static USceneWindow* CreateSceneWindow(EUIDockDirection InDockDirection = EUIDockDirection::Center);
 	static UExperimentalFeatureWindow*
 		CreateExperimentalFeatureWindow(EUIDockDirection InDockDirection = EUIDockDirection::Right);
-	
+
+	// Skeletal Mesh Viewer (Asset Viewer)
+	static UUIWindow* CreateSkeletalMeshViewerWindow(EUIDockDirection InDockDirection = EUIDockDirection::None);
+
 	// Object Management Widgets (Unreal Engine style)
 	//static USceneManagerWidget* CreateSceneManagerWidget(EUIDockDirection InDockDirection = EUIDockDirection::Left);
 	//static UDetailsPanelWidget* CreateDetailsPanelWidget(EUIDockDirection InDockDirection = EUIDockDirection::Right);

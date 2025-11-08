@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "Actor.h"
 #include "Windows/UIWindow.h"
+#include "Windows/SSkeletalMeshViewerWindow.h"
 #include "ImGui/ImGuiHelper.h"
 #include "Widgets/Widget.h"
 #include "ImGui/imgui.h"
@@ -10,6 +11,7 @@
 #include "Widgets/TargetActorTransformWidget.h"
 #include "Widgets/GameUIWidget.h"
 #include "Widgets/GameOverWidget.h"
+#include "Factory/UIWindowFactory.h"
 #ifdef _EDITOR
 #include "EditorEngine.h"
 #endif
@@ -129,6 +131,32 @@ void UUIManager::Update(float DeltaTime)
 	// DeltaTime 저장 및 총 시간 누적
 	CurrentDeltaTime = DeltaTime;
 	TotalTime += DeltaTime;
+
+	// 키보드 단축키: Ctrl+Shift+V -> Skeletal Mesh Viewer 열기
+	ImGuiIO& io = ImGui::GetIO();
+	if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_V))
+	{
+		// SkeletalMeshViewer가 이미 열려있는지 확인
+		bool bViewerExists = false;
+		for (auto* Window : UIWindows)
+		{
+			if (Window && Window->GetWindowTitle() == "Skeletal Mesh Viewer")
+			{
+				bViewerExists = true;
+				// 이미 있으면 보이게만 설정
+				Window->SetWindowState(EUIWindowState::Visible);
+				break;
+			}
+		}
+
+		// 없으면 새로 생성
+		if (!bViewerExists)
+		{
+			UUIWindow* Viewer = UUIWindowFactory::CreateSkeletalMeshViewerWindow();
+			RegisterUIWindow(Viewer);
+			UE_LOG("UIManager: Skeletal Mesh Viewer opened with Ctrl+Shift+V");
+		}
+	}
 
 	// 모든 UI 윈도우 업데이트
 	for (auto* Window : UIWindows)

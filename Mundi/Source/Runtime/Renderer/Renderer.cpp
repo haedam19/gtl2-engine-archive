@@ -88,10 +88,10 @@ void URenderer::RenderSceneForView(UWorld* World, ACameraActor* Camera, FViewpor
 {
 	// 1. 렌더에 필요한 정보를 모은 FSceneView를 생성합니다.
 	FSceneView View(Camera, Viewport, World->GetRenderSettings().GetViewModeIndex());	// NOTE: 현재 viewport에 해당하는 ViewMode가 적용되는지 확인 필요
-	
-	// 2. FSceneRenderer 생성자에 'View'의 주소(&View)를 전달합니다.
-	FSceneRenderer SceneRenderer(World, &View, this);
-	
+
+	// 2. FSceneRenderer 생성자에 'View'의 주소(&View)와 Viewport를 전달합니다.
+	FSceneRenderer SceneRenderer(World, &View, this, Viewport);
+
 	// 3. 실제로 렌더를 수행합니다.
 	SceneRenderer.Render();
 }
@@ -258,12 +258,14 @@ void URenderer::EndLineBatch(const FMatrix& ModelMatrix)
 		RHIDevice->GetDeviceContext()->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
 		RHIDevice->GetDeviceContext()->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
 		RHIDevice->GetDeviceContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-		// Overlay 스텐실(=1) 영역은 그리지 않도록 스텐실 테스트 설정
-		
+
+		// Depth test 활성화 - 그리드가 메시 뒤에 가려지도록
+		// LessEqual + depth write enabled
+		RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
+
 		RHIDevice->GetDeviceContext()->DrawIndexed(DynamicLineMesh->GetCurrentIndexCount(), 0, 0);
-		
+
 	}
-	RHIDevice->OMSetDepthStencilState_StencilRejectOverlay();
 	RHIDevice->GetDeviceContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
 
