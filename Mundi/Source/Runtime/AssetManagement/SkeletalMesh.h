@@ -18,39 +18,37 @@ public:
     ~USkeletalMesh() override;
 
     // ===== Loader Methods ===============================
-    void Load(const FString& InFilePath, ID3D11Device* InDevice, EVertexLayoutType InVertexType = EVertexLayoutType::PositionColorTextureNormal);
-    void Load(FSkeletalMesh* InData, ID3D11Device* InDevice, EVertexLayoutType InVertexType = EVertexLayoutType::PositionColorTextureNormal);
+    void Load(const FString& InFilePath, ID3D11Device* InDevice, EVertexLayoutType InVertexType = EVertexLayoutType::PositionColorTextureNormal); // WIP
+    void Load(FSkeletalMesh* InData, ID3D11Device* InDevice, EVertexLayoutType InVertexType = EVertexLayoutType::PositionColorTextureNormal); // WIP
 
     // ===== Vertex =======================================
     void SetVertexType(EVertexLayoutType InVertexLayoutType);
-    EVertexLayoutType GetVertexType() const;
+    EVertexLayoutType GetVertexType() const { return VertexType; }
 
     // ===== Buffer Getters ===============================
-    ID3D11Buffer* GetVertexBuffer() const;
-    ID3D11Buffer* GetIndexBuffer() const;
-    uint32 GetVertexCount() const;
-    uint32 GetIndexCount() const;
-    uint32 GetVertexStride() const;
+    ID3D11Buffer* GetVertexBuffer() const { return VertexBuffer;}
+    ID3D11Buffer* GetIndexBuffer() const { return IndexBuffer; }
+    uint32 GetVertexCount() const { return VertexCount; }
+    uint32 GetIndexCount() const { return IndexCount; }
+    uint32 GetVertexStride() const {return VertexStride; }
 
     // ===== File Path Getters ============================
-    const FString& GetAssetPathFileName() const;
-    const FString& GetCacheFilePath() const;
+    const FString& GetAssetPathFileName() const;            // WIP
+    const FString& GetCacheFilePath() const;                // WIP
 
     // ===== Data =========================================
-    void SetSkeletalMeshData(FSkeletalMesh* InSkeletalMesh);
-    FSkeletalMesh* GetSkeletalMeshData() const;
+    void SetSkeletalMeshData(FSkeletalMesh* InSkeletalMesh) { SkeletalMeshData = InSkeletalMesh; }
+    FSkeletalMesh* GetSkeletalMeshData() const { return SkeletalMeshData; }
 
-    const FSkeleton* GetSkeleton() const;
-    const TArray<FSkeletalVertex>& GetSourceVertices() const;
-    const TArray<uint32>& GetSourceIndices() const;
+    const FSkeleton* GetSkeleton() const { return SkeletalMeshData->Skeleton; }
+    const TArray<FSkeletalVertex>& GetSourceVertices() const { return SkeletalMeshData->Vertices; }
+    const TArray<uint32>& GetSourceIndices() const { return SkeletalMeshData->Indices; }
+    const TArray<FGroupInfo>& GetMeshGroupInfo() const { return SkeletalMeshData->GroupInfos; }
 
-    const TArray<FGroupInfo>& GetMeshGroupInfo() const;
-    uint64 GetMeshGroupCount() const;
-
-    bool HasMaterial() const;
+    bool HasMaterial() const { return SkeletalMeshData->bHasMaterial; }
 
     // ===== Bounding Volume ==============================
-    FAABB GetLocalBound() const;
+    FAABB GetLocalBound() const { return LocalBound; }
 
     // ===== Components ===================================
     bool AddUsingComponent(USkeletalMeshComponent* InComponent);
@@ -74,7 +72,7 @@ private:
     uint32 VertexStride = 0;
     EVertexLayoutType VertexType = EVertexLayoutType::None;
 
-    FSkeletalMesh* SkeletalMeshAsset = nullptr;
+    FSkeletalMesh* SkeletalMeshData = nullptr;
     const FSkeleton* BoundSkeleton = nullptr;
 
     FAABB LocalBound;

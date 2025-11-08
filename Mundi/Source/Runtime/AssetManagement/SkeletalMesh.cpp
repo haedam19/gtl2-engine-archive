@@ -49,41 +49,6 @@ void USkeletalMesh::SetVertexType(EVertexLayoutType InVertexLayoutType)
     VertexStride = Stride;
 }
 
-EVertexLayoutType USkeletalMesh::GetVertexType() const
-{
-    return VertexType;
-}
-
-ID3D11Buffer* USkeletalMesh::GetVertexBuffer() const
-{
-    // Not Implemented yet
-    return nullptr;
-}
-
-ID3D11Buffer* USkeletalMesh::GetIndexBuffer() const
-{
-    // Not Implemented yet
-    return nullptr;
-}
-
-uint32 USkeletalMesh::GetVertexCount() const
-{
-    // Not Implemented yet
-    return 0;
-}
-
-uint32 USkeletalMesh::GetIndexCount() const
-{
-    // Not Implemented yet
-    return 0;
-}
-
-uint32 USkeletalMesh::GetVertexStride() const
-{
-    // Not Implemented yet
-    return 0;
-}
-
 const FString& USkeletalMesh::GetAssetPathFileName() const
 {
     // Not Implemented yet
@@ -96,62 +61,6 @@ const FString& USkeletalMesh::GetCacheFilePath() const
     // Not Implemented yet
     static const FString DummyCachePath;
     return DummyCachePath;
-}
-
-void USkeletalMesh::SetSkeletalMeshData(FSkeletalMesh* InSkeletalMesh)
-{
-    // Not Implemented yet
-}
-
-FSkeletalMesh* USkeletalMesh::GetSkeletalMeshData() const
-{
-    // Not Implemented yet
-    return nullptr;
-}
-
-const FSkeleton* USkeletalMesh::GetSkeleton() const
-{
-    // Not Implemented yet
-    return nullptr;
-}
-
-const TArray<FSkeletalVertex>& USkeletalMesh::GetSourceVertices() const
-{
-    // Not Implemented yet
-    static const TArray<FSkeletalVertex> DummyVertices;
-    return DummyVertices;
-}
-
-const TArray<uint32>& USkeletalMesh::GetSourceIndices() const
-{
-    // Not Implemented yet
-    static const TArray<uint32> DummyIndices;
-    return DummyIndices;
-}
-
-const TArray<FGroupInfo>& USkeletalMesh::GetMeshGroupInfo() const
-{
-    // Not Implemented yet
-    static const TArray<FGroupInfo> DummyGroups;
-    return DummyGroups;
-}
-
-uint64 USkeletalMesh::GetMeshGroupCount() const
-{
-    // Not Implemented yet
-    return 0;
-}
-
-bool USkeletalMesh::HasMaterial() const
-{
-    // Not Implemented yet
-    return false;
-}
-
-FAABB USkeletalMesh::GetLocalBound() const
-{
-    // Not Implemented yet
-    return FAABB();
 }
 
 bool USkeletalMesh::AddUsingComponent(USkeletalMeshComponent* InComponent)
