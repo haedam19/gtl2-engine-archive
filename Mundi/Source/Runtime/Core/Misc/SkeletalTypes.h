@@ -20,6 +20,7 @@ struct FSkeletalVertex
     FVector    Normal;
     FVector2D  Tex;
     FVector4   Tangent;
+    FVector4   Color;
     FSkinWeight4 Skin;    // 최대 4개 인플루언스
 };
 
