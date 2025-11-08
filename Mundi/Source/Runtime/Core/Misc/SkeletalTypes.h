@@ -13,6 +13,10 @@ struct FSkinWeight4
     float  Weight[4] = { 0,0,0,0 }; // 합 ≈ 1.0, 내림차순 권장
 };
 
+/**
+* @brief 살가죽(메시)를 이루는 단 하나의 정점
+* - CPUSkinning을 수행하는 함수가 받을 원본(Input)데이터
+*/
 struct FSkeletalVertex
 {
     // FNormalVertex와의 공통 요소는 최대한 순서 맞춰서 정의
@@ -26,7 +30,7 @@ struct FSkeletalVertex
 };
 
 /**
-* @brief 뼈 하나에 해당
+* @brief 뼈 하나에 해당(정확히는 관절 joint)
 */
 struct FBone
 {

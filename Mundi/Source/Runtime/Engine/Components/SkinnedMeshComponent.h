@@ -20,12 +20,18 @@ public:
 	void SetSkeletalMesh(USkeletalMesh* InSkeletalMesh);
 	USkeletalMesh* GetSkeletalMesh() const { return SkeletalMesh; }
 
+	// === 본 트랜스폼 접근 ===
+
 	/**
-	* @brief 현재 포즈의 본 행렬 배열 (Component Space)
-	* - 크기: Skeleton->Bones.size()
-	* - 용도: 애니메이션이 매 프레임 업데이트
+	* @brief 현재 포즈의 본 행렬 배열 (읽기 전용)
+	* @return BoneMatrices 배열에 대한 const 참조
 	*/
 	const TArray<FMatrix>& GetBoneMatrices() const { return BoneMatrices; }
+
+	/**
+	* @brief 본 행렬 배열 수정용 접근자 (애니메이션 시스템에서 사용)
+	* @return BoneMatrices 배열에 대한 참조
+	*/
 	TArray<FMatrix>& GetBoneMatricesForEdit() { return BoneMatrices; }
 
 	/**
@@ -42,10 +48,11 @@ protected:
 	USkeletalMesh* SkeletalMesh = nullptr;
 
 	/**
-	* @brief 현재 포즈의 본 행렬 (인스턴스별 데이터)
-	* - BoneMatrices[i] = Component Space에서의 본 i의 트랜스폼
-	* - 초기값: Reference Pose (T-Pose)
-	*/
+	 * @brief 현재 포즈의 본 행렬 배열
+	 * - BoneMatrices[i] = 모델 공간(Model Space)에서 본 i의 트랜스폼
+	 * - 루트 본부터 해당 본까지 모든 부모 트랜스폼을 누적한 결과
+	 * - 초기값: Reference Pose (T-Pose)
+	 */
 	TArray<FMatrix> BoneMatrices;
 
 	/**
@@ -55,15 +62,22 @@ protected:
 
 	/**
 	* @brief Reference Pose (T-Pose)로 본 행렬 초기화
+	* - 모든 본을 T-Pose 상태로 설정(초기 상태)
+	* - BoneMatrices를 스켈레톤 본 개수만큼 확보
 	*/
 	void InitializeReferencePose();
 
 	/**
-	* @brief 본 계층 구조를 따라 로컬 -> 월드 트랜스폼 계산
+	* @brief 본 계층 구조를 따라 Model Space 트랜스폼 계산
+	*
 	* @param BoneIndex 계산할 본 인덱스
-	* @param Skeleton 스켈레톤 데이터
-	* @param OutMatrices 출력 행렬 배열
+	*
+	* @details
+	* - 입력: Bone.BindT/R/S (부모 본 기준 로컬 트랜스폼)
+	* - 출력: BoneMatrices[BoneIndex] (Model Space 트랜스폼)
+	* - 계산: LocalMatrix * ParentMatrix (부모 누적)
+	* - 재귀적으로 부모 본부터 계산
 	*/
-	void ComputeBoneTransform(int32 BoneIndex, const FSkeleton* Skeleton, TArray<FMatrix>& OutMatrices);
+	void ComputeBoneMatrix(int32 BoneIndex);
 
 };
