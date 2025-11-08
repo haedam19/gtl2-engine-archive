@@ -37,7 +37,7 @@ void UStaticMesh::Load(FMeshData* InData, ID3D11Device* InDevice, EVertexLayoutT
     if (VertexBuffer)
     {
         VertexBuffer->Release();
-        VertexBuffer = nullptr;
+        VertexBuffer = nullptr; 
     }
     if (IndexBuffer)
     {

@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "SkeletalMesh.h"
 #include "SkeletalTypes.h"
-#include "AABB.h"
+#include "SkeletalMeshComponent.h"
 
 USkeletalMesh::~USkeletalMesh()
 {
@@ -12,27 +12,37 @@ void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, EVer
 {
     assert(InDevice);
 
-    SetVertexType(InVertexType);
+    if (!SetVertexType(InVertexType))
+        return;
 
     // TODO: FFBXManager 만들고 로더 구현
-    // TODO: 리소스 생성
+    SkeletalMeshData = nullptr; // = FFBXManager::LoadFBXMeshAsset(InFilePath);
+    
+    if (SkeletalMeshData && SkeletalMeshData->Vertices.Num() > 0 && SkeletalMeshData->Indices.Num() > 0)
+    {
+        // TODO: 리소스 생성
+    }
 }
 
 void USkeletalMesh::Load(FSkeletalMesh* InData, ID3D11Device* InDevice, EVertexLayoutType InVertexType)
 {
     ReleaseResources();
     
-    SetVertexType(InVertexType);
+    if (!SetVertexType(InVertexType))
+        return;
 
     CreateVertexBuffer(InData, InDevice, InVertexType);
     CreateIndexBuffer(InData, InDevice);
     CreateLocalBound(InData);
 
+    SkeletalMeshData = InData;
+    CacheFilePath = InData->CacheFilePath;
+    
     VertexCount = static_cast<uint32>(InData->Vertices.size());
     IndexCount = static_cast<uint32>(InData->Indices.size());
 }
 
-void USkeletalMesh::SetVertexType(EVertexLayoutType InVertexLayoutType)
+bool USkeletalMesh::SetVertexType(EVertexLayoutType InVertexLayoutType)
 {
     VertexType = InVertexLayoutType;
 
@@ -47,59 +57,70 @@ void USkeletalMesh::SetVertexType(EVertexLayoutType InVertexLayoutType)
     }
 
     VertexStride = Stride;
+
+    return VertexStride > 0;
 }
 
 const FString& USkeletalMesh::GetAssetPathFileName() const
 {
-    // Not Implemented yet
-    static const FString DummyAssetPath;
-    return DummyAssetPath;
-}
-
-const FString& USkeletalMesh::GetCacheFilePath() const
-{
-    // Not Implemented yet
-    static const FString DummyCachePath;
-    return DummyCachePath;
+    return SkeletalMeshData ? SkeletalMeshData->PathFileName : FilePath;
 }
 
 bool USkeletalMesh::AddUsingComponent(USkeletalMeshComponent* InComponent)
 {
-    // Not Implemented yet
-    return false;
+    const int32 PreviousCount = UsingComponents.Num();
+
+    // 추가 성공했으면 true
+    UsingComponents.AddUnique(InComponent);
+    return UsingComponents.Num() != PreviousCount;
 }
 
 bool USkeletalMesh::RemoveUsingComponent(USkeletalMeshComponent* InComponent)
 {
-    // Not Implemented yet
+    auto it = std::find(UsingComponents.begin(), UsingComponents.end(), InComponent);
+    if (it != UsingComponents.end())
+    {
+        UsingComponents.erase(it);
+        return true;
+    }
     return false;
-}
-
-TArray<USkeletalMeshComponent*>& USkeletalMesh::GetUsingComponents()
-{
-    // Not Implemented yet
-    static TArray<USkeletalMeshComponent*> DummyComponents;
-    return DummyComponents;
-}
-
-void USkeletalMesh::InitializeFromCookedMesh(FSkeletalMesh* InCookedMesh, ID3D11Device* InDevice, EVertexLayoutType InVertexType)
-{
-    // Not Implemented yet
 }
 
 void USkeletalMesh::CreateVertexBuffer(FSkeletalMesh* InSkeletalMesh, ID3D11Device* InDevice, EVertexLayoutType InVertexType)
 {
-    // Not Implemented yet
+    HRESULT hr;
+    hr = D3D11RHI::CreateVertexBuffer(InDevice, InSkeletalMesh, &VertexBuffer);
+    assert(SUCCEEDED(hr));
 }
 
 void USkeletalMesh::CreateIndexBuffer(FSkeletalMesh* InSkeletalMesh, ID3D11Device* InDevice)
 {
-    // Not Implemented yet
+    HRESULT hr;
+    hr = D3D11RHI::CreateIndexBuffer(InDevice, InSkeletalMesh, &IndexBuffer);
+    assert(SUCCEEDED(hr));
 }
+
 
 void USkeletalMesh::CreateLocalBound(const FSkeletalMesh* InSkeletalMesh)
 {
-    // Not Implemented yet
+    if (!InSkeletalMesh || InSkeletalMesh->Vertices.IsEmpty())
+    {
+        LocalBound = FAABB();
+        return;
+    }
+
+    // TODO: 현재는 임시로 Reference pose 기준으로 AABB를 구성.
+    // 추후 joint 움직임을 고려한 정교한 계산방식으로 교체 요망.
+    FVector Min = InSkeletalMesh->Vertices[0].Position;
+    FVector Max = Min;
+
+    for (const FSkeletalVertex& Vertex : InSkeletalMesh->Vertices)
+    {
+        Min = Min.ComponentMin(Vertex.Position);
+        Max = Max.ComponentMax(Vertex.Position);
+    }
+
+    LocalBound = FAABB(Min, Max);
 }
 
 void USkeletalMesh::ReleaseResources()
@@ -114,4 +135,13 @@ void USkeletalMesh::ReleaseResources()
         IndexBuffer->Release();
         IndexBuffer = nullptr;
     }
+
+    VertexCount = 0;
+    IndexCount = 0;
+    VertexStride = 0;
+    VertexType = EVertexLayoutType::None;
+
+    SkeletalMeshData = nullptr;
+    CacheFilePath.clear();
+    LocalBound = FAABB();
 }

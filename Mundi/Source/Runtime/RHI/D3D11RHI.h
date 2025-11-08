@@ -3,6 +3,7 @@
 #include "ResourceManager.h"
 #include "VertexData.h"
 #include "ConstantBufferType.h"
+#include "SkeletalTypes.h"
 
 
 #define DECLARE_CONSTANT_BUFFER(TYPE)\
@@ -76,10 +77,16 @@ public:
 	template<typename TVertex>
 	static HRESULT CreateVertexBuffer(ID3D11Device* device, const std::vector<FNormalVertex>& srcVertices, ID3D11Buffer** outBuffer);
 
+	static HRESULT CreateVertexBuffer(ID3D11Device* device, const TArray<FSkeletalVertex>& srcVertices, ID3D11Buffer** outBuffer);
+
+	static HRESULT CreateVertexBuffer(ID3D11Device* device, const FSkeletalMesh* skeletalMesh, ID3D11Buffer** outBuffer);
+
 	static HRESULT CreateIndexBuffer(ID3D11Device* device, const FMeshData* meshData, ID3D11Buffer** outBuffer);
 
 	static HRESULT CreateIndexBuffer(ID3D11Device* device, const FStaticMesh* mesh, ID3D11Buffer** outBuffer);
 
+	static HRESULT CreateIndexBuffer(ID3D11Device* device, const FSkeletalMesh* meshData, ID3D11Buffer** outBuffer);
+	
 	CONSTANT_BUFFER_LIST(DECLARE_UPDATE_CONSTANT_BUFFER_FUNC)
 	CONSTANT_BUFFER_LIST(DECLARE_SET_CONSTANT_BUFFER_FUNC)
 	CONSTANT_BUFFER_LIST(DECLARE_SET_UPDATE_CONSTANT_BUFFER_FUNC)
@@ -364,4 +371,33 @@ template<>
 inline HRESULT D3D11RHI::CreateVertexBuffer<FBillboardVertexInfo_GPU>(ID3D11Device* device, const std::vector<FNormalVertex>& srcVertices, ID3D11Buffer** outBuffer)
 {
 	return CreateVertexBufferImpl<FBillboardVertexInfo_GPU>(device, srcVertices, outBuffer, D3D11_USAGE_DYNAMIC, D3D11_CPU_ACCESS_WRITE);
+}
+
+inline HRESULT D3D11RHI::CreateVertexBuffer(ID3D11Device* device, const TArray<FSkeletalVertex>& srcVertices, ID3D11Buffer** outBuffer)
+{
+	if (!device || !outBuffer || srcVertices.empty())
+	{
+		return E_INVALIDARG;
+	}
+
+	D3D11_BUFFER_DESC vbd = {};
+	vbd.Usage = D3D11_USAGE_DEFAULT;
+	vbd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	vbd.CPUAccessFlags = 0;
+	vbd.ByteWidth = static_cast<UINT>(sizeof(FSkeletalVertex) * srcVertices.size());
+
+	D3D11_SUBRESOURCE_DATA initData = {};
+	initData.pSysMem = srcVertices.data();
+
+	return device->CreateBuffer(&vbd, &initData, outBuffer);
+}
+
+inline HRESULT D3D11RHI::CreateVertexBuffer(ID3D11Device* device, const FSkeletalMesh* skeletalMesh, ID3D11Buffer** outBuffer)
+{
+	if (!skeletalMesh)
+	{
+		return E_INVALIDARG;
+	}
+
+	return CreateVertexBuffer(device, skeletalMesh->Vertices, outBuffer);
 }
