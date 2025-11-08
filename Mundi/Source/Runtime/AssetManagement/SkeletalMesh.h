@@ -14,7 +14,7 @@ class USkeletalMesh : public UResourceBase
 public:
     DECLARE_CLASS(USkeletalMesh, UResourceBase)
 
-    USkeletalMesh();
+    USkeletalMesh() = default;
     ~USkeletalMesh() override;
 
     // ===== Loader Methods ===============================

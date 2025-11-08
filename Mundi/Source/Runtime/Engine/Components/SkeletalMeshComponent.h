@@ -10,7 +10,7 @@ public:
 	DECLARE_CLASS(USkeletalMeshComponent, USkinnedMeshComponent)
 
 	USkeletalMeshComponent();
-	virtual ~USkeletalMeshComponent();
+	virtual ~USkeletalMeshComponent() override;
 
 	// === 컴포넌트 생명주기 ===
 	
