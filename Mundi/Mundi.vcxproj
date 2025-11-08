@@ -646,7 +646,6 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     <ClInclude Include="Source\Runtime\AssetManagement\SkeletalMesh.h" />
     <ClInclude Include="Source\Runtime\Core\Misc\SkeletalMock.h" />
     <ClInclude Include="Source\Runtime\Core\Misc\SkeletalTypes.h" />
-    <ClInclude Include="Source\Runtime\AssetManagement\SkeletalMesh.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\SkeletalMeshComponent.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\SkinnedMeshComponent.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\SpringArmComponent.h" />

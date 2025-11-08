@@ -37,8 +37,8 @@ public:
     const FString& GetCacheFilePath() const;
 
     // ===== Data =========================================
-    void SetSkeletalMeshAsset(FSkeletalMesh* InSkeletalMesh);
-    FSkeletalMesh* GetSkeletalMeshAsset() const;
+    void SetSkeletalMeshData(FSkeletalMesh* InSkeletalMesh);
+    FSkeletalMesh* GetSkeletalMeshData() const;
 
     const FSkeleton* GetSkeleton() const;
     const TArray<FSkeletalVertex>& GetSourceVertices() const;

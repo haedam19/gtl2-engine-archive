@@ -1,7 +1,6 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "SkinnedMeshComponent.h"
 #include "SkeletalMesh.h"
-#include "Material/MaterialInterface.h"
 
 USkinnedMeshComponent::USkinnedMeshComponent()
 	: SkeletalMesh(nullptr)
@@ -22,7 +21,7 @@ void USkinnedMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 		InitializeReferencePose();
 
 		// 머티리얼 슬롯 초기화 (섹션 개수만큼)
-		const FSkeletalMesh* MeshData = SkeletalMesh->GetMeshData();
+		const FSkeletalMesh* MeshData = SkeletalMesh->GetSkeletalMeshData();
 		if (MeshData)
 		{
 			MaterialSlots.resize(MeshData->GroupInfos.Num(), nullptr);
