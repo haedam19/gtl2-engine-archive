@@ -63,7 +63,7 @@ void UStaticMesh::SetVertexType(EVertexLayoutType InVertexType)
     case EVertexLayoutType::PositionColor:
         Stride = sizeof(FVertexSimple);
         break;
-    case EVertexLayoutType::PositionColorTexturNormal:
+    case EVertexLayoutType::PositionColorTextureNormal:
         Stride = sizeof(FVertexDynamic);
         break;
     case EVertexLayoutType::PositionTextBillBoard:
