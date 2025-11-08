@@ -13,9 +13,12 @@
 #include "StaticMeshActor.h"
 #include "StaticMeshComponent.h"
 #include "Grid/GridActor.h"
+#include "Gizmo/GizmoActor.h"
+#include "SelectionManager.h"
 #include "CameraComponent.h"
 #include "Picking.h"
 #include "Actor.h"
+#include "Enums.h"
 
 // 전역 EditorEngine 접근
 extern UEditorEngine GEngine;
@@ -147,6 +150,15 @@ void USkeletalMeshViewerContentWidget::Initialize()
 
             ViewerWorld->SetCameraActor(ViewerCamera);
             UE_LOG("SkeletalMeshViewerContentWidget: Viewer Camera created and positioned");
+
+            // ========================================
+            // GizmoActor에 Camera 설정 (필수!)
+            // ========================================
+            if (AGizmoActor* GizmoActor = ViewerWorld->GetGizmoActor())
+            {
+                GizmoActor->SetCameraActor(ViewerCamera);
+                UE_LOG("SkeletalMeshViewerContentWidget: GizmoActor camera set to ViewerCamera");
+            }
         }
         else
         {
@@ -277,9 +289,142 @@ void USkeletalMeshViewerContentWidget::Initialize()
 void USkeletalMeshViewerContentWidget::RenderWidget()
 {
     // Tick ViewerWorld (고정 60 FPS 기준: 0.0166초)
+    float DeltaTime = 0.0166f;
     if (ViewerWorld)
     {
-        ViewerWorld->Tick(0.0166f);
+        ViewerWorld->Tick(DeltaTime);
+    }
+
+    // 뷰어 카메라 입력 처리 (우클릭 + WASD/QE)
+    if (bEnableViewerCameraInput && ViewerCamera)
+    {
+        // ImGui IO에서 직접 키 상태 확인 (ImGui가 키보드 캡처하는 문제 우회)
+        ImGuiIO& io = ImGui::GetIO();
+
+        // 처음 우클릭할 때 현재 카메라 회전에서 초기값 설정
+        if (!bViewerCameraRotationInitialized)
+        {
+            FVector currentRot = ViewerCamera->GetActorRotation().ToEulerZYXDeg();
+            ViewerCameraYawDeg = currentRot.Z;    // Yaw
+            ViewerCameraPitchDeg = currentRot.Y;  // Pitch
+            bViewerCameraRotationInitialized = true;
+            UE_LOG("SkeletalMeshViewer: Camera rotation initialized - Yaw:%.1f, Pitch:%.1f",
+                   ViewerCameraYawDeg, ViewerCameraPitchDeg);
+        }
+
+        // 마우스 델타로 카메라 회전 (InputManager 대신 ImGui IO 사용)
+        FVector2D mouseDelta(io.MouseDelta.x * 0.1f, io.MouseDelta.y * 0.1f);
+
+        if (mouseDelta.X != 0.0f || mouseDelta.Y != 0.0f)
+        {
+            ViewerCameraYawDeg += mouseDelta.X;
+            ViewerCameraPitchDeg += mouseDelta.Y;
+
+            // Pitch 제한
+            if (ViewerCameraPitchDeg > 89.0f) ViewerCameraPitchDeg = 89.0f;
+            if (ViewerCameraPitchDeg < -89.0f) ViewerCameraPitchDeg = -89.0f;
+
+            // Yaw 정규화
+            while (ViewerCameraYawDeg > 360.0f) ViewerCameraYawDeg -= 360.0f;
+            while (ViewerCameraYawDeg < -360.0f) ViewerCameraYawDeg += 360.0f;
+
+            // 쿼터니언 생성
+            float PitchRad = ViewerCameraPitchDeg * 3.14159265f / 180.0f;
+            float YawRad = ViewerCameraYawDeg * 3.14159265f / 180.0f;
+
+            FQuat PitchQuat = FQuat::FromAxisAngle(FVector(0, 1, 0), PitchRad);
+            FQuat YawQuat = FQuat::FromAxisAngle(FVector(0, 0, 1), YawRad);
+
+            FQuat FinalRotation = YawQuat * PitchQuat;
+            FinalRotation.Normalize();
+
+            ViewerCamera->SetActorRotation(FinalRotation);
+        }
+
+        // 키보드 입력으로 카메라 이동 (ImGui IO에서 직접 읽기)
+        FVector Move(0, 0, 0);
+
+        // 카메라 기저 벡터
+        const FQuat Quat = ViewerCamera->GetActorRotation();
+        const FVector Right = Quat.RotateVector(FVector(0, 1, 0)).GetNormalized();
+        const FVector Up = Quat.RotateVector(FVector(0, 0, 1)).GetNormalized();
+        const FVector Forward = Quat.RotateVector(FVector(1, 0, 0)).GetNormalized();
+
+        // WASD/QE 입력 (ImGui의 키 상태 확인)
+        if (ImGui::IsKeyDown(ImGuiKey_W)) Move += Forward;
+        if (ImGui::IsKeyDown(ImGuiKey_S)) Move -= Forward;
+        if (ImGui::IsKeyDown(ImGuiKey_D)) Move += Right;
+        if (ImGui::IsKeyDown(ImGuiKey_A)) Move -= Right;
+        if (ImGui::IsKeyDown(ImGuiKey_E)) Move += Up;
+        if (ImGui::IsKeyDown(ImGuiKey_Q)) Move -= Up;
+
+        // 이동 적용
+        if (Move.SizeSquared() > 0.0f)
+        {
+            const float speed = 10.0f * DeltaTime * 2.5f; // CameraMoveSpeed 기본값
+            Move = Move.GetNormalized() * speed;
+
+            const FVector P = ViewerCamera->GetActorLocation();
+            ViewerCamera->SetActorLocation(P + Move);
+        }
+    }
+
+    // 기즈모 모드 전환 (스페이스 키 - ImGui 방식)
+    if (ViewerWorld && ViewerCamera)
+    {
+        if (AGizmoActor* GizmoActor = ViewerWorld->GetGizmoActor())
+        {
+            // 우클릭 드래그 중이거나 기즈모 드래그 중에는 모드 변경 불가
+            if (!bEnableViewerCameraInput && !bViewerGizmoDragging)
+            {
+                // 스페이스 키로 기즈모 모드 순환 전환
+                if (ImGui::IsKeyPressed(ImGuiKey_Space))
+                {
+                    int GizmoModeIndex = static_cast<int>(GizmoActor->GetMode());
+                    GizmoModeIndex = (GizmoModeIndex + 1) % 3;  // Translate(0) -> Rotate(1) -> Scale(2) -> Translate
+                    EGizmoMode NewGizmoMode = static_cast<EGizmoMode>(GizmoModeIndex);
+                    GizmoActor->SetMode(NewGizmoMode);
+                    UE_LOG("SkeletalMeshViewer: Gizmo mode changed to %d", GizmoModeIndex);
+                }
+
+                // Q/W/E/R 키로 직접 모드 선택
+                if (ImGui::IsKeyPressed(ImGuiKey_Q))
+                {
+                    GizmoActor->SetMode(EGizmoMode::Select);
+                    UE_LOG("SkeletalMeshViewer: Gizmo mode -> Select");
+                }
+                else if (ImGui::IsKeyPressed(ImGuiKey_W))
+                {
+                    GizmoActor->SetMode(EGizmoMode::Translate);
+                    UE_LOG("SkeletalMeshViewer: Gizmo mode -> Translate");
+                }
+                else if (ImGui::IsKeyPressed(ImGuiKey_E))
+                {
+                    GizmoActor->SetMode(EGizmoMode::Rotate);
+                    UE_LOG("SkeletalMeshViewer: Gizmo mode -> Rotate");
+                }
+                else if (ImGui::IsKeyPressed(ImGuiKey_R))
+                {
+                    GizmoActor->SetMode(EGizmoMode::Scale);
+                    UE_LOG("SkeletalMeshViewer: Gizmo mode -> Scale");
+                }
+
+                // Tab 키로 World/Local 좌표계 전환
+                if (ImGui::IsKeyPressed(ImGuiKey_Tab))
+                {
+                    if (GizmoActor->GetSpace() == EGizmoSpace::World)
+                    {
+                        GizmoActor->SetSpace(EGizmoSpace::Local);
+                        UE_LOG("SkeletalMeshViewer: Gizmo space -> Local");
+                    }
+                    else
+                    {
+                        GizmoActor->SetSpace(EGizmoSpace::World);
+                        UE_LOG("SkeletalMeshViewer: Gizmo space -> World");
+                    }
+                }
+            }
+        }
     }
 
     // Toolbar rendering
@@ -472,6 +617,12 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
                 SelectedActor->SetIsPicked(false);
             }
             SelectedActor = nullptr;
+
+            // SelectionManager 선택 해제
+            if (ViewerWorld && ViewerWorld->GetSelectionManager())
+            {
+                ViewerWorld->GetSelectionManager()->ClearSelection();
+            }
         }
     }
     else
@@ -515,8 +666,341 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
             ImVec2 imageTopLeft = ImGui::GetCursorScreenPos();
             ImGui::Image((void*)srv, viewportSize);
 
-            // 마우스 피킹 처리
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+            // Image 위에 InvisibleButton을 겹쳐서 입력 가로채기
+            ImGui::SetCursorScreenPos(imageTopLeft);  // 커서를 이미지 시작 위치로 되돌림
+            ImGui::InvisibleButton("##ViewportButton", viewportSize, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+
+            // 뷰포트 영역 호버링 확인
+            bool bIsImageHovered = ImGui::IsItemHovered();
+            bool bIsRightMouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Right);
+            bool bIsLeftMouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+            bool bIsLeftMouseClicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);  // 클릭한 순간만 true
+
+            // 우클릭 상태 업데이트
+            if (bIsImageHovered && bIsRightMouseDown)
+            {
+                if (!bIsViewerRightMouseDown)
+                {
+                    // 우클릭 시작
+                    bIsViewerRightMouseDown = true;
+                    UE_LOG("SkeletalMeshViewer: Right mouse down - camera control enabled");
+                }
+                bEnableViewerCameraInput = true;
+            }
+            else
+            {
+                if (bIsViewerRightMouseDown && !bIsRightMouseDown)
+                {
+                    // 우클릭 해제
+                    bIsViewerRightMouseDown = false;
+                    bEnableViewerCameraInput = false;
+                    bViewerCameraRotationInitialized = false;  // 다음번을 위해 리셋
+                    UE_LOG("SkeletalMeshViewer: Right mouse up - camera control disabled");
+                }
+            }
+
+            // 기즈모 인터랙션 처리 (호버링은 기존 로직 사용)
+            if (bIsImageHovered && ViewerWorld && ViewerCamera)
+            {
+                ImVec2 mousePos = ImGui::GetMousePos();
+                FVector2D localMousePos(mousePos.x - imageTopLeft.x, mousePos.y - imageTopLeft.y);
+
+                if (AGizmoActor* GizmoActor = ViewerWorld->GetGizmoActor())
+                {
+                    // 기존 ProcessGizmoInteraction 호출 (호버링 처리가 제대로 됨)
+                    GizmoActor->ProcessGizmoInteraction(
+                        ViewerCamera,
+                        Viewport,
+                        static_cast<float>(localMousePos.X),
+                        static_cast<float>(localMousePos.Y)
+                    );
+
+                    // 드래그 상태 동기화 (ImGui 마우스 버튼 사용)
+                    USceneComponent* SelectedComponent = nullptr;
+                    if (ViewerWorld->GetSelectionManager())
+                    {
+                        SelectedComponent = ViewerWorld->GetSelectionManager()->GetSelectedComponent();
+                    }
+
+                    // ProcessGizmoInteraction이 호버링을 처리했으므로 드래그만 ImGui로 제어
+                    bool bGizmoHovering = GizmoActor->GetbIsHovering();
+
+                    // 드래그 시작 (ImGui 좌클릭한 순간만)
+                    if (bIsLeftMouseClicked && !bViewerGizmoDragging && bGizmoHovering && SelectedComponent)
+                    {
+                        // 호버링된 축 확인
+                        FVector2D viewportSizeVec(viewportSize.x, viewportSize.y);
+                        FVector2D viewportOffset(0.0f, 0.0f);
+                        FVector DragImpactPoint;
+                        ViewerDraggingAxis = CPickingSystem::IsHoveringGizmoForViewport(
+                            GizmoActor,
+                            ViewerCamera,
+                            localMousePos + viewportOffset,
+                            viewportSizeVec,
+                            viewportOffset,
+                            Viewport,
+                            DragImpactPoint
+                        );
+
+                        if (ViewerDraggingAxis > 0)
+                        {
+                            bViewerGizmoDragging = true;
+                            ViewerDragStartMousePos = localMousePos;
+                            ViewerDragStartLocation = SelectedComponent->GetWorldLocation();
+                            ViewerDragStartRotation = SelectedComponent->GetWorldRotation();
+                            ViewerDragStartScale = SelectedComponent->GetWorldScale();
+                            ViewerDragImpactPoint = DragImpactPoint;  // 3D 충돌 지점 저장
+
+                            // 회전 모드인 경우 DragScreenVector 미리 계산
+                            EGizmoMode currentMode = GizmoActor->GetMode();
+                            if (currentMode == EGizmoMode::Rotate)
+                            {
+                                // 회전 축 결정
+                                FVector LocalAxisVector;
+                                switch (ViewerDraggingAxis)
+                                {
+                                case 1: LocalAxisVector = FVector(1, 0, 0); break;
+                                case 2: LocalAxisVector = FVector(0, 1, 0); break;
+                                case 3: LocalAxisVector = FVector(0, 0, 1); break;
+                                }
+
+                                FVector WorldAxis;
+                                EGizmoSpace currentSpace = GizmoActor->GetSpace();
+                                if (currentSpace == EGizmoSpace::World)
+                                {
+                                    WorldAxis = LocalAxisVector;
+                                }
+                                else  // Local
+                                {
+                                    WorldAxis = ViewerDragStartRotation.RotateVector(LocalAxisVector);
+                                }
+
+                                // 3D 충돌 지점과 기즈모 중심 사이의 벡터
+                                FVector ClickVector = ViewerDragImpactPoint - ViewerDragStartLocation;
+
+                                // 3D 회전 축과 클릭 벡터를 외적하여 접선 구하기
+                                FVector Tangent3D = FVector::Cross(WorldAxis, ClickVector);
+
+                                // 3D 접선을 2D 스크린에 투영
+                                FQuat CameraRot = ViewerCamera->GetActorRotation();
+                                FVector CameraRight = CameraRot.RotateVector(FVector(0, 1, 0));
+                                FVector CameraUp = CameraRot.RotateVector(FVector(0, 0, 1));
+
+                                float RightDot = FVector::Dot(Tangent3D, CameraRight);
+                                float UpDot = FVector::Dot(Tangent3D, CameraUp);
+
+                                // DirectX 스크린 좌표계 (Y축 반전)
+                                ViewerDragScreenVector = FVector2D(RightDot, -UpDot);
+
+                                // 정규화
+                                float length = std::sqrt(ViewerDragScreenVector.X * ViewerDragScreenVector.X +
+                                                         ViewerDragScreenVector.Y * ViewerDragScreenVector.Y);
+                                if (length > 0.0001f)
+                                {
+                                    ViewerDragScreenVector.X /= length;
+                                    ViewerDragScreenVector.Y /= length;
+                                }
+                            }
+
+                            UE_LOG("SkeletalMeshViewer: Gizmo drag started - Axis %d", ViewerDraggingAxis);
+                        }
+                    }
+
+                    // 드래그 중
+                    if (bViewerGizmoDragging && bIsLeftMouseDown && SelectedComponent)
+                    {
+                        // 기즈모 드래그 중에는 ImGui가 다른 입력을 처리하지 못하도록 차단
+                        ImGuiIO& io = ImGui::GetIO();
+                        io.WantCaptureMouse = false;
+                        io.WantCaptureKeyboard = false;
+
+                        // GizmoActor가 ProcessGizmoInteraction을 통해 자체적으로 드래그 중인지 확인
+                        bool bGizmoInternalDrag = GizmoActor->GetbIsDragging();
+
+                        if (!bGizmoInternalDrag && ViewerDraggingAxis > 0)
+                        {
+                            // GizmoActor가 드래그를 시작하지 못했으므로 (InputManager가 false 반환)
+                            // 우리가 직접 Transform 로직 구현
+                            EGizmoMode currentMode = GizmoActor->GetMode();
+
+                            if (currentMode == EGizmoMode::Translate)
+                            {
+                                // 드래그 축 결정 (World 또는 Local)
+                                FVector Axis{};
+                                EGizmoSpace currentSpace = GizmoActor->GetSpace();
+
+                                if (currentSpace == EGizmoSpace::World)
+                                {
+                                    switch (ViewerDraggingAxis)
+                                    {
+                                    case 1: Axis = FVector(1, 0, 0); break;  // X축 (빨강)
+                                    case 2: Axis = FVector(0, 1, 0); break;  // Y축 (초록)
+                                    case 3: Axis = FVector(0, 0, 1); break;  // Z축 (파랑)
+                                    }
+                                }
+                                else  // Local
+                                {
+                                    switch (ViewerDraggingAxis)
+                                    {
+                                    case 1: Axis = ViewerDragStartRotation.RotateVector(FVector(1, 0, 0)); break;
+                                    case 2: Axis = ViewerDragStartRotation.RotateVector(FVector(0, 1, 0)); break;
+                                    case 3: Axis = ViewerDragStartRotation.RotateVector(FVector(0, 0, 1)); break;
+                                    }
+                                }
+
+                                // 축을 스크린 공간으로 투영
+                                FQuat CameraRot = ViewerCamera->GetActorRotation();
+                                FVector CameraRight = CameraRot.RotateVector(FVector(0, 1, 0));
+                                FVector CameraUp = CameraRot.RotateVector(FVector(0, 0, 1));
+
+                                float AxisScreenX = FVector::Dot(Axis, CameraRight);
+                                float AxisScreenY = -FVector::Dot(Axis, CameraUp);  // Y는 반전
+                                FVector2D AxisScreen(AxisScreenX, AxisScreenY);
+
+                                // Normalize (FVector2D에 없으므로 직접 계산)
+                                float axisLength = std::sqrt(AxisScreen.X * AxisScreen.X + AxisScreen.Y * AxisScreen.Y);
+                                if (axisLength > 0.0001f)
+                                {
+                                    AxisScreen.X /= axisLength;
+                                    AxisScreen.Y /= axisLength;
+                                }
+
+                                // 마우스 델타를 축에 투영
+                                FVector2D currentMousePos = localMousePos;
+                                FVector2D mouseDelta = currentMousePos - ViewerDragStartMousePos;
+
+                                // Dot product (FVector2D에 없으므로 직접 계산)
+                                float projectedDelta = mouseDelta.X * AxisScreen.X + mouseDelta.Y * AxisScreen.Y;
+
+                                // 픽셀당 월드 이동량 계산 (거리 기반 스케일)
+                                FVector CameraPos = ViewerCamera->GetActorLocation();
+                                FVector TargetPos = ViewerDragStartLocation;
+                                float Distance = (TargetPos - CameraPos).Size();
+                                float worldPerPixel = Distance * 0.001f;  // 조정 가능한 스케일
+
+                                // 새 위치 계산
+                                float totalMovement = projectedDelta * worldPerPixel;
+                                FVector newLocation = ViewerDragStartLocation + Axis * totalMovement;
+                                SelectedComponent->SetWorldLocation(newLocation);
+                            }
+                            else if (currentMode == EGizmoMode::Rotate)
+                            {
+                                // 회전 모드 - 원본 로직과 동일하게
+                                float RotationSpeed = 0.005f;
+
+                                // 마우스 델타 계산 (드래그 시작점으로부터의 총 변위)
+                                FVector2D currentMousePos = localMousePos;
+                                FVector2D mouseDelta = currentMousePos - ViewerDragStartMousePos;
+
+                                // 미리 계산해둔 DragScreenVector로 마우스 델타 투영
+                                float ProjectedAmount = mouseDelta.X * ViewerDragScreenVector.X +
+                                                       mouseDelta.Y * ViewerDragScreenVector.Y;
+
+                                // 총 회전 각도 계산
+                                float TotalAngle = ProjectedAmount * RotationSpeed;
+
+                                // 회전 축 결정
+                                FVector LocalAxisVector;
+                                switch (ViewerDraggingAxis)
+                                {
+                                case 1: LocalAxisVector = FVector(1, 0, 0); break;
+                                case 2: LocalAxisVector = FVector(0, 1, 0); break;
+                                case 3: LocalAxisVector = FVector(0, 0, 1); break;
+                                }
+
+                                // 새 회전 계산 (원본과 동일)
+                                FQuat NewRot;
+                                EGizmoSpace currentSpace = GizmoActor->GetSpace();
+                                if (currentSpace == EGizmoSpace::World)
+                                {
+                                    // 월드 축을 기준으로 회전
+                                    FQuat DeltaQuat = FQuat::FromAxisAngle(LocalAxisVector, TotalAngle);
+                                    NewRot = DeltaQuat * ViewerDragStartRotation;
+                                }
+                                else  // Local
+                                {
+                                    // 로컬 축을 드래그 시작 시점의 월드 축으로 변환
+                                    FVector WorldSpaceRotationAxis = ViewerDragStartRotation.RotateVector(LocalAxisVector);
+                                    FQuat DeltaQuat = FQuat::FromAxisAngle(WorldSpaceRotationAxis, TotalAngle);
+                                    NewRot = DeltaQuat * ViewerDragStartRotation;  // 원본과 동일한 순서!
+                                }
+
+                                SelectedComponent->SetWorldRotation(NewRot);
+                            }
+                            else if (currentMode == EGizmoMode::Scale)
+                            {
+                                // 스케일 모드 (Translate와 유사하지만 Scale 적용)
+                                FVector Axis;
+                                switch (ViewerDraggingAxis)
+                                {
+                                case 1: Axis = ViewerDragStartRotation.RotateVector(FVector(1, 0, 0)); break;
+                                case 2: Axis = ViewerDragStartRotation.RotateVector(FVector(0, 1, 0)); break;
+                                case 3: Axis = ViewerDragStartRotation.RotateVector(FVector(0, 0, 1)); break;
+                                }
+
+                                // 축을 스크린 공간으로 투영
+                                FQuat CameraRot = ViewerCamera->GetActorRotation();
+                                FVector CameraRight = CameraRot.RotateVector(FVector(0, 1, 0));
+                                FVector CameraUp = CameraRot.RotateVector(FVector(0, 0, 1));
+
+                                float AxisScreenX = FVector::Dot(Axis, CameraRight);
+                                float AxisScreenY = -FVector::Dot(Axis, CameraUp);
+                                FVector2D AxisScreen(AxisScreenX, AxisScreenY);
+
+                                float axisLength = std::sqrt(AxisScreen.X * AxisScreen.X + AxisScreen.Y * AxisScreen.Y);
+                                if (axisLength > 0.0001f)
+                                {
+                                    AxisScreen.X /= axisLength;
+                                    AxisScreen.Y /= axisLength;
+                                }
+
+                                // 마우스 델타 투영
+                                FVector2D currentMousePos = localMousePos;
+                                FVector2D mouseDelta = currentMousePos - ViewerDragStartMousePos;
+                                float projectedDelta = mouseDelta.X * AxisScreen.X + mouseDelta.Y * AxisScreen.Y;
+
+                                // 스케일 계산
+                                FVector CameraPos = ViewerCamera->GetActorLocation();
+                                FVector TargetPos = ViewerDragStartLocation;
+                                float Distance = (TargetPos - CameraPos).Size();
+                                float worldPerPixel = Distance * 0.001f;
+                                float totalMovement = projectedDelta * worldPerPixel;
+
+                                // 새 스케일 적용
+                                FVector NewScale = ViewerDragStartScale;
+                                switch (ViewerDraggingAxis)
+                                {
+                                case 1: NewScale.X += totalMovement; break;
+                                case 2: NewScale.Y += totalMovement; break;
+                                case 3: NewScale.Z += totalMovement; break;
+                                }
+                                SelectedComponent->SetWorldScale(NewScale);
+                            }
+                        }
+                    }
+
+                    // 드래그 종료
+                    if (bViewerGizmoDragging && !bIsLeftMouseDown)
+                    {
+                        bViewerGizmoDragging = false;
+                        ViewerDraggingAxis = 0;
+                        UE_LOG("SkeletalMeshViewer: Gizmo drag ended");
+                    }
+                }
+            }
+
+            // 마우스 피킹 처리 (좌클릭)
+            // 기즈모가 호버링 중이 아닐 때만 액터 피킹 수행
+            bool bGizmoHovering = false;
+            if (ViewerWorld)
+            {
+                if (AGizmoActor* GizmoActor = ViewerWorld->GetGizmoActor())
+                {
+                    bGizmoHovering = GizmoActor->GetbIsHovering();
+                }
+            }
+
+            if (bIsImageHovered && bIsLeftMouseClicked && !bGizmoHovering)
             {
                 // ImGui 마우스 위치 가져오기
                 ImVec2 mousePos = ImGui::GetMousePos();
@@ -553,12 +1037,27 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                     {
                         SelectedActor = pickedActor;
                         SelectedActor->SetIsPicked(true);  // 시각적 하이라이트
+
+                        // ViewerWorld의 SelectionManager에 등록 (기즈모 표시용)
+                        if (ViewerWorld && ViewerWorld->GetSelectionManager())
+                        {
+                            ViewerWorld->GetSelectionManager()->SelectActor(pickedActor);
+                            UE_LOG("SkeletalMeshViewerContentWidget: Actor selected in ViewerWorld SelectionManager");
+                        }
+
                         UE_LOG("SkeletalMeshViewerContentWidget: Actor picked - %s",
                                pickedActor->GetName().ToString().c_str());
                     }
                     else
                     {
                         SelectedActor = nullptr;
+
+                        // SelectionManager 선택 해제
+                        if (ViewerWorld && ViewerWorld->GetSelectionManager())
+                        {
+                            ViewerWorld->GetSelectionManager()->ClearSelection();
+                        }
+
                         UE_LOG("SkeletalMeshViewerContentWidget: No actor picked, selection cleared");
                     }
                 }

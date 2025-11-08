@@ -1555,43 +1555,53 @@ void FSceneRenderer::RenderOverayEditorPrimitivesPass()
 		RHIDevice->OMSetRenderTargets(ERTVMode::SceneColorTargetWithId);
 	}
 
-	// 뎁스 버퍼를 Clear하고 LessEqual로 그리기 때문에 오버레이로 표시되는데
-	// 오버레이 끼리는 깊이 테스트가 가능함
-	RHIDevice->ClearDepthBuffer(1.0f, 0);
+	// Viewer World 디버깅
+	bool bIsViewerWorld = (Viewport && Viewport->HasRenderTarget());
+	if (bIsViewerWorld)
+	{
+		UE_LOG("[VIEWER] RenderOverayEditorPrimitivesPass: Rendering %zu overlay primitives",
+		       Proxies.OverlayPrimitives.size());
+	}
 
 	for (UPrimitiveComponent* GizmoComp : Proxies.OverlayPrimitives)
 	{
 		GizmoComp->CollectMeshBatches(MeshBatchElements, View);
 	}
 
-	// 수집된 배치를 그립니다.
-	DrawMeshBatches(MeshBatchElements, true);
+	// 수집된 배치를 그립니다. (overlay=true로 전달하여 항상 위에 그려지도록)
+	DrawMeshBatches(MeshBatchElements, true, true);
 }
 
 // 수집한 Batch 그리기
-void FSceneRenderer::DrawMeshBatches(TArray<FMeshBatchElement>& InMeshBatches, bool bClearListAfterDraw)
+void FSceneRenderer::DrawMeshBatches(TArray<FMeshBatchElement>& InMeshBatches, bool bClearListAfterDraw, bool bIsOverlay)
 {
 	// Viewer World 디버깅
 	bool bIsViewerWorld = (Viewport && Viewport->HasRenderTarget());
 	if (bIsViewerWorld)
 	{
-		UE_LOG("[VIEWER] DrawMeshBatches: Called with %zu batches", InMeshBatches.size());
+		UE_LOG("[VIEWER] DrawMeshBatches: Called with %zu batches, bIsOverlay=%d", InMeshBatches.size(), bIsOverlay);
 	}
 
 	if (InMeshBatches.IsEmpty())
 		return;
 
 	// --- 초기 상태 ---
-	// Viewer World는 디버깅을 위해 Depth test 비활성화 + Culling 비활성화
-	if (bIsViewerWorld)
+	// Overlay는 항상 위에 그려지도록 depth test를 Always로 설정
+	if (bIsOverlay)
 	{
-		RHIDevice->OMSetDepthStencilState(EComparisonFunc::Always);  // 항상 통과
-		RHIDevice->RSSetState(ERasterizerMode::Solid_NoCull);  // Culling 비활성화
-		UE_LOG("[VIEWER] Depth test & culling disabled for debugging");
+		RHIDevice->OMSetDepthStencilState(EComparisonFunc::Always);
 	}
 	else
 	{
+		// Depth test 활성화 (모든 World에서 동일)
 		RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
+	}
+
+	// Viewer World는 디버깅을 위해 Culling 비활성화
+	if (bIsViewerWorld)
+	{
+		RHIDevice->RSSetState(ERasterizerMode::Solid_NoCull);  // Culling 비활성화
+		UE_LOG("[VIEWER] Culling disabled for debugging, Depth test enabled");
 	}
 
 	// PS 리소스 초기화

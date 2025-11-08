@@ -57,6 +57,23 @@ private:
     // Picking
     AActor* SelectedActor = nullptr;
 
+    // Camera Input
+    bool bIsViewerRightMouseDown = false;
+    bool bEnableViewerCameraInput = false;
+    float ViewerCameraYawDeg = 0.0f;
+    float ViewerCameraPitchDeg = 0.0f;
+    bool bViewerCameraRotationInitialized = false;
+
+    // Gizmo Interaction (Viewer 전용)
+    bool bViewerGizmoDragging = false;
+    uint32 ViewerDraggingAxis = 0;
+    FVector2D ViewerDragStartMousePos;
+    FVector ViewerDragStartLocation;
+    FQuat ViewerDragStartRotation;
+    FVector ViewerDragStartScale;
+    FVector ViewerDragImpactPoint;  // 3D 충돌 지점 (회전용)
+    FVector2D ViewerDragScreenVector;  // 2D 스크린 드래그 벡터 (회전용)
+
     // Layout
     float SidebarWidth = 300.0f;
 };

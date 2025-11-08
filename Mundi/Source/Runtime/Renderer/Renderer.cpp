@@ -258,12 +258,14 @@ void URenderer::EndLineBatch(const FMatrix& ModelMatrix)
 		RHIDevice->GetDeviceContext()->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
 		RHIDevice->GetDeviceContext()->IASetIndexBuffer(indexBuffer, DXGI_FORMAT_R32_UINT, 0);
 		RHIDevice->GetDeviceContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-		// Overlay 스텐실(=1) 영역은 그리지 않도록 스텐실 테스트 설정
-		
+
+		// Depth test 활성화 - 그리드가 메시 뒤에 가려지도록
+		// LessEqual + depth write enabled
+		RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
+
 		RHIDevice->GetDeviceContext()->DrawIndexed(DynamicLineMesh->GetCurrentIndexCount(), 0, 0);
-		
+
 	}
-	RHIDevice->OMSetDepthStencilState_StencilRejectOverlay();
 	RHIDevice->GetDeviceContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
 
