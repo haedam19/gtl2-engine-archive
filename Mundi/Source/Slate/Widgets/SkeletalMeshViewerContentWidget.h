@@ -6,6 +6,7 @@ class FViewport;
 class FViewportClient;
 class UWorld;
 class ACameraActor;
+class AActor;
 
 /**
  * @brief Main content widget for Skeletal Mesh Viewer
@@ -24,6 +25,10 @@ public:
 
     // Access to sub-components
     UBoneHierarchyWidget* GetBoneHierarchyWidget() const { return BoneHierarchyWidget; }
+
+    // Picking
+    AActor* GetSelectedActor() const { return SelectedActor; }
+    void SetSelectedActor(AActor* Actor) { SelectedActor = Actor; }
 
 private:
     // Rendering methods
@@ -48,6 +53,9 @@ private:
     bool bShowBoneNames = true;
     bool bShowBoneAxes = false;
     bool bShowSkeletalMesh = true;
+
+    // Picking
+    AActor* SelectedActor = nullptr;
 
     // Layout
     float SidebarWidth = 300.0f;

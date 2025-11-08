@@ -14,6 +14,8 @@
 #include "StaticMeshComponent.h"
 #include "Grid/GridActor.h"
 #include "CameraComponent.h"
+#include "Picking.h"
+#include "Actor.h"
 
 // 전역 EditorEngine 접근
 extern UEditorEngine GEngine;
@@ -27,6 +29,13 @@ USkeletalMeshViewerContentWidget::USkeletalMeshViewerContentWidget()
 
 USkeletalMeshViewerContentWidget::~USkeletalMeshViewerContentWidget()
 {
+    // 0. 선택 상태 정리
+    if (SelectedActor)
+    {
+        SelectedActor->SetIsPicked(false);
+        SelectedActor = nullptr;
+    }
+
     // 1. ViewportClient의 참조 해제 (먼저 해야 댕글링 포인터 방지)
     if (ViewportClient)
     {
@@ -416,25 +425,62 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
 {
     ImGui::BeginChild("BonePropertiesArea", ImVec2(0, 0), true);
 
-    // TODO: Display selected bone's Transform info
-    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No bone selected");
+    // 선택된 액터 정보 표시
+    if (SelectedActor)
+    {
+        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Selected Actor");
+        ImGui::Spacing();
 
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
+        ImGui::Text("Name: %s", SelectedActor->GetName().ToString().c_str());
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
 
-    // Dummy Transform info
-    ImGui::Text("Transform");
-    ImGui::Spacing();
+        // Transform 정보
+        ImGui::Text("Transform");
+        ImGui::Spacing();
 
-    float pos[3] = { 0.0f, 0.0f, 0.0f };
-    ImGui::DragFloat3("Position", pos, 0.1f);
+        FVector pos = SelectedActor->GetActorLocation();
+        float posArray[3] = { pos.X, pos.Y, pos.Z };
+        if (ImGui::DragFloat3("Position", posArray, 0.1f))
+        {
+            SelectedActor->SetActorLocation(FVector(posArray[0], posArray[1], posArray[2]));
+        }
 
-    float rot[3] = { 0.0f, 0.0f, 0.0f };
-    ImGui::DragFloat3("Rotation", rot, 1.0f);
+        FVector rot = SelectedActor->GetActorRotation().ToEulerZYXDeg();
+        float rotArray[3] = { rot.X, rot.Y, rot.Z };
+        if (ImGui::DragFloat3("Rotation", rotArray, 1.0f))
+        {
+            SelectedActor->SetActorRotation(FVector(rotArray[0], rotArray[1], rotArray[2]));
+        }
 
-    float scl[3] = { 1.0f, 1.0f, 1.0f };
-    ImGui::DragFloat3("Scale", scl, 0.01f);
+        FVector scl = SelectedActor->GetActorScale();
+        float sclArray[3] = { scl.X, scl.Y, scl.Z };
+        if (ImGui::DragFloat3("Scale", sclArray, 0.01f))
+        {
+            SelectedActor->SetActorScale(FVector(sclArray[0], sclArray[1], sclArray[2]));
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        if (ImGui::Button("Deselect", ImVec2(-1, 0)))
+        {
+            if (SelectedActor)
+            {
+                SelectedActor->SetIsPicked(false);
+            }
+            SelectedActor = nullptr;
+        }
+    }
+    else
+    {
+        // TODO: Display selected bone's Transform info
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No actor/bone selected");
+        ImGui::Spacing();
+        ImGui::Text("Click on an object in the viewport to select it");
+    }
 
     ImGui::EndChild();
 }
@@ -465,7 +511,58 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
         ID3D11ShaderResourceView* srv = Viewport->GetShaderResourceView();
         if (srv)
         {
+            // ImGui::Image 렌더링
+            ImVec2 imageTopLeft = ImGui::GetCursorScreenPos();
             ImGui::Image((void*)srv, viewportSize);
+
+            // 마우스 피킹 처리
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+            {
+                // ImGui 마우스 위치 가져오기
+                ImVec2 mousePos = ImGui::GetMousePos();
+
+                // 뷰포트 영역 내의 로컬 마우스 좌표 계산
+                FVector2D localMousePos(mousePos.x - imageTopLeft.x, mousePos.y - imageTopLeft.y);
+                FVector2D viewportSizeVec(viewportSize.x, viewportSize.y);
+                FVector2D viewportOffset(0.0f, 0.0f);
+
+                // 뷰포트 aspect ratio 계산
+                float aspectRatio = viewportSize.x / viewportSize.y;
+
+                // 피킹 수행
+                if (ViewerWorld && ViewerCamera)
+                {
+                    const TArray<AActor*>& actors = ViewerWorld->GetActors();
+                    AActor* pickedActor = CPickingSystem::PerformViewportPicking(
+                        actors,
+                        ViewerCamera,
+                        localMousePos,
+                        viewportSizeVec,
+                        viewportOffset,
+                        aspectRatio,
+                        Viewport
+                    );
+
+                    // 이전 선택 해제
+                    if (SelectedActor)
+                    {
+                        SelectedActor->SetIsPicked(false);
+                    }
+
+                    if (pickedActor)
+                    {
+                        SelectedActor = pickedActor;
+                        SelectedActor->SetIsPicked(true);  // 시각적 하이라이트
+                        UE_LOG("SkeletalMeshViewerContentWidget: Actor picked - %s",
+                               pickedActor->GetName().ToString().c_str());
+                    }
+                    else
+                    {
+                        SelectedActor = nullptr;
+                        UE_LOG("SkeletalMeshViewerContentWidget: No actor picked, selection cleared");
+                    }
+                }
+            }
         }
         else
         {
