@@ -19,7 +19,7 @@ public:
 
     // ===== Loader Methods ===============================
     void Load(const FString& InFilePath, ID3D11Device* InDevice, EVertexLayoutType InVertexType = EVertexLayoutType::PositionColorTextureNormal);
-    void Load(FSkeletalMesh* InCookedData, ID3D11Device* InDevice, EVertexLayoutType InVertexType = EVertexLayoutType::PositionColorTextureNormal);
+    void Load(FSkeletalMesh* InData, ID3D11Device* InDevice, EVertexLayoutType InVertexType = EVertexLayoutType::PositionColorTextureNormal);
 
     // ===== Vertex =======================================
     void SetVertexType(EVertexLayoutType InVertexLayoutType);
