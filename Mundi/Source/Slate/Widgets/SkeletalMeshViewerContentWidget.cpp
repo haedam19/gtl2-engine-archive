@@ -749,22 +749,18 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
             // UpdateBoneWorldMatrices 내부에서 UpdateBoneActorTransforms()가 호출되어 본 액터 위치가 자동 업데이트됨
         }
 
-        // Rotation (Euler in Radians → display in Degrees, normalized to -180~180)
-        FVector rotRad = Bone.BindR_EulerRad;
+        // Rotation (Quaternion → display as Euler Degrees)
+        FVector rotDeg = Bone.BindR.ToEulerZYXDeg();
 
-        FVector rotDeg(
-            RadiansToDegrees(rotRad.X),
-            RadiansToDegrees(rotRad.Y),
-            RadiansToDegrees(rotRad.Z)
-        );
         float rotArray[3] = { rotDeg.X, rotDeg.Y, rotDeg.Z };
         if (ImGui::DragFloat3("Rotation (deg)", rotArray, 1.0f))
         {
-            DummySkeleton.Bones[SelectedBoneIndex].BindR_EulerRad = FVector(
-                DegreesToRadians(rotArray[0]),
-                DegreesToRadians(rotArray[1]),
-                DegreesToRadians(rotArray[2])
-            );
+            // Euler Degrees → Quaternion
+            DummySkeleton.Bones[SelectedBoneIndex].BindR = FQuat::MakeFromEulerZYX(FVector(
+                rotArray[0],
+                rotArray[1],
+                rotArray[2]
+            ));
             UpdateBoneWorldMatrices();
             // UpdateBoneWorldMatrices 내부에서 UpdateBoneActorTransforms()가 호출되어 본 액터가 자동 업데이트됨
         }
@@ -1495,7 +1491,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     Root.Name = "Root";
     Root.ParentIndex = -1;
     Root.BindT = FVector(0, 0, 0);
-    Root.BindR_EulerRad = FVector(0, 0, 0);
+    Root.BindR = FQuat::Identity();
     Root.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(Root);
 
@@ -1507,7 +1503,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     Spine.Name = "Spine";
     Spine.ParentIndex = 0;  // Child of Root
     Spine.BindT = FVector(0, 0, 1.0f * Scale);
-    Spine.BindR_EulerRad = FVector(0, 0, 0);
+    Spine.BindR = FQuat::Identity();
     Spine.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(Spine);
 
@@ -1516,7 +1512,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     Spine1.Name = "Spine1";
     Spine1.ParentIndex = 1;  // Child of Spine
     Spine1.BindT = FVector(0, 0, 0.8f * Scale);
-    Spine1.BindR_EulerRad = FVector(0, 0, 0);
+    Spine1.BindR = FQuat::Identity();
     Spine1.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(Spine1);
 
@@ -1525,7 +1521,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     Head.Name = "Head";
     Head.ParentIndex = 2;  // Child of Spine1
     Head.BindT = FVector(0, 0, 0.8f * Scale);
-    Head.BindR_EulerRad = FVector(0, 0, 0);
+    Head.BindR = FQuat::Identity();
     Head.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(Head);
 
@@ -1534,7 +1530,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     LeftShoulder.Name = "LeftShoulder";
     LeftShoulder.ParentIndex = 2;  // Child of Spine1
     LeftShoulder.BindT = FVector(0, 0.5f * Scale, 0.5f * Scale);
-    LeftShoulder.BindR_EulerRad = FVector(0, 0, 0);
+    LeftShoulder.BindR = FQuat::Identity();
     LeftShoulder.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(LeftShoulder);
 
@@ -1543,7 +1539,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     LeftArm.Name = "LeftArm";
     LeftArm.ParentIndex = 4;  // Child of LeftShoulder
     LeftArm.BindT = FVector(0, 0.8f * Scale, 0);
-    LeftArm.BindR_EulerRad = FVector(0, 0, 0);
+    LeftArm.BindR = FQuat::Identity();
     LeftArm.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(LeftArm);
 
@@ -1552,7 +1548,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     LeftHand.Name = "LeftHand";
     LeftHand.ParentIndex = 5;  // Child of LeftArm
     LeftHand.BindT = FVector(0, 0.8f * Scale, 0);
-    LeftHand.BindR_EulerRad = FVector(0, 0, 0);
+    LeftHand.BindR = FQuat::Identity();
     LeftHand.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(LeftHand);
 
@@ -1561,7 +1557,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     RightShoulder.Name = "RightShoulder";
     RightShoulder.ParentIndex = 2;  // Child of Spine1
     RightShoulder.BindT = FVector(0, -0.5f * Scale, 0.5f * Scale);
-    RightShoulder.BindR_EulerRad = FVector(0, 0, 0);
+    RightShoulder.BindR = FQuat::Identity();
     RightShoulder.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(RightShoulder);
 
@@ -1570,7 +1566,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     RightArm.Name = "RightArm";
     RightArm.ParentIndex = 7;  // Child of RightShoulder
     RightArm.BindT = FVector(0, -0.8f * Scale, 0);
-    RightArm.BindR_EulerRad = FVector(0, 0, 0);
+    RightArm.BindR = FQuat::Identity();
     RightArm.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(RightArm);
 
@@ -1579,7 +1575,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     RightHand.Name = "RightHand";
     RightHand.ParentIndex = 8;  // Child of RightArm
     RightHand.BindT = FVector(0, -0.8f * Scale, 0);
-    RightHand.BindR_EulerRad = FVector(0, 0, 0);
+    RightHand.BindR = FQuat::Identity();
     RightHand.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(RightHand);
 
@@ -1588,7 +1584,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     LeftLeg.Name = "LeftLeg";
     LeftLeg.ParentIndex = 0;  // Child of Root
     LeftLeg.BindT = FVector(0, 0.3f * Scale, -1.0f * Scale);
-    LeftLeg.BindR_EulerRad = FVector(0, 0, 0);
+    LeftLeg.BindR = FQuat::Identity();
     LeftLeg.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(LeftLeg);
 
@@ -1597,7 +1593,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     LeftFoot.Name = "LeftFoot";
     LeftFoot.ParentIndex = 10;  // Child of LeftLeg
     LeftFoot.BindT = FVector(0, 0, -1.0f * Scale);
-    LeftFoot.BindR_EulerRad = FVector(0, 0, 0);
+    LeftFoot.BindR = FQuat::Identity();
     LeftFoot.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(LeftFoot);
 
@@ -1606,7 +1602,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     RightLeg.Name = "RightLeg";
     RightLeg.ParentIndex = 0;  // Child of Root
     RightLeg.BindT = FVector(0, -0.3f * Scale, -1.0f * Scale);
-    RightLeg.BindR_EulerRad = FVector(0, 0, 0);
+    RightLeg.BindR = FQuat::Identity();
     RightLeg.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(RightLeg);
 
@@ -1615,7 +1611,7 @@ void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
     RightFoot.Name = "RightFoot";
     RightFoot.ParentIndex = 12;  // Child of RightLeg
     RightFoot.BindT = FVector(0, 0, -1.0f * Scale);
-    RightFoot.BindR_EulerRad = FVector(0, 0, 0);
+    RightFoot.BindR = FQuat::Identity();
     RightFoot.BindS = FVector(1, 1, 1);
     DummySkeleton.Bones.Add(RightFoot);
 
@@ -1699,14 +1695,8 @@ void USkeletalMeshViewerContentWidget::UpdateBoneWorldMatrixRecursive(int32 Bone
     ScaleMat.M[1][1] = Bone.BindS.Y;
     ScaleMat.M[2][2] = Bone.BindS.Z;
 
-    // Rotation (from Euler angles in radians)
-    // MakeFromEulerZYX는 degree를 받으므로 radian을 degree로 변환
-    FVector RotDeg(
-        RadiansToDegrees(Bone.BindR_EulerRad.X),
-        RadiansToDegrees(Bone.BindR_EulerRad.Y),
-        RadiansToDegrees(Bone.BindR_EulerRad.Z)
-    );
-    FQuat RotQuat = FQuat::MakeFromEulerZYX(RotDeg);
+    // Rotation (Quaternion으로 직접 사용)
+    FQuat RotQuat = Bone.BindR;
     FMatrix RotMat = RotQuat.ToMatrix();
 
     // Translation
@@ -1788,7 +1778,7 @@ AActor* USkeletalMeshViewerContentWidget::GetBoneActor(int32 BoneIndex) const
     {
         return DummySkeleton.BoneActors[BoneIndex];
     }
-    return nullptr;
+    return nullptr; 
 }
 
 // 본 액터의 Transform을 본 데이터로 동기화
@@ -1844,14 +1834,7 @@ void USkeletalMeshViewerContentWidget::SyncBoneDataFromActor(int32 BoneIndex)
 
         // 본 데이터 업데이트
         Bone.BindT = LocalPos;
-
-        // Euler 각도를 정규화하여 저장 (-180~180도 범위)
-        FVector LocalRotEulerDeg = LocalRot.ToEulerZYXDeg();
-        Bone.BindR_EulerRad = FVector(
-            DegreesToRadians(NormalizeAngleDeg(LocalRotEulerDeg.X)),
-            DegreesToRadians(NormalizeAngleDeg(LocalRotEulerDeg.Y)),
-            DegreesToRadians(NormalizeAngleDeg(LocalRotEulerDeg.Z))
-        );
+        Bone.BindR = LocalRot;  // Quaternion을 직접 저장
         Bone.BindS = LocalScale;
 
         UE_LOG("SkeletalMeshViewerContentWidget: Calculated local transform from parent - LocalPos=(%.2f,%.2f,%.2f)",
@@ -1861,14 +1844,7 @@ void USkeletalMeshViewerContentWidget::SyncBoneDataFromActor(int32 BoneIndex)
     {
         // 루트 본은 월드 Transform이 곧 로컬 Transform
         Bone.BindT = ActorWorldPos;
-
-        // Euler 각도를 정규화하여 저장 (-180~180도 범위)
-        FVector WorldRotEulerDeg = ActorWorldRot.ToEulerZYXDeg();
-        Bone.BindR_EulerRad = FVector(
-            DegreesToRadians(NormalizeAngleDeg(WorldRotEulerDeg.X)),
-            DegreesToRadians(NormalizeAngleDeg(WorldRotEulerDeg.Y)),
-            DegreesToRadians(NormalizeAngleDeg(WorldRotEulerDeg.Z))
-        );
+        Bone.BindR = ActorWorldRot;  // Quaternion을 직접 저장
         Bone.BindS = ActorWorldScale;
     }
 
