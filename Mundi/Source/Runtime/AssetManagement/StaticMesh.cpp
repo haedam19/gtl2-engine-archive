@@ -37,7 +37,7 @@ void UStaticMesh::Load(FMeshData* InData, ID3D11Device* InDevice, EVertexLayoutT
     if (VertexBuffer)
     {
         VertexBuffer->Release();
-        VertexBuffer = nullptr;
+        VertexBuffer = nullptr; 
     }
     if (IndexBuffer)
     {
@@ -63,7 +63,7 @@ void UStaticMesh::SetVertexType(EVertexLayoutType InVertexType)
     case EVertexLayoutType::PositionColor:
         Stride = sizeof(FVertexSimple);
         break;
-    case EVertexLayoutType::PositionColorTexturNormal:
+    case EVertexLayoutType::PositionColorTextureNormal:
         Stride = sizeof(FVertexDynamic);
         break;
     case EVertexLayoutType::PositionTextBillBoard:

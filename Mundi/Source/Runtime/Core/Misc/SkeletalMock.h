@@ -17,20 +17,20 @@ inline void MakeTwoBoneChain_SingleTri(
         FBone Root;
         Root.Name = "root";
         Root.ParentIndex = -1;
-        Root.BindT = FVector(0,0,0);
-        Root.BindR_EulerRad = FVector(0,0,0);
-        Root.BindS = FVector(1,1,1);
-        Root.InverseBind = FMatrix::Identity();     // 변경: 직접 대입
+        Root.BindT = FVector(0.0f, 0.0f, 0.0f);
+        Root.BindR = FQuat(0.0f, 0.0f, 0.0f, 1.0f);
+        Root.BindS = FVector(0.0f , 0.0f, 0.0f);
+        Root.InverseBind = FMatrix::Identity();
         OutSkeleton.Bones.Add(Root);
 
         FBone J1;
         J1.Name = "joint1";
         J1.ParentIndex = 0;
-        J1.BindT = FVector(0,0,1);
-        J1.BindR_EulerRad = FVector(0,0,0);
-        J1.BindS = FVector(1,1,1);
+        J1.BindT = FVector(0.0f, 0.0f, 1.0f);
+        J1.BindR = FQuat(0.0f, 0.0f, 0.0f, 1.0f);
+        J1.BindS = FVector(1.0f, 1.0f, 1.0f);
         // 글로벌 바인드 = T(0,0,1) → InverseBind = T(0,0,-1)
-        J1.InverseBind = FMatrix::MakeTranslation(FVector(0,0,-1)); // 변경: 직접 대입
+        J1.InverseBind = FMatrix::MakeTranslation(FVector(0,0,-1));
         OutSkeleton.Bones.Add(J1);
     }
 
@@ -38,14 +38,18 @@ inline void MakeTwoBoneChain_SingleTri(
     OutMesh.PathFileName = "__mock__";
     OutMesh.CacheFilePath.clear();
     OutMesh.Skeleton = &OutSkeleton;
-    OutMesh.Vertices.clear(); OutMesh.Indices.clear(); OutMesh.GroupInfos.clear();
+    OutMesh.Vertices.clear();
+    OutMesh.Indices.clear();
+    OutMesh.GroupInfos.clear();
     OutMesh.bHasMaterial = true;
 
-    const FVector  P0(-0.10f, 0.0f, 0.0f);
-    const FVector  P1( 0.10f, 0.0f, 0.0f);
-    const FVector  P2( 0.00f, 0.0f, 1.0f);
+    const FVector P0(-0.1f, 0.0f, 0.0f);
+    const FVector P1( 0.1f, 0.0f, 0.0f);
+    const FVector P2( 0.0f, 0.0f, 1.0f);
 
-    const FVector2D UV0(0.0f, 1.0f), UV1(1.0f, 1.0f), UV2(0.5f, 0.0f);
+    const FVector2D UV0(0.0f, 1.0f);
+    const FVector2D UV1(1.0f, 1.0f);
+    const FVector2D UV2(0.5f, 0.0f);
 
     auto ComputeTangentBasis = [](const FVector& A,const FVector& B,const FVector& C,
                                   const FVector2D& a,const FVector2D& b,const FVector2D& c,
@@ -53,36 +57,44 @@ inline void MakeTwoBoneChain_SingleTri(
     {
         const FVector E1 = B - A, E2 = C - A;
         FVector Ntmp = FVector::Cross(E1, E2); Ntmp.Normalize();
-        const float dU1=b.X-a.X, dV1=b.Y-a.Y, dU2=c.X-a.X, dV2=c.Y-a.Y;
-        float det = dU1*dV2 - dV1*dU2;
-        FVector T(1,0,0), Bt(0,1,0);
-        if (std::fabs(det) > 1e-8f) {
-            const float r = 1.0f/det;
-            T  = (E1*dV2 - E2*dV1)*r;
-            Bt = (-E1*dU2 + E2*dU1)*r;
+        const float dU1 = b.X - a.X, dV1 = b.Y - a.Y, dU2 = c.X - a.X, dV2 = c.Y-a.Y;
+        float Det = dU1 * dV2 - dV1 * dU2;
+        FVector T(1.0f, 0.0f, 0.0f), Bt(0.0f, 1.0f, 0.0f);
+        if (std::fabs(Det) > 1e-8f) {
+            const float R = 1.0f/Det;
+            T  = (E1 * dV2 - E2 * dV1) * R;
+            Bt = (-E1 * dU2 + E2 * dU1) * R;
             T = T - Ntmp * FVector::Dot(T, Ntmp);
             T.Normalize();
         }
-        float handed = FVector::Dot(FVector::Cross(T, Ntmp), Bt) > 0.f ? 1.f : -1.f;
-        N = Ntmp; TSign = FVector4(T.X, T.Y, T.Z, handed);
+        float Handed = FVector::Dot(FVector::Cross(T, Ntmp), Bt) > 0.f ? 1.f : -1.f;
+        N = Ntmp;
+        TSign = FVector4(T.X, T.Y, T.Z, Handed);
     };
 
-    FVector n; FVector4 t;
-    ComputeTangentBasis(P0,P1,P2, UV0,UV1,UV2, n, t);
+    FVector N;
+    FVector4 T;
+    ComputeTangentBasis(P0, P1, P2, UV0, UV1, UV2, N, T);
 
-    FSkeletalVertex V0; V0.Position=P0; V0.Normal=n; V0.Tex=UV0; V0.Tangent=t;
-    V0.Skin.BoneIndex[0]=0; V0.Skin.Weight[0]=0.7f;
-    V0.Skin.BoneIndex[1]=1; V0.Skin.Weight[1]=0.3f;
+    FSkeletalVertex V0;
+    V0.Position=P0; V0.Normal = N; V0.Tex = UV0; V0.Tangent = T;
+    V0.Skin.BoneIndex[0] = 0; V0.Skin.Weight[0] = 0.7f;
+    V0.Skin.BoneIndex[1] = 1; V0.Skin.Weight[1] = 0.3f;
 
-    FSkeletalVertex V1=V0; V1.Position=P1; V1.Tex=UV1;
+    FSkeletalVertex V1 = V0;
+    V1.Position = P1; V1.Tex = UV1;
 
-    FSkeletalVertex V2; V2.Position=P2; V2.Normal=n; V2.Tex=UV2; V2.Tangent=t;
-    V2.Skin.BoneIndex[0]=1; V2.Skin.Weight[0]=1.0f;
+    FSkeletalVertex V2;
+    V2.Position = P2; V2.Normal = N; V2.Tex = UV2; V2.Tangent = T;
+    V2.Skin.BoneIndex[0] = 1; V2.Skin.Weight[0] = 1.0f;
 
     OutMesh.Vertices.Add(V0); OutMesh.Vertices.Add(V1); OutMesh.Vertices.Add(V2);
     OutMesh.Indices.Add(0); OutMesh.Indices.Add(1); OutMesh.Indices.Add(2);
 
-    FGroupInfo G; G.StartIndex=0; G.IndexCount=3; G.InitialMaterialName=InMaterialName;
+    FGroupInfo G;
+    G.StartIndex = 0;
+    G.IndexCount = 3;
+    G.InitialMaterialName = InMaterialName;
     OutMesh.GroupInfos.Add(G);
 }
 

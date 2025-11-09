@@ -1,0 +1,12 @@
+1. FBX SDK 를 자체 엔진에 통합한다.
+
+2. FBX파일을 읽어 들여 Reference Pose (aka. T-Pose)로 렌더링한다.
+- CPU Skinning으로 구현한다.
+- ShowFlag SkeletalMesh로 렌더링 여부를 껐다 켤 수 있다.
+
+3. SkeletalMesh Viewer를 구현한다.
+- Editor 상에서 복수의 SkeletalMesh 리소스의 View & Edit 가 가능한 내부 Viewer를 구현한다. (Standalone Tool이 아님)
+- Bone Hierarachy Tree를 구현한다.
+- 선택된 본의 Transform 정보를 Gizmo로 렌더링 한다.
+
+4. USkeletalMeshComponent 클래스를 구현한다.

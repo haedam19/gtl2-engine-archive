@@ -289,6 +289,24 @@ HRESULT D3D11RHI::CreateIndexBuffer(ID3D11Device* device, const FStaticMesh* mes
     return device->CreateBuffer(&ibd, &iinitData, outBuffer);
 }
 
+HRESULT D3D11RHI::CreateIndexBuffer(ID3D11Device* device, const FSkeletalMesh* meshData, ID3D11Buffer** outBuffer)
+{
+    if (!meshData || meshData->Indices.empty())
+        return E_FAIL;
+
+    D3D11_BUFFER_DESC ibd = {};
+    ibd.Usage = D3D11_USAGE_DEFAULT;
+    ibd.ByteWidth = static_cast<UINT>(sizeof(uint32) * meshData->Indices.size());
+    ibd.BindFlags = D3D11_BIND_INDEX_BUFFER;
+    ibd.CPUAccessFlags = 0;
+
+    D3D11_SUBRESOURCE_DATA iinitData = {};
+    iinitData.pSysMem = meshData->Indices.data();
+    
+    return device->CreateBuffer(&ibd, &iinitData, outBuffer);
+}
+
+
 void D3D11RHI::ConstantBufferSet(ID3D11Buffer* ConstantBuffer, uint32 Slot, bool bIsVS, bool bIsPS)
 {
     if (bIsVS)
