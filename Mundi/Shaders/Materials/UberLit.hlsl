@@ -4,9 +4,6 @@
 //                Extends StaticMeshShader with full lighting support (Gouraud, Lambert, Phong)
 //================================================================================================
 
-// Debug용
-// 중요!: 디버그 용으로 define 했으면, 디버그 끝내고 반드시 주석 처리할 것!
-#define FOR_TEST 1
 // --- 조명 모델 선택 ---
 // #define LIGHTING_MODEL_GOURAUD 1
 // #define LIGHTING_MODEL_LAMBERT 1

@@ -1,6 +1,7 @@
 #pragma once
 #include "Widget.h"
 #include "UEContainer.h"
+#include <functional>
 
 class UTexture;
 
@@ -21,27 +22,27 @@ public:
     UBoneHierarchyWidget();
     ~UBoneHierarchyWidget() override;
 
-    // API (TODO: SkeletalMesh 클래스 구현 후 활성화)
-    // void SetSkeletalMesh(USkeletalMesh* InMesh);
-    // void SetSelectedBone(FBone* InBone);
-    // FBone* GetSelectedBone() const { return SelectedBone; }
+    // API
+    void BuildBoneTreeFromSkeleton(const TArray<struct FBone>& Bones);
+    void SetSelectedBoneByIndex(int32 BoneIndex);
+    int32 GetSelectedBoneIndex() const;
 
-    // 본 선택 이벤트 (TODO: FBone 클래스 구현 후 활성화)
-    // DECLARE_MULTICAST_DELEGATE_OneParam(FOnBoneSelected, FBone*);
-    // FOnBoneSelected OnBoneSelected;
+    // 본 선택 콜백 (ContentWidget이 설정)
+    std::function<void(int32)> OnBoneSelectedCallback;
 
 private:
-    // 본 트리 노드 구조 (TODO: FBone 구현 후 활성화)
+    // 본 트리 노드 구조
     struct FBoneTreeNode
     {
-        // FBone* Bone = nullptr;
-        FString BoneName;  // 임시로 이름만 저장
+        int32 BoneIndex = -1;  // DummySkeleton.Bones의 인덱스
+        FString BoneName;
         TArray<FBoneTreeNode*> Children;
         FBoneTreeNode* Parent = nullptr;
         bool bIsExpanded = true;
         bool bIsSelected = false;
 
-        FBoneTreeNode(const FString& InName) : BoneName(InName) {}
+        FBoneTreeNode(const FString& InName, int32 InBoneIndex = -1)
+            : BoneName(InName), BoneIndex(InBoneIndex) {}
         ~FBoneTreeNode()
         {
             for (auto* Child : Children)
@@ -59,8 +60,11 @@ private:
 
     // 렌더링
     void RenderBoneNode(FBoneTreeNode* Node, int32 Depth = 0);
-    void BuildDummyBoneTree();  // 테스트용 더미 트리
+    void BuildDummyBoneTree();  // 테스트용 더미 트리 (deprecated)
     void ClearBoneTree();
+
+    // 본 트리 구축 헬퍼
+    void BuildBoneTreeRecursive(const TArray<struct FBone>& Bones, int32 ParentIndex, FBoneTreeNode* ParentNode);
 
     // TODO: 실제 Bone Tree 구축 (Skeleton 클래스 구현 후)
     // void BuildBoneTree();

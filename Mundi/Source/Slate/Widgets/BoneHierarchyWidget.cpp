@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "BoneHierarchyWidget.h"
 #include "ImGui/imgui.h"
+#include "SkeletalTypes.h"
 
 IMPLEMENT_CLASS(UBoneHierarchyWidget)
 
@@ -264,8 +265,11 @@ void UBoneHierarchyWidget::HandleBoneSelection(FBoneTreeNode* Node)
     SelectedNode = Node;
     Node->bIsSelected = true;
 
-    // TODO: 이벤트 발생 (FBone 구현 후)
-    // OnBoneSelected.Broadcast(Node->Bone);
+    // 콜백 호출 (ContentWidget에 알림)
+    if (OnBoneSelectedCallback)
+    {
+        OnBoneSelectedCallback(Node->BoneIndex);
+    }
 }
 
 void UBoneHierarchyWidget::HandleBoneRightClick(FBoneTreeNode* Node)
@@ -352,49 +356,101 @@ void UBoneHierarchyWidget::CollapseNode(FBoneTreeNode* Node)
     }
 }
 
-// TODO: 실제 Bone Tree 구축 (Skeleton 클래스 구현 후)
-// void UBoneHierarchyWidget::SetSkeletalMesh(USkeletalMesh* InMesh)
-// {
-//     if (CurrentMesh == InMesh) return;
-//
-//     ClearBoneTree();
-//     CurrentMesh = InMesh;
-//
-//     if (CurrentMesh)
-//     {
-//         BuildBoneTree();
-//     }
-// }
+// Skeleton 데이터로부터 본 트리 구축
+void UBoneHierarchyWidget::BuildBoneTreeFromSkeleton(const TArray<FBone>& Bones)
+{
+    ClearBoneTree();
 
-// void UBoneHierarchyWidget::BuildBoneTree()
-// {
-//     if (!CurrentMesh) return;
-//
-//     USkeleton* Skeleton = CurrentMesh->GetSkeleton();
-//     if (!Skeleton) return;
-//
-//     // Root Bone 찾기
-//     TArray<FBone*> RootBones = Skeleton->GetRootBones();
-//
-//     for (FBone* RootBone : RootBones)
-//     {
-//         FBoneTreeNode* RootNode = new FBoneTreeNode(RootBone);
-//         BuildBoneTreeRecursive(RootNode, RootBone);
-//         this->RootBones.push_back(RootNode);
-//     }
-// }
+    if (Bones.empty())
+    {
+        UE_LOG("BoneHierarchyWidget: No bones provided");
+        return;
+    }
 
-// void UBoneHierarchyWidget::BuildBoneTreeRecursive(FBoneTreeNode* ParentNode, FBone* ParentBone)
-// {
-//     TArray<FBone*> Children = ParentBone->GetChildren();
-//
-//     for (FBone* ChildBone : Children)
-//     {
-//         FBoneTreeNode* ChildNode = new FBoneTreeNode(ChildBone);
-//         ChildNode->Parent = ParentNode;
-//         ParentNode->Children.push_back(ChildNode);
-//
-//         // 재귀 호출
-//         BuildBoneTreeRecursive(ChildNode, ChildBone);
-//     }
-// }
+    // 루트 본 찾기 (ParentIndex == -1)
+    for (int32 i = 0; i < Bones.Num(); ++i)
+    {
+        const FBone& Bone = Bones[i];
+        if (Bone.ParentIndex == -1)
+        {
+            // 루트 본 노드 생성
+            FBoneTreeNode* RootNode = new FBoneTreeNode(Bone.Name, i);
+            RootBones.push_back(RootNode);
+
+            // 재귀적으로 자식 노드 구축
+            BuildBoneTreeRecursive(Bones, i, RootNode);
+        }
+    }
+
+    UE_LOG("BoneHierarchyWidget: Built bone tree with %d root bones", RootBones.size());
+}
+
+void UBoneHierarchyWidget::BuildBoneTreeRecursive(const TArray<FBone>& Bones, int32 ParentIndex, FBoneTreeNode* ParentNode)
+{
+    // 현재 본의 자식들 찾기
+    for (int32 i = 0; i < Bones.Num(); ++i)
+    {
+        const FBone& Bone = Bones[i];
+        if (Bone.ParentIndex == ParentIndex)
+        {
+            // 자식 노드 생성
+            FBoneTreeNode* ChildNode = new FBoneTreeNode(Bone.Name, i);
+            ChildNode->Parent = ParentNode;
+            ParentNode->Children.push_back(ChildNode);
+
+            // 재귀 호출
+            BuildBoneTreeRecursive(Bones, i, ChildNode);
+        }
+    }
+}
+
+void UBoneHierarchyWidget::SetSelectedBoneByIndex(int32 BoneIndex)
+{
+    // 모든 노드 순회하여 해당 인덱스 찾기
+    std::function<FBoneTreeNode*(FBoneTreeNode*, int32)> FindNode;
+    FindNode = [&FindNode](FBoneTreeNode* Node, int32 TargetIndex) -> FBoneTreeNode*
+    {
+        if (!Node) return nullptr;
+        if (Node->BoneIndex == TargetIndex) return Node;
+
+        for (auto* Child : Node->Children)
+        {
+            if (FBoneTreeNode* Found = FindNode(Child, TargetIndex))
+                return Found;
+        }
+        return nullptr;
+    };
+
+    // 이전 선택 해제
+    if (SelectedNode)
+    {
+        SelectedNode->bIsSelected = false;
+    }
+
+    // BoneIndex가 -1이면 선택 해제
+    if (BoneIndex < 0)
+    {
+        SelectedNode = nullptr;
+        return;
+    }
+
+    // 새 노드 찾기
+    FBoneTreeNode* TargetNode = nullptr;
+    for (auto* Root : RootBones)
+    {
+        TargetNode = FindNode(Root, BoneIndex);
+        if (TargetNode) break;
+    }
+
+    if (TargetNode)
+    {
+        // 선택 상태만 업데이트 (콜백 호출하지 않음 - 무한 루프 방지)
+        SelectedNode = TargetNode;
+        TargetNode->bIsSelected = true;
+    }
+}
+
+int32 UBoneHierarchyWidget::GetSelectedBoneIndex() const
+{
+    return SelectedNode ? SelectedNode->BoneIndex : -1;
+}
