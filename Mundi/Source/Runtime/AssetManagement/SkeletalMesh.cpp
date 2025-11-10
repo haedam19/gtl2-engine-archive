@@ -1,7 +1,10 @@
 #include "pch.h"
 #include "SkeletalMesh.h"
 #include "SkeletalTypes.h"
+#include "FbxManager.h"
 #include "SkeletalMeshComponent.h"
+
+IMPLEMENT_CLASS(USkeletalMesh)
 
 USkeletalMesh::~USkeletalMesh()
 {
@@ -14,13 +17,17 @@ void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, EVer
 
     if (!SetVertexType(InVertexType))
         return;
-
-    // TODO: FFBXManager 만들고 로더 구현
-    SkeletalMeshData = nullptr; // = FFBXManager::LoadFBXMeshAsset(InFilePath);
+    
+    SkeletalMeshData = FFbxManager::LoadSkeletalMeshAsset(InFilePath);
     
     if (SkeletalMeshData && SkeletalMeshData->Vertices.Num() > 0 && SkeletalMeshData->Indices.Num() > 0)
     {
-        // TODO: 리소스 생성
+        CreateVertexBuffer(SkeletalMeshData, InDevice, InVertexType);
+        CreateIndexBuffer(SkeletalMeshData, InDevice);
+        CreateLocalBound(SkeletalMeshData);
+        CacheFilePath = SkeletalMeshData->CacheFilePath;
+        VertexCount = static_cast<uint32>(SkeletalMeshData->Vertices.size());
+        IndexCount = static_cast<uint32>(SkeletalMeshData->Indices.size());
     }
 }
 
@@ -31,15 +38,17 @@ void USkeletalMesh::Load(FSkeletalMesh* InData, ID3D11Device* InDevice, EVertexL
     if (!SetVertexType(InVertexType))
         return;
 
-    CreateVertexBuffer(InData, InDevice, InVertexType);
-    CreateIndexBuffer(InData, InDevice);
-    CreateLocalBound(InData);
-
     SkeletalMeshData = InData;
-    CacheFilePath = InData->CacheFilePath;
-    
-    VertexCount = static_cast<uint32>(InData->Vertices.size());
-    IndexCount = static_cast<uint32>(InData->Indices.size());
+
+    if (SkeletalMeshData && SkeletalMeshData->Vertices.Num() > 0 && SkeletalMeshData->Indices.Num() > 0)
+    {
+        CreateVertexBuffer(InData, InDevice, InVertexType);
+        CreateIndexBuffer(InData, InDevice);
+        CreateLocalBound(InData);
+        CacheFilePath = InData->CacheFilePath;
+        VertexCount = static_cast<uint32>(InData->Vertices.size());
+        IndexCount = static_cast<uint32>(InData->Indices.size());
+    }
 }
 
 bool USkeletalMesh::SetVertexType(EVertexLayoutType InVertexLayoutType)

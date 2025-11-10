@@ -9,6 +9,7 @@
 #include "FViewport.h"
 #include "FViewportClient.h"
 #include "CameraActor.h"
+#include "FbxManager.h"
 #include "SplashScreen.h"
 
 
@@ -226,6 +227,7 @@ bool UEditorEngine::Startup(HINSTANCE hInstance)
     INPUT.Initialize(HWnd);
 
     FObjManager::Preload();
+    FFbxManager::Preload();
 
     ///////////////////////////////////
     WorldContexts.Add(FWorldContext(NewObject<UWorld>(), EWorldType::Editor));
