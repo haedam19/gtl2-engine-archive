@@ -22,7 +22,7 @@ void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, EVer
     
     if (SkeletalMeshData && SkeletalMeshData->Vertices.Num() > 0 && SkeletalMeshData->Indices.Num() > 0)
     {
-        CreateVertexBuffer(SkeletalMeshData, InDevice, InVertexType);
+        //CreateVertexBuffer(SkeletalMeshData, InDevice, InVertexType);
         CreateIndexBuffer(SkeletalMeshData, InDevice);
         CreateLocalBound(SkeletalMeshData);
         CacheFilePath = SkeletalMeshData->CacheFilePath;
