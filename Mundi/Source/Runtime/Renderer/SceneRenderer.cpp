@@ -159,6 +159,9 @@ void FSceneRenderer::Render()
 	RenderEditorPrimitivesPass();	// 빌보드, 기타 화살표 출력 (상호작용, 피킹 O)
 	RenderDebugPass();	//  그리드, 선택한 물체의 경계 출력 (상호작용, 피킹 X)
 
+	// Custom Instanced Batches (GPU Instanced Bone Visualization 등)
+	RenderCustomInstancedBatchesPass();
+
 	// 오버레이(Overlay) Primitive 렌더링
 	RenderOverayEditorPrimitivesPass();	// 기즈모 출력
 
@@ -1549,6 +1552,34 @@ void FSceneRenderer::RenderDebugPass()
 	OwnerRenderer->EndLineBatch(FMatrix::Identity());
 }
 
+void FSceneRenderer::RenderCustomInstancedBatchesPass()
+{
+	// Check if Viewport has custom instanced batches
+	if (!Viewport || !Viewport->GetCustomInstancedBatches())
+		return;
+
+	const TArray<FInstancedMeshBatchElement>* CustomBatches = Viewport->GetCustomInstancedBatches();
+	if (CustomBatches->IsEmpty())
+		return;
+
+	// Viewport RenderTarget이 있으면 다시 바인딩
+	if (Viewport->HasRenderTarget())
+	{
+		ID3D11DeviceContext* Context = RHIDevice->GetDeviceContext();
+		ID3D11RenderTargetView* RTV = Viewport->GetRenderTargetView();
+		ID3D11DepthStencilView* DSV = Viewport->GetDepthStencilView();
+		Context->OMSetRenderTargets(1, &RTV, DSV);
+	}
+
+	// Create a mutable copy to pass to DrawInstancedMeshBatches
+	TArray<FInstancedMeshBatchElement> BatchesCopy = *CustomBatches;
+
+	// Render the instanced batches
+	DrawInstancedMeshBatches(BatchesCopy, false);
+
+	UE_LOG("FSceneRenderer::RenderCustomInstancedBatches - Rendered %d instanced batches", CustomBatches->size());
+}
+
 void FSceneRenderer::RenderOverayEditorPrimitivesPass()
 {
 	// 후처리된 최종 이미지 위에 원본 씬의 뎁스 버퍼를 사용하여 3D 오버레이를 렌더링합니다.
@@ -2002,4 +2033,126 @@ void FSceneRenderer::CompositeToBackBuffer()
 
 	// 7. 모든 작업이 성공했으므로 Commit
 	SwapGuard.Commit();
+}
+
+void FSceneRenderer::DrawInstancedMeshBatches(TArray<FInstancedMeshBatchElement>& InMeshBatches, bool bClearListAfterDraw)
+{
+	if (InMeshBatches.IsEmpty())
+		return;
+
+	// Sort batches to minimize state changes
+	// TEMP: Disable sorting to test if it causes buffer mix-up
+	//InMeshBatches.Sort();
+	UE_LOG("DrawInstancedMeshBatches: Sorting DISABLED for testing (batch count: %d)", InMeshBatches.size());
+
+	// Set render state
+	RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
+	RHIDevice->RSSetState(ERasterizerMode::Wireframe);  // Bones are wireframe
+
+	// State cache
+	ID3D11VertexShader* CurrentVS = nullptr;
+	ID3D11PixelShader* CurrentPS = nullptr;
+	ID3D11Buffer* CurrentVB = nullptr;
+	ID3D11Buffer* CurrentIB = nullptr;
+	UINT CurrentStride = 0;
+	D3D11_PRIMITIVE_TOPOLOGY CurrentTopology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+
+	for (const FInstancedMeshBatchElement& Batch : InMeshBatches)
+	{
+		if (!Batch.VertexShader || !Batch.PixelShader || !Batch.VertexBuffer || !Batch.IndexBuffer ||
+			Batch.VertexStride == 0 || Batch.InstanceCount == 0 || !Batch.InstanceDataSRV)
+		{
+			UE_LOG("DrawInstancedMeshBatches: Invalid batch data");
+			continue;
+		}
+
+		// Set shaders if changed
+		if (Batch.VertexShader != CurrentVS || Batch.PixelShader != CurrentPS)
+		{
+			RHIDevice->GetDeviceContext()->IASetInputLayout(Batch.InputLayout);
+			RHIDevice->GetDeviceContext()->VSSetShader(Batch.VertexShader, nullptr, 0);
+			RHIDevice->GetDeviceContext()->PSSetShader(Batch.PixelShader, nullptr, 0);
+			CurrentVS = Batch.VertexShader;
+			CurrentPS = Batch.PixelShader;
+		}
+
+		// Set vertex/index buffers (FORCE SET - disable caching for testing)
+		// if (Batch.VertexBuffer != CurrentVB ||
+		// 	Batch.IndexBuffer != CurrentIB ||
+		// 	Batch.VertexStride != CurrentStride ||
+		// 	Batch.PrimitiveTopology != CurrentTopology)
+		{
+			UINT stride = Batch.VertexStride;
+			UINT offset = 0;
+
+			UE_LOG("DrawInstancedInstanced: VB=%p, IB=%p, IndexCount=%d, InstanceCount=%d, StartInstance=%d",
+				   Batch.VertexBuffer, Batch.IndexBuffer, Batch.IndexCount, Batch.InstanceCount, Batch.StartInstanceLocation);
+
+			RHIDevice->GetDeviceContext()->IASetVertexBuffers(0, 1, &Batch.VertexBuffer, &stride, &offset);
+			RHIDevice->GetDeviceContext()->IASetIndexBuffer(Batch.IndexBuffer, DXGI_FORMAT_R32_UINT, 0);
+			RHIDevice->GetDeviceContext()->IASetPrimitiveTopology(Batch.PrimitiveTopology);
+
+			CurrentVB = Batch.VertexBuffer;
+			CurrentIB = Batch.IndexBuffer;
+			CurrentStride = Batch.VertexStride;
+			CurrentTopology = Batch.PrimitiveTopology;
+		}
+
+		// Bind instance data StructuredBuffer
+		RHIDevice->GetDeviceContext()->VSSetShaderResources(0, 1, &Batch.InstanceDataSRV);
+
+		// Set StartInstanceLocation constant buffer (register b2)
+		struct BoneInstanceOffsetBuffer
+		{
+			uint32 StartInstanceLocation;
+			uint32 Padding[3];  // 16-byte alignment
+		};
+		BoneInstanceOffsetBuffer offsetBuffer;
+		offsetBuffer.StartInstanceLocation = Batch.StartInstanceLocation;
+		offsetBuffer.Padding[0] = offsetBuffer.Padding[1] = offsetBuffer.Padding[2] = 0;
+
+		D3D11_MAPPED_SUBRESOURCE mapped;
+		ID3D11Buffer* tempCB = nullptr;
+
+		// Create temporary constant buffer
+		D3D11_BUFFER_DESC cbDesc = {};
+		cbDesc.Usage = D3D11_USAGE_DYNAMIC;
+		cbDesc.ByteWidth = sizeof(BoneInstanceOffsetBuffer);
+		cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+		D3D11_SUBRESOURCE_DATA initData = {};
+		initData.pSysMem = &offsetBuffer;
+
+		HRESULT hr = RHIDevice->GetDevice()->CreateBuffer(&cbDesc, &initData, &tempCB);
+		if (SUCCEEDED(hr))
+		{
+			RHIDevice->GetDeviceContext()->VSSetConstantBuffers(2, 1, &tempCB);
+
+			// Draw instanced
+			RHIDevice->GetDeviceContext()->DrawIndexedInstanced(
+				Batch.IndexCount,
+				Batch.InstanceCount,
+				Batch.StartIndex,
+				Batch.BaseVertexIndex,
+				Batch.StartInstanceLocation
+			);
+
+			tempCB->Release();
+		}
+		else
+		{
+			UE_LOG("DrawInstancedMeshBatches: Failed to create offset constant buffer");
+		}
+	}
+
+	// Clear list if requested
+	if (bClearListAfterDraw)
+	{
+		InMeshBatches.clear();
+	}
+
+	// Unbind SRV
+	ID3D11ShaderResourceView* nullSRV = nullptr;
+	RHIDevice->GetDeviceContext()->VSSetShaderResources(0, 1, &nullSRV);
 }

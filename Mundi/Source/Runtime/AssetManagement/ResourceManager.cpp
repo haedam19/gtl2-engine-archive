@@ -452,6 +452,7 @@ void UResourceManager::InitShaderILMap()
 
     layout.Add({ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 });
     ShaderToInputLayoutMap["Shaders/UI/Gizmo.hlsl"] = layout;
+    ShaderToInputLayoutMap["Shaders/UI/BoneInstancedShader.hlsl"] = layout;
 	layout.clear();
 
     layout.Add({ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 });

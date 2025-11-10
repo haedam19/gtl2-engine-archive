@@ -1,7 +1,7 @@
 ﻿#include "pch.h"
 #include "SkeletalMeshViewerContentWidget.h"
 #include "SkeletonEditor.h"
-#include "BoneVisualizer.h"
+#include "BoneInstancedVisualizer.h"
 #include "BonePicker.h"
 #include "Widgets/BoneHierarchyWidget.h"
 #include "ImGui/imgui.h"
@@ -67,18 +67,7 @@ USkeletalMeshViewerContentWidget::~USkeletalMeshViewerContentWidget()
         Viewport = nullptr;
     }
 
-    // 3. BoneLineComponent 정리 (World 삭제 전에)
-    if (BoneLineComponent)
-    {
-        BoneLineComponent->ClearLines();
-        BoneLineComponent->SetLineVisible(false);
-        // Grid Actor가 소유하고 있으므로 명시적 삭제는 하지 않음
-        // Grid Actor가 삭제될 때 자동으로 정리됨
-        BoneLineComponent = nullptr;
-        UE_LOG("SkeletalMeshViewerContentWidget: BoneLineComponent cleared");
-    }
-
-    // 3.5. BoneVisualizer 정리
+    // 3. BoneVisualizer 정리 (GPU Instanced)
     if (BoneVisualizer)
     {
         delete BoneVisualizer;
@@ -318,36 +307,9 @@ void USkeletalMeshViewerContentWidget::Initialize()
             UE_LOG("SkeletalMeshViewerContentWidget: Failed to spawn Directional Light");
         }
 
-        // 2. Grid (Initialize()에서 자동 생성된 EditorActor Grid 사용)
-        AGridActor* Grid = ViewerWorld->GetGridActor();
-        if (Grid)
-        {
-            // Grid Actor에 본 렌더링용 별도 LineComponent 추가
-            BoneLineComponent = NewObject<ULineComponent>();
-            BoneLineComponent->SetupAttachment(Grid->GetRootComponent());
-            Grid->AddOwnedComponent(BoneLineComponent);
-            BoneLineComponent->OnRegister(ViewerWorld);
-
-            // TEST: Add a test line from (0,0,0) to (10,10,10)
-            BoneLineComponent->AddLine(FVector(0, 0, 0), FVector(10, 10, 10), FVector4(1, 0, 0, 1));
-            UE_LOG("SkeletalMeshViewerContentWidget: TEST line added from (0,0,0) to (10,10,10)");
-
-            UE_LOG("SkeletalMeshViewerContentWidget: Grid (EditorActor) found - Components: %zu, BoneLineComponent=%p",
-                   Grid->GetSceneComponents().size(), BoneLineComponent);
-
-            // ========================================
-            // Initialize BoneVisualizer (after BoneLineComponent is created)
-            // ========================================
-            BoneVisualizer = new FBoneVisualizer(BoneLineComponent);
-            BoneVisualizer->SetJointRadius(0.2f);       // 4x original
-            BoneVisualizer->SetPyramidWidth(0.09f);     // 3x original
-            BoneVisualizer->SetLeafPyramidWidth(0.06f); // 3x original
-            UE_LOG("SkeletalMeshViewerContentWidget: BoneVisualizer created and configured");
-        }
-        else
-        {
-            UE_LOG("SkeletalMeshViewerContentWidget: Failed to get Grid from ViewerWorld");
-        }
+        // Grid Actor는 Initialize()에서 자동 생성됨
+        // GPU 인스턴싱 방식으로 변경하여 BoneLineComponent는 더 이상 사용하지 않음
+        UE_LOG("SkeletalMeshViewerContentWidget: Grid Actor present (used for rendering)");
 
         // ========================================
         // Create Dummy Skeleton
@@ -380,6 +342,26 @@ void USkeletalMeshViewerContentWidget::Initialize()
         D3D11RHI* RHIDevice = Renderer->GetRHIDevice();
         if (RHIDevice)
         {
+            // ========================================
+            // Initialize GPU Instanced BoneVisualizer
+            // ========================================
+            UE_LOG("SkeletalMeshViewerContentWidget: Creating GPU Instanced BoneVisualizer...");
+            BoneVisualizer = new FBoneInstancedVisualizer();
+            if (BoneVisualizer->Initialize(RHIDevice->GetDevice()))
+            {
+                BoneVisualizer->SetJointRadius(0.2f);       // 4x original
+                BoneVisualizer->SetPyramidWidth(0.09f);     // 3x original
+                BoneVisualizer->SetLeafPyramidWidth(0.06f); // 3x original
+                UE_LOG("SkeletalMeshViewerContentWidget: *** GPU Instanced BoneVisualizer SUCCESSFULLY initialized! ***");
+            }
+            else
+            {
+                delete BoneVisualizer;
+                BoneVisualizer = nullptr;
+                UE_LOG("SkeletalMeshViewerContentWidget: *** ERROR: Failed to initialize GPU Instanced BoneVisualizer! ***");
+                UE_LOG("SkeletalMeshViewerContentWidget: *** Check shader file: Shaders/UI/BoneInstancedShader.hlsl ***");
+            }
+
             // Create Viewport (800x600 default size)
             Viewport = new FViewport();
             if (Viewport->Initialize(0, 0, 800, 600, RHIDevice->GetDevice()))
@@ -1001,7 +983,7 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
         // 3D 씬 렌더링 (Viewer World와 Camera가 있을 때만)
         if (ViewerWorld && ViewerCamera)
         {
-            // 본 라인 렌더링 (dirty flag가 설정되었을 때만)
+            // 본 GPU 인스턴싱 렌더링 (dirty flag가 설정되었을 때만)
             if (bBoneVisualizationDirty)
             {
                 // Throttling 적용 (1프레임마다 - 부드러움과 성능의 균형)
@@ -1016,6 +998,9 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                     VisualizationThrottleCounter++;
                 }
             }
+
+            // Set custom instanced batches for GPU bone rendering
+            Viewport->SetCustomInstancedBatches(&BoneInstancedBatches);
 
             Viewport->Render();
         }
@@ -1554,17 +1539,23 @@ void USkeletalMeshViewerContentWidget::UpdateBoneWorldMatrices(int32 StartBoneIn
 
 void USkeletalMeshViewerContentWidget::RenderBones()
 {
+    // Clear previous batches
+    BoneInstancedBatches.clear();
+
     if (!bShowBones || !BoneVisualizer)
     {
-        if (BoneLineComponent)
-        {
-            BoneLineComponent->SetLineVisible(false);
-        }
         return;
     }
 
-    // Delegate to BoneVisualizer
-    BoneVisualizer->RenderSkeleton(SkeletonEditor.GetSkeleton(), SkeletonEditor.GetCache(), SelectedBoneIndex);
+    // Generate GPU instanced bone rendering batches
+    BoneVisualizer->RenderSkeleton(
+        SkeletonEditor.GetSkeleton(),
+        SkeletonEditor.GetCache(),
+        SelectedBoneIndex,
+        BoneInstancedBatches
+    );
+
+    UE_LOG("RenderBones: Generated %d instanced batches", BoneInstancedBatches.size());
 }
 
 // 본 선택 설정

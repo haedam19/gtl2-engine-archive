@@ -2,8 +2,9 @@
 #include "Widget.h"
 #include "SkeletalTypes.h"
 #include "SkeletonEditor.h"
-#include "BoneVisualizer.h"
+#include "BoneInstancedVisualizer.h"
 #include "BonePicker.h"
+#include "MeshBatchElement.h"
 
 class UBoneHierarchyWidget;
 class FViewport;
@@ -58,7 +59,6 @@ private:
     UWorld* ViewerWorld = nullptr;  // Viewer 전용 독립 World
     ACameraActor* ViewerCamera = nullptr;
     class ADirectionalLightActor* ViewerDirectionalLight = nullptr;  // Viewer World의 DirectionalLight
-    class ULineComponent* BoneLineComponent = nullptr;  // Bone visualization lines
 
     // UI State
     bool bShowGizmo = true;
@@ -68,6 +68,9 @@ private:
     bool bShowBones = true;  // Show bone visualization
     bool bBoneVisualizationDirty = true;  // Bone lines need update
     int32 VisualizationThrottleCounter = 0;  // Throttle visualization updates
+
+    // GPU Instanced Bone Rendering
+    TArray<FInstancedMeshBatchElement> BoneInstancedBatches;
 
     // Picking
     AActor* SelectedActor = nullptr;
@@ -96,9 +99,9 @@ private:
     float SidebarWidth = 300.0f;
 
     // === Helper Systems (Responsibility Separation) ===
-    FSkeletonEditor SkeletonEditor;   // Skeleton data & transform management
-    FBoneVisualizer* BoneVisualizer;  // Bone rendering (owns ULineComponent)
-    FBonePicker BonePicker;           // Bone picking logic
+    FSkeletonEditor SkeletonEditor;        // Skeleton data & transform management
+    FBoneInstancedVisualizer* BoneVisualizer;  // GPU instanced bone rendering
+    FBonePicker BonePicker;                // Bone picking logic
 
     // === Helper Methods ===
     void CreateDummySkeleton();       // Initialize test skeleton
