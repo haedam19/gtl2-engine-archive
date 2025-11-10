@@ -5,7 +5,6 @@
 IMPLEMENT_CLASS(USkinnedMeshComponent)
 
 BEGIN_PROPERTIES(USkinnedMeshComponent)
-	// SkeletalMesh와 MaterialSlots는 UI에서 편집 가능
 	ADD_PROPERTY_SKELETALMESH(USkeletalMesh*, SkeletalMesh, "Skeletal Mesh", true)
 	ADD_PROPERTY_ARRAY(EPropertyType::Material, MaterialSlots, "Materials", true)
 END_PROPERTIES()
