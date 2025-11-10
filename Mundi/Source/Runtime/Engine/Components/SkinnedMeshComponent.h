@@ -26,6 +26,8 @@ public:
 	/**
 	* @brief 현재 포즈의 본 행렬 배열 (읽기 전용)
 	* @return BoneMatrices 배열에 대한 const 참조
+	* 
+	* 
 	*/
 	const TArray<FMatrix>& GetBoneMatrices() const { return BoneMatrices; }
 
@@ -69,15 +71,14 @@ protected:
 	void InitializeReferencePose();
 
 	/**
-	* @brief 본 계층 구조를 따라 Model Space 트랜스폼 계산
-	*
-	* @param BoneIndex 계산할 본 인덱스
+	* @brief 특정 본(BoneIndex)의 '모델 공간' 변환 행렬을 재귀적으로 계산
 	*
 	* @details
-	* - 입력: Bone.BindT/R/S (부모 본 기준 로컬 트랜스폼)
-	* - 출력: BoneMatrices[BoneIndex] (Model Space 트랜스폼)
-	* - 계산: LocalMatrix * ParentMatrix (부모 누적)
-	* - 재귀적으로 부모 본부터 계산
+	* 이 함수는 T-Pose(바인드 포즈)를 기준으로, 각 뼈의 로컬 변환을
+	* 부모 뼈부터 누적하여 '모델 공간' 행렬을 계산하고,
+	* 그 결과를 BoneMatrices[BoneIndex]에 저장
+	*
+	* BoneMatrices[i] = i번째 뼈의 [뼈 공간] -> [모델 공간]으로 변환하는 T-Pose 행렬
 	*/
 	void ComputeBoneMatrix(int32 BoneIndex);
 

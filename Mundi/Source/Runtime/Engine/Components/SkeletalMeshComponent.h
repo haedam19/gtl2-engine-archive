@@ -70,8 +70,9 @@ private:
 	* @brief 스킨 적용된 정점 배열 (CPU 사이드)
 	* - 크기: SkeletalMesh->Vertices.Num()
 	* - 매 프레임 PerformCPUSkinning()에서 갱신된 결과 저장
+	* - FVertexDynamic: GPU 입력 레이아웃과 일치 (UberLit.hlsl VS_INPUT)
 	*/
-	TArray<FSkeletalVertex> SkinnedVertices;
+	TArray<FVertexDynamic> SkinnedVertices;
 
 	/**
 	* @brief Dynamic Mesh 리소스 (GPU 버퍼 관리)
@@ -117,6 +118,19 @@ private:
 	*               SkinnedNormal += skinningMatrix.TransformVector(vertex.normal) * weight
 	*/
 	void PerformCPUSkinning();
+
+	/**
+	* @brief 애니메이션된 부모 본의 트랜스폼을 모든 자식 본에 재귀적으로 전파
+	* @param ParentBoneIndex 애니메이션이 적용된 부모 본의 인덱스
+	*
+	* @details
+	* - 부모 본의 BoneMatrices[ParentBoneIndex]는 이미 애니메이션이 적용된 상태여야 함
+	* - 각 자식 본에 대해:
+	*   1. 자식 본의 T-Pose 로컬 트랜스폼(BindT/R/S)을 행렬로 변환
+	*   2. LocalMatrix * ParentMatrix 연산으로 자식 본의 Model Space 트랜스폼 계산
+	*   3. 재귀적으로 손자 본들에게도 전파
+	*/
+	void UpdateChildBoneMatrices(int32 ParentBoneIndex);
 
 	/**
 	* @brief 스킨된 정점을 UDynamicMesh에 업로드

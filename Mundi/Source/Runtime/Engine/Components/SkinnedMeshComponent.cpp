@@ -69,22 +69,39 @@ void USkinnedMeshComponent::ComputeBoneMatrix(int32 BoneIndex)
 
 	const FBone& Bone = Skeleton->Bones[BoneIndex];
 
-	// ========== 부모 본 기준 로컬 트랜스폼 → 행렬 변환 (TRS) ==========
-	// FMatrix::FromTRS(Translation, Rotation, Scale) 사용
+	// 로컬 변환 행렬 계산
+	// T-Pose의 로컬 TRS(Translation, Rotation, Scale) 값으로부터 행렬을 생성
+	//
+	// [공간]
+	// 이 LocalMatrix는 '현재 뼈의 공간(Bone Space)'에 있는 정점을
+	// '부모 뼈의 공간(Parent Bone Space)'으로 변환
+	//
+	// LocalMatrix = [현재 뼈 공간] -> [부모 뼈 공간]
 	FMatrix LocalMatrix = FMatrix::FromTRS(Bone.BindT, Bone.BindR, Bone.BindS);
 
-	// ========== 부모 트랜스폼 누적 ==========
-
+	// 부모 트랜스폼 누적(재귀) 
 	if (Bone.ParentIndex >= 0)
 	{
-		// 부모가 이미 계산되지 않았으면 재귀 호출
-		// (초기화되지 않은 행렬 체크는 간단히 Identity와 비교)
+		// 부모 행렬 계산 확인 (재귀 호출)
+		// 부모 뼈의 '모델 공간' 행렬(BoneMatrices[Bone.ParentIndex])이
+		// 아직 계산되지 않았다면(여기서는 Identity 행렬인지 체크),
+		// 부모 뼈에 대해 이 함수를 재귀적으로 호출하여 먼저 계산하도록
+		// (깊이 우선 탐색(DFS)의 역순과 유사하게 작동)
 		if (BoneMatrices[Bone.ParentIndex] == FMatrix())
 		{
 			ComputeBoneMatrix(Bone.ParentIndex);
 		}
 
-		// Model Space = LocalMatrix * ParentModelSpace
+		// 모델 공간 행렬 계산
+		//
+		// [공간]
+		// '현재 뼈의 모델 공간 행렬' = '현재 뼈의 로컬 행렬' * '부모 뼈의 모델 공간 행렬'
+		//
+		// [현재 뼈 공간] -> [모델 공간] = 
+		//     ([현재 뼈 공간] -> [부모 뼈 공간]) * ([부모 뼈 공간] -> [모델 공간])
+		//
+		// 이 행렬 곱셈을 통해, 부모부터 루트까지의 모든 변환이 누적된
+		// 최종 '모델 공간' 행렬이 계산
 		BoneMatrices[BoneIndex] = LocalMatrix * BoneMatrices[Bone.ParentIndex];
 	}
 	else

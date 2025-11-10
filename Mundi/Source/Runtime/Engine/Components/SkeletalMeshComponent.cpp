@@ -9,6 +9,7 @@
 #include "RenderSettings.h"
 #include "Material.h"
 #include "RenderManager.h"  // ← Renderer 접근용
+#include "VertexData.h"  // ← FVertexDynamic 사용
 
 IMPLEMENT_CLASS(USkeletalMeshComponent)
 
@@ -102,12 +103,12 @@ void USkeletalMeshComponent::PerformCPUSkinning()
     for (int32 i = 0; i < SourceVertices.Num(); ++i)
     {
         const FSkeletalVertex& SrcVertex = SourceVertices[i];
-        FSkeletalVertex& DstVertex = SkinnedVertices[i];
+        FVertexDynamic& DstVertex = SkinnedVertices[i];
 
         FVector SkinnedPos = FVector::Zero();
         FVector SkinnedNormal = FVector::Zero();
 
-        // 가중치 4개에 대하여 
+        // 가중치 4개에 대하여
         for (int j = 0; j < 4; ++j)
         {
             uint16 BoneIndex = SrcVertex.Skin.BoneIndex[j]; // 본 인덱스
@@ -115,7 +116,7 @@ void USkeletalMeshComponent::PerformCPUSkinning()
 
             if (Weight > 0.0f && BoneIndex < BoneMatrices.Num())
             {
-                // Skinning Mat 계산 
+                // Skinning Mat 계산
                 // Skinning Matrix = InverseBind * BoneMatrices[i]
                 const FMatrix& InvBindPose = Skeleton->Bones[BoneIndex].InverseBind;
                 const FMatrix& BoneTransform = BoneMatrices[BoneIndex];
@@ -132,12 +133,13 @@ void USkeletalMeshComponent::PerformCPUSkinning()
             }
         }
 
+        // GPU 입력 레이아웃에 맞게 출력 (UberLit.hlsl VS_INPUT)
         DstVertex.Position = SkinnedPos;
         DstVertex.Normal = SkinnedNormal.GetNormalized();
-        DstVertex.Tex = SrcVertex.Tex;
+        DstVertex.UV = SrcVertex.Tex;         // TexCoord
         DstVertex.Tangent = SrcVertex.Tangent;
         DstVertex.Color = SrcVertex.Color;
-        DstVertex.Skin = SrcVertex.Skin;
+        // Skin 데이터는 복사하지 않음 (CPU 스키닝 결과물이므로 불필요)
     }
 }
 
@@ -170,12 +172,33 @@ void USkeletalMeshComponent::UpdateAnimation(float DeltaTime)
         BoneMatrices[5] = LocalMatrix;
     }
 
+    // 5번 본의 애니메이션을 모든 자식 본에 재귀적으로 전파
+    UpdateChildBoneMatrices(5);
+}
+
+void USkeletalMeshComponent::UpdateChildBoneMatrices(int32 ParentBoneIndex)
+{
+    if (!SkeletalMesh) return;
+
+    const FSkeleton* Skeleton = SkeletalMesh->GetSkeleton();
+    if (!Skeleton) return;
+
+    // 모든 본을 순회하면서 ParentBoneIndex의 자식 본을 찾음
     for (int32 i = 0; i < Skeleton->Bones.Num(); ++i)
     {
-        if (Skeleton->Bones[i].ParentIndex == 5)
+        const FBone& Bone = Skeleton->Bones[i];
+
+        // 이 본의 부모가 ParentBoneIndex인 경우
+        if (Bone.ParentIndex == ParentBoneIndex)
         {
-            // 자식뼈들에 전파
-            ComputeBoneMatrix(i);
+            // 자식 본의 T-Pose 로컬 트랜스폼(BindT/R/S)을 행렬로 변환
+            FMatrix LocalMatrix = FMatrix::FromTRS(Bone.BindT, Bone.BindR, Bone.BindS);
+
+            // 애니메이션된 부모의 Model Space 트랜스폼과 곱하여 자식 본의 Model Space 계산
+            BoneMatrices[i] = LocalMatrix * BoneMatrices[ParentBoneIndex];
+
+            // 재귀적으로 이 본의 자식들에게도 전파
+            UpdateChildBoneMatrices(i);
         }
     }
 }
@@ -197,13 +220,13 @@ void USkeletalMeshComponent::UpdateDynamicMeshData(ID3D11DeviceContext* Context)
     MeshData.Tangent.resize(SkinnedVertices.size());
     MeshData.Color.resize(SkinnedVertices.size());
 
-    // FSkeletalVertex → FMeshData 변환 (분리된 배열로 복사)
+    // FVertexDynamic → FMeshData 변환 (분리된 배열로 복사)
     for (size_t i = 0; i < SkinnedVertices.size(); ++i)
     {
         // 스키닝된 정점을 MeshData에 저장
         MeshData.Vertices[i] = SkinnedVertices[i].Position;
         MeshData.Normal[i] = SkinnedVertices[i].Normal;
-        MeshData.UV[i] = SkinnedVertices[i].Tex;
+        MeshData.UV[i] = SkinnedVertices[i].UV;
         MeshData.Tangent[i] = SkinnedVertices[i].Tangent;
         MeshData.Color[i] = SkinnedVertices[i].Color;
     }
@@ -276,7 +299,7 @@ FAABB USkeletalMeshComponent::GetWorldAABB() const
     FVector Min = SkinnedVertices[0].Position;
     FVector Max = SkinnedVertices[0].Position;
 
-    for (const FSkeletalVertex& Vertex : SkinnedVertices)
+    for (const FVertexDynamic& Vertex : SkinnedVertices)
     {
         Min = Min.ComponentMin(Vertex.Position);
         Max = Max.ComponentMax(Vertex.Position);
