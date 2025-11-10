@@ -12,6 +12,7 @@ class USkinnedMeshComponent : public UMeshComponent
 {
 public:
 	DECLARE_CLASS(USkinnedMeshComponent, UMeshComponent)
+	GENERATED_REFLECTION_BODY()
 
 	USkinnedMeshComponent();
 	virtual ~USkinnedMeshComponent();

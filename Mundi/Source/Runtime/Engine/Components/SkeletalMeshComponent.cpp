@@ -10,6 +10,13 @@
 #include "Material.h"
 #include "RenderManager.h"  // ← Renderer 접근용
 
+IMPLEMENT_CLASS(USkeletalMeshComponent)
+
+BEGIN_PROPERTIES(USkeletalMeshComponent)
+	// USkeletalMeshComponent는 추가 프로퍼티 없음
+	// SkeletalMesh와 MaterialSlots는 부모(USkinnedMeshComponent)에서 등록됨
+END_PROPERTIES()
+
 USkeletalMeshComponent::USkeletalMeshComponent()
     : DynamicMesh(nullptr)
     , AnimTime(0.0f)
