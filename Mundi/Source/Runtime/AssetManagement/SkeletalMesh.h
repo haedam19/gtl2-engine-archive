@@ -3,6 +3,7 @@
 #include "Enums.h"
 #include "SkeletalTypes.h"
 #include "AABB.h"
+#include "FBXTest.h"
 #include <d3d11.h>
 
 class USkeletalMeshComponent;

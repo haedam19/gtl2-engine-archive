@@ -77,7 +77,7 @@ struct FSkeletalMesh
     FString PathFileName;   // 원본 FBX 경로
     FString CacheFilePath;  // 예: .../Derived/xxx.fbx.bin
 
-    const FSkeleton* Skeleton = nullptr; // 외부 참조(자산 매니저 보유)
+    FSkeleton* Skeleton = nullptr; // 외부 참조(자산 매니저 보유)
 
     TArray<FSkeletalVertex> Vertices; // 살가죽(메시)를 구성하는 모든 정점의 목록
     TArray<uint32> Indices;           // 정점들의 인덱스
