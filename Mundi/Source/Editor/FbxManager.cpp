@@ -1,10 +1,19 @@
 ﻿#include "pch.h"
+#include "FbxManager.h"
+#include "PathUtils.h"
+#include "ResourceManager.h"
+#include "SkeletalMesh.h"
+
 #include <fbxsdk.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include "FbxManager.h"
-#include "PathUtils.h"
+#include <filesystem>
+#include <system_error>
+
+using namespace fbxsdk; // FBX SDK 헤더가 일부 타입을 fbxsdk 네임스페이스 안에만 두도록 바뀌는 경우가 있어서 스코프 안정성을 위해 추가
+namespace fs = std::filesystem;
 
 FbxManager* FFbxManager::SdkManager = nullptr;
 FbxIOSettings* FFbxManager::IOSettings = nullptr;
@@ -677,6 +686,93 @@ void FFbxManager::Clear()
 	SkeletalMeshCache.clear();
 }
 
+void FFbxManager::Preload()
+{
+	if (!EnsureInitialized())
+	{
+		return;
+	}
+
+	UResourceManager& ResourceManager = UResourceManager::GetInstance();
+	ID3D11Device* Device = ResourceManager.GetDevice();
+	if (!Device)
+	{
+		UE_LOG("FFbxManager::Preload - Device is not initialized.");
+		return;
+	}
+
+	auto RegisterEntry = [&](const FString& Path, FSkeletalMeshEntry* Entry)
+	{
+		// 유효하지 않은 엔트리
+		if (!Entry || !Entry->Mesh || !Entry->Skeleton)
+		{
+			return;
+		}
+
+		// 이미 있는 경우 추가 로드 없이 종료
+		if (ResourceManager.Get<USkeletalMesh>(Path))
+		{
+			return;
+		}
+
+		USkeletalMesh* SkeletalMesh = NewObject<USkeletalMesh>();
+		SkeletalMesh->Load(Entry->Mesh, Device, EVertexLayoutType::PositionColorTextureNormalSkin);
+		SkeletalMesh->SetFilePath(Path);
+		ResourceManager.Add<USkeletalMesh>(Path, SkeletalMesh);
+	};
+
+	{
+		FSkeletalMesh MockMesh;
+		FSkeleton MockSkeleton;
+		GetMockUpSkeletalMesh(MockMesh, MockSkeleton);
+		if (FSkeletalMeshEntry* MockEntry = SkeletalMeshCache.Find("__fbx_mock_prism__"))
+		{
+			RegisterEntry("__fbx_mock_prism__", MockEntry);
+		}
+	}
+
+	const FString DataDir = NormalizePath(GDataDir);
+	FWideString WDataDir = UTF8ToWide(DataDir);
+	std::error_code ec;
+	fs::path DataPath(WDataDir);
+	if (!fs::exists(DataPath, ec))
+	{
+		return;
+	}
+
+	for (fs::recursive_directory_iterator It(DataPath, ec), End; It != End && !ec; ++It)
+	{
+		if (!It->is_regular_file())
+		{
+			continue;
+		}
+
+		FString FilePath = NormalizePath(WideToUTF8(It->path().wstring()));
+		if (ToLowerExt(FilePath) != ".fbx")
+		{
+			continue;
+		}
+
+		if (ResourceManager.Get<USkeletalMesh>(FilePath))
+		{
+			continue;
+		}
+
+		if (FSkeletalMeshEntry* Entry = ImportSkeletalMesh(FilePath))
+		{
+			RegisterEntry(FilePath, Entry);
+		}
+	}
+
+	if (ec)
+	{
+		UE_LOG("FFbxManager::Preload - directory iteration failure: %s", std::system_category().message(ec.value()).c_str());
+	}
+
+	const TArray<USkeletalMesh*> LoadedMeshes = ResourceManager.GetAll<USkeletalMesh>();
+	UE_LOG("FFbxManager::Preload - Total USkeletalMesh resources: %zu", LoadedMeshes.size());
+}
+
 /** @brief FBX 경로를 받아 FSkeletalMesh를 반환 (캐시 사용) */
 FSkeletalMesh* FFbxManager::LoadSkeletalMeshAsset(const FString& PathFileName)
 {
@@ -745,7 +841,7 @@ void FFbxManager::ReleaseEntry(FSkeletalMeshEntry& Entry)
 	}
 }
 
-/** @brief FBX 파일을 파싱하여 캐시 엔트리를 생성 */
+/** @brief FBX 파일을 파싱하여 FBXManager 내부 캐시 엔트리를 생성 */
 FFbxManager::FSkeletalMeshEntry* FFbxManager::ImportSkeletalMesh(const FString& NormalizedPath)
 {
 	if (!EnsureInitialized())

@@ -16,6 +16,7 @@ public:
 	static void Shutdown();
 
     static void Clear();
+    static void Preload();
 
     static FSkeletalMesh* LoadSkeletalMeshAsset(const FString& PathFileName);
     static void GetMockUpSkeletalMesh(FSkeletalMesh& OutMesh, FSkeleton& OutSkeleton, const FString& MaterialName = "Default");
