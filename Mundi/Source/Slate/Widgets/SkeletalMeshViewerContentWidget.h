@@ -64,6 +64,7 @@ private:
     bool bShowSkeletalMesh = true;
     bool bShowBones = true;  // Show bone visualization
     bool bBoneVisualizationDirty = true;  // Bone lines need update
+    int32 VisualizationThrottleCounter = 0;  // Throttle visualization updates
 
     // Picking
     AActor* SelectedActor = nullptr;
@@ -97,9 +98,13 @@ private:
         TArray<FBone> Bones;
         TArray<FMatrix> BoneWorldMatrices;  // World-space bone transforms for rendering
         TArray<FQuat> BoneWorldRotations;   // World-space bone rotations (cached for performance)
+        TArray<FVector> BoneWorldPositions;  // World-space bone positions (행렬에서 추출 캐싱)
         TArray<AActor*> BoneActors;  // 각 본마다 더미 액터 (기즈모 표시용)
+        TArray<TArray<int32>> BoneChildIndices;  // 각 본의 자식 인덱스 (성능 최적화용 캐시)
     };
     FDummySkeleton DummySkeleton;
+
+    void BuildBoneChildIndices();  // 본 자식 인덱스 미리 계산 (O(N^2) 방지)
 
     void CreateDummySkeleton();
     void UpdateBoneWorldMatrices(int32 StartBoneIndex = -1);  // -1이면 모든 본 업데이트, 아니면 해당 본과 자식들만
@@ -107,6 +112,8 @@ private:
     void SyncBoneDataFromActor(int32 BoneIndex);  // 본 액터의 Transform을 본 데이터로 동기화
     void UpdateBoneWorldMatrixRecursive(int32 BoneIndex);  // 특정 본과 자식들만 재귀적으로 업데이트
     void RenderBones();
+    void DrawWireSphere(const FVector& Center, float Radius, const FVector4& Color, int32 Segments = 8);  // 와이어프레임 구체 그리기
+    void DrawBonePyramid(const FVector& Start, const FVector& End, const FVector4& Color, float Width);  // 피라미드 형태로 본 그리기
     AActor* PickBoneFromViewport(const FVector2D& MousePos, const FVector2D& ViewportSize);
     AActor* GetBoneActor(int32 BoneIndex) const;  // 본 인덱스로 본 액터 가져오기
 };
