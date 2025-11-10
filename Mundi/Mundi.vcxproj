@@ -648,7 +648,6 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="Source\Editor\FbxManager.h" />
-    <ClInclude Include="Source\Runtime\AssetManagement\FBXTest.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\SkeletalMesh.h" />
     <ClInclude Include="Source\Runtime\Core\Misc\SkeletalMock.h" />
     <ClInclude Include="Source\Runtime\Core\Misc\SkeletalTypes.h" />
