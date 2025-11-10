@@ -16,6 +16,16 @@ public:
 	// === 컴포넌트 생명주기 ===
 
 	/**
+	 * @brief SkeletalMesh 리소스 설정 (오버라이드)
+	 * @param InSkeletalMesh 설정할 스켈레탈 메시
+	 *
+	 * @details
+	 * - 부모 클래스의 SetSkeletalMesh() 호출 (본 행렬 초기화, 머티리얼 슬롯 설정)
+	 * - 이미 등록된 상태(bRegistered)라면 DynamicMesh 재생성
+	 */
+	void SetSkeletalMesh(USkeletalMesh* InSkeletalMesh) override;
+
+	/**
 	 * @brief 컴포넌트가 월드에 등록될 때 호출
 	 * @param InWorld 등록될 월드
 	 *

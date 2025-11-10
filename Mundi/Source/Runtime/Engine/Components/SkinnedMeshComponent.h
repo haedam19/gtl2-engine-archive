@@ -18,7 +18,7 @@ public:
 	virtual ~USkinnedMeshComponent();
 
 	// === SkeletalMesh 관리 ===
-	void SetSkeletalMesh(USkeletalMesh* InSkeletalMesh);
+	virtual void SetSkeletalMesh(USkeletalMesh* InSkeletalMesh);
 	USkeletalMesh* GetSkeletalMesh() const { return SkeletalMesh; }
 
 	// === 본 트랜스폼 접근 ===
@@ -62,6 +62,12 @@ protected:
 	* @brief 머티리얼 슬롯 (섹션별 머티리얼)
 	*/
 	TArray<UMaterialInterface*> MaterialSlots;
+
+	/**
+	* @brief InverseBind 스케일 보정 필요 여부 (HOTFIX)
+	* - FBX 로더에서 InverseBind가 0.01 스케일을 가지면 true
+	*/
+	bool bNeedsInverseBindScaleCorrection = false;
 
 	/**
 	* @brief Reference Pose (T-Pose)로 본 행렬 초기화

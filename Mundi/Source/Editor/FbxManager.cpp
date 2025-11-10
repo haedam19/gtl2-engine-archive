@@ -487,12 +487,13 @@ namespace
 			return false;
 		}
 
-		OutMesh.Vertices.Empty();
-		OutMesh.Indices.Empty();
-		OutMesh.GroupInfos.Empty();
+		// FIXED: 여러 메시를 병합하기 위해 Empty() 제거
+		// 대신 현재 크기를 저장하여 StartIndex 계산에 사용
+		const size_t InitialVertexCount = OutMesh.Vertices.size();
+		const size_t InitialIndexCount = OutMesh.Indices.size();
 
-		OutMesh.Vertices.reserve(static_cast<size_t>(PolygonCount) * 3);
-		OutMesh.Indices.reserve(static_cast<size_t>(PolygonCount) * 3);
+		OutMesh.Vertices.reserve(InitialVertexCount + static_cast<size_t>(PolygonCount) * 3);
+		OutMesh.Indices.reserve(InitialIndexCount + static_cast<size_t>(PolygonCount) * 3);
 
 		// 2. 사용 가능한 UV 세트 확보
 		FbxStringList UVSets;
@@ -536,9 +537,13 @@ namespace
 		}
 
 		// 4. 머티리얼 그룹 정보 구성
+		// FIXED: StartIndex는 이 메시가 시작하는 인덱스 (이전 메시들의 끝)
+		const uint32 MeshStartIndex = static_cast<uint32>(InitialIndexCount);
+		const uint32 MeshIndexCount = static_cast<uint32>(OutMesh.Indices.size() - InitialIndexCount);
+
 		FGroupInfo Group;
-		Group.StartIndex = 0;
-		Group.IndexCount = static_cast<uint32>(OutMesh.Indices.size());
+		Group.StartIndex = MeshStartIndex;
+		Group.IndexCount = MeshIndexCount;
 		Group.InitialMaterialName = "";
 
 		if (MeshNode->GetMaterialCount() > 0)
@@ -557,10 +562,14 @@ namespace
 
 		OutMesh.GroupInfos.Add(Group);
 
+		UE_LOG("[FBX] ProcessMesh: %s - StartIndex=%d, IndexCount=%d, Vertices added=%d",
+		       MeshNode->GetName(), Group.StartIndex, Group.IndexCount,
+		       static_cast<uint32>(OutMesh.Vertices.size() - InitialVertexCount));
+
 		return !OutMesh.Vertices.empty() && !OutMesh.Indices.empty();
 	}
 
-	/** @brief 씬 그래프에서 첫 번째 메시를 찾아 변환 */
+	/** @brief 씬 그래프에서 모든 메시를 찾아 변환 (FIXED: 첫 번째 메시만이 아닌 모든 메시 처리) */
 	bool ExtractSkeletalMesh(FbxScene* Scene, const FBoneIndexMap& NodeToBone, FSkeletalMesh& OutMesh)
 	{
 		if (!Scene)
@@ -574,9 +583,16 @@ namespace
 			return false;
 		}
 
+		// 0. 시작 시 한 번만 초기화 (ProcessMesh에서는 Empty() 호출 안 함)
+		OutMesh.Vertices.Empty();
+		OutMesh.Indices.Empty();
+		OutMesh.GroupInfos.Empty();
+
 		// 1. DFS 순회 스택 준비
 		TArray<FbxNode*> Stack;
 		Stack.push_back(Root);
+
+		bool bFoundAnyMesh = false;
 
 		while (!Stack.empty())
 		{
@@ -586,10 +602,11 @@ namespace
 			FbxNodeAttribute* Attribute = Node->GetNodeAttribute();
 			if (Attribute && Attribute->GetAttributeType() == FbxNodeAttribute::eMesh)
 			{
-				// 2. 메시를 찾으면 즉시 변환 시도
+				// 2. 메시를 찾으면 변환 시도 (FIXED: return하지 않고 계속 순회)
 				if (ProcessMesh(Node, Node->GetMesh(), NodeToBone, OutMesh))
 				{
-					return true;
+					bFoundAnyMesh = true;
+					UE_LOG("[FBX] Processed mesh node: %s", Node->GetName());
 				}
 			}
 
@@ -600,7 +617,7 @@ namespace
 			}
 		}
 
-		return false;
+		return bFoundAnyMesh;
 	}
 
 	/** @brief FBX 파일을 열어 FbxScene 인스턴스를 생성한다 */
