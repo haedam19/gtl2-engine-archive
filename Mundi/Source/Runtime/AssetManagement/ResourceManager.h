@@ -3,6 +3,7 @@
 #include "Object.h"
 #include "Shader.h"
 #include "StaticMesh.h"
+#include "SkeletalMesh.h"
 #include "Material.h"
 #include "Texture.h"
 #include "TextureConverter.h"
@@ -231,6 +232,8 @@ ResourceType UResourceManager::GetResourceType()
 {
 	if (T::StaticClass() == UStaticMesh::StaticClass())
 		return ResourceType::StaticMesh;
+	if (T::StaticClass() == USkeletalMesh::StaticClass())
+		return ResourceType::SkeletalMesh;
 	if (T::StaticClass() == UQuad::StaticClass())
 		return ResourceType::Quad;
 	if (T::StaticClass() == UDynamicMesh::StaticClass())

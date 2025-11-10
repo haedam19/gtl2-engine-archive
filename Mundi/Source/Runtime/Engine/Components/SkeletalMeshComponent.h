@@ -8,6 +8,7 @@ class USkeletalMeshComponent : public USkinnedMeshComponent
 {
 public:
 	DECLARE_CLASS(USkeletalMeshComponent, USkinnedMeshComponent)
+	GENERATED_REFLECTION_BODY()
 
 	USkeletalMeshComponent();
 	virtual ~USkeletalMeshComponent() override;

@@ -2,6 +2,13 @@
 #include "SkinnedMeshComponent.h"
 #include "SkeletalMesh.h"
 
+IMPLEMENT_CLASS(USkinnedMeshComponent)
+
+BEGIN_PROPERTIES(USkinnedMeshComponent)
+	ADD_PROPERTY_SKELETALMESH(USkeletalMesh*, SkeletalMesh, "Skeletal Mesh", true)
+	ADD_PROPERTY_ARRAY(EPropertyType::Material, MaterialSlots, "Materials", true)
+END_PROPERTIES()
+
 USkinnedMeshComponent::USkinnedMeshComponent()
 	: SkeletalMesh(nullptr)
 {
