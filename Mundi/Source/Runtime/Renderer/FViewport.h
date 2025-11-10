@@ -49,6 +49,10 @@ public:
     ID3D11DepthStencilView* GetDepthStencilView() const { return DepthStencilView; }
     bool HasRenderTarget() const { return RenderTargetTexture != nullptr; }
 
+    // Custom Instanced Batches (for GPU instanced rendering like bone visualization)
+    void SetCustomInstancedBatches(const TArray<struct FInstancedMeshBatchElement>* InBatches) { CustomInstancedBatches = InBatches; }
+    const TArray<struct FInstancedMeshBatchElement>* GetCustomInstancedBatches() const { return CustomInstancedBatches; }
+
     // 마우스/키보드 입력 처리
     void ProcessMouseMove(int32 X, int32 Y);
     void ProcessMouseButtonDown(int32 X, int32 Y, int32 Button);
@@ -80,6 +84,9 @@ private:
 
     // ViewportClient
     FViewportClient* ViewportClient = nullptr;
+
+    // Custom Instanced Batches (pointer to external data, not owned)
+    const TArray<struct FInstancedMeshBatchElement>* CustomInstancedBatches = nullptr;
 
     FVector2D ViewportMousePosition{};
 };

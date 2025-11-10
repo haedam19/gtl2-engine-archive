@@ -92,3 +92,47 @@ struct FMeshBatchElement
 		return false;
 	}
 };
+
+/**
+ * @struct FInstancedMeshBatchElement
+ * @brief GPU 인스턴싱을 사용한 렌더링을 위한 배치 정보
+ */
+struct FInstancedMeshBatchElement
+{
+	// --- Rendering State ---
+	ID3D11VertexShader* VertexShader = nullptr;
+	ID3D11PixelShader* PixelShader = nullptr;
+	ID3D11InputLayout* InputLayout = nullptr;
+
+	UMaterialInterface* Material = nullptr;
+	ID3D11Buffer* VertexBuffer = nullptr;
+	ID3D11Buffer* IndexBuffer = nullptr;
+	D3D11_PRIMITIVE_TOPOLOGY PrimitiveTopology = D3D11_PRIMITIVE_TOPOLOGY_LINELIST;
+
+	// --- Draw Data ---
+	uint32 IndexCount = 0;
+	uint32 StartIndex = 0;
+	uint32 BaseVertexIndex = 0;
+	uint32 VertexStride = 0;
+
+	// --- Instance Data ---
+	uint32 InstanceCount = 0;                      // Number of instances to draw
+	uint32 StartInstanceLocation = 0;              // First instance to draw (offset in StructuredBuffer)
+	ID3D11ShaderResourceView* InstanceDataSRV = nullptr;  // StructuredBuffer SRV for instance data
+
+	// --- Sorting ---
+	bool operator<(const FInstancedMeshBatchElement& B) const
+	{
+		const FInstancedMeshBatchElement& A = *this;
+
+		if (A.VertexShader != B.VertexShader) return A.VertexShader < B.VertexShader;
+		if (A.PixelShader != B.PixelShader) return A.PixelShader < B.PixelShader;
+		if (A.Material != B.Material) return A.Material < B.Material;
+		if (A.VertexBuffer != B.VertexBuffer) return A.VertexBuffer < B.VertexBuffer;
+		if (A.IndexBuffer != B.IndexBuffer) return A.IndexBuffer < B.IndexBuffer;
+		if (A.VertexStride != B.VertexStride) return A.VertexStride < B.VertexStride;
+		if (A.PrimitiveTopology != B.PrimitiveTopology) return A.PrimitiveTopology < B.PrimitiveTopology;
+
+		return false;
+	}
+};

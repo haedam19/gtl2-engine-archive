@@ -1,5 +1,8 @@
 ﻿#include "pch.h"
 #include "SkeletalMeshViewerContentWidget.h"
+#include "SkeletonEditor.h"
+#include "BoneInstancedVisualizer.h"
+#include "BonePicker.h"
 #include "Widgets/BoneHierarchyWidget.h"
 #include "ImGui/imgui.h"
 #include <algorithm>
@@ -33,11 +36,14 @@ IMPLEMENT_CLASS(USkeletalMeshViewerContentWidget)
 
 USkeletalMeshViewerContentWidget::USkeletalMeshViewerContentWidget()
     : UWidget("Skeletal Mesh Viewer Content")
+    , BoneVisualizer(nullptr)
 {
 }
 
 USkeletalMeshViewerContentWidget::~USkeletalMeshViewerContentWidget()
 {
+    UE_LOG("SkeletalMeshViewerContentWidget: Destructor called - cleaning up resources");
+
     // 0. 선택 상태 정리
     if (SelectedActor)
     {
@@ -61,33 +67,56 @@ USkeletalMeshViewerContentWidget::~USkeletalMeshViewerContentWidget()
         Viewport = nullptr;
     }
 
-    // 3. 본 액터들 정리 (World 삭제 전에)
-    for (AActor* BoneActor : DummySkeleton.BoneActors)
+    // 3. BoneVisualizer 정리 (GPU Instanced)
+    if (BoneVisualizer)
+    {
+        delete BoneVisualizer;
+        BoneVisualizer = nullptr;
+        UE_LOG("SkeletalMeshViewerContentWidget: BoneVisualizer deleted");
+    }
+
+    // 4. 본 액터들 정리 (World 삭제 전에)
+    for (AActor* BoneActor : SkeletonEditor.GetCache().BoneActors)
     {
         if (BoneActor && ViewerWorld)
         {
             ViewerWorld->DestroyActor(BoneActor);
         }
     }
-    DummySkeleton.BoneActors.clear();
+    // SkeletonEditor will clean up its own data in its destructor
+    UE_LOG("SkeletalMeshViewerContentWidget: Bone actors destroyed");
 
-    // 4. Viewer World 정리 (내부에서 Camera 포함 모든 Actor 삭제)
+    // 5. ViewerDirectionalLight 정리 (World 삭제 전에)
+    if (ViewerDirectionalLight && ViewerWorld)
+    {
+        ViewerWorld->DestroyActor(ViewerDirectionalLight);
+        ViewerDirectionalLight = nullptr;
+        UE_LOG("SkeletalMeshViewerContentWidget: ViewerDirectionalLight destroyed");
+    }
+
+    // 6. ViewerCamera null 설정 (World 삭제 전에)
+    ViewerCamera = nullptr;
+
+    // 7. Viewport 삭제 전에 null 설정
+    Viewport = nullptr;
+
+    // 8. Viewer World 정리 (내부에서 Camera 포함 모든 Actor 삭제)
     if (ViewerWorld)
     {
         // World의 모든 Actor 정리 (ViewerCamera도 여기서 삭제됨)
         DeleteObject(ViewerWorld);
         ViewerWorld = nullptr;
+        UE_LOG("SkeletalMeshViewerContentWidget: ViewerWorld destroyed");
     }
 
-    // 5. ViewerCamera는 이미 World에서 삭제되었으므로 nullptr만 설정
-    ViewerCamera = nullptr;
-
-    // 6. Cleanup widgets (UObject 기반이므로 DeleteObject 사용)
+    // 8. Cleanup widgets (UObject 기반이므로 DeleteObject 사용)
     if (BoneHierarchyWidget)
     {
         DeleteObject(BoneHierarchyWidget);
         BoneHierarchyWidget = nullptr;
     }
+
+    UE_LOG("SkeletalMeshViewerContentWidget: Destructor completed");
 }
 
 void USkeletalMeshViewerContentWidget::Initialize()
@@ -115,7 +144,7 @@ void USkeletalMeshViewerContentWidget::Initialize()
 
         // ========================================
         // 기본 생성된 액터들 제거 (깨끗한 상태로 시작)
-        // ========================================
+        // ========================================D
         // Level Actors 제거 (ULevel::SpawnDefaultActors()에서 자동 생성된 DirectionalLight 등)
         TArray<AActor*> DefaultActorsToRemove;
         for (AActor* Actor : ViewerWorld->GetActors())
@@ -278,60 +307,9 @@ void USkeletalMeshViewerContentWidget::Initialize()
             UE_LOG("SkeletalMeshViewerContentWidget: Failed to spawn Directional Light");
         }
 
-        // 2. Grid (Initialize()에서 자동 생성된 EditorActor Grid 사용)
-        AGridActor* Grid = ViewerWorld->GetGridActor();
-        if (Grid)
-        {
-            // Grid Actor에 본 렌더링용 별도 LineComponent 추가
-            BoneLineComponent = NewObject<ULineComponent>();
-            BoneLineComponent->SetupAttachment(Grid->GetRootComponent());
-            Grid->AddOwnedComponent(BoneLineComponent);
-            BoneLineComponent->OnRegister(ViewerWorld);
-
-            // TEST: Add a test line from (0,0,0) to (10,10,10)
-            BoneLineComponent->AddLine(FVector(0, 0, 0), FVector(10, 10, 10), FVector4(1, 0, 0, 1));
-            UE_LOG("SkeletalMeshViewerContentWidget: TEST line added from (0,0,0) to (10,10,10)");
-
-            UE_LOG("SkeletalMeshViewerContentWidget: Grid (EditorActor) found - Components: %zu, BoneLineComponent=%p",
-                   Grid->GetSceneComponents().size(), BoneLineComponent);
-        }
-        else
-        {
-            UE_LOG("SkeletalMeshViewerContentWidget: Failed to get Grid from ViewerWorld");
-        }
-
-        // 4. 테스트용 StaticMesh (큐브)
-        AStaticMeshActor* TestCube = ViewerWorld->SpawnActor<AStaticMeshActor>();
-        if (TestCube)
-        {
-            UE_LOG("SkeletalMeshViewerContentWidget: TestCube spawned - Components before SetStaticMesh: %zu",
-                   TestCube->GetSceneComponents().size());
-
-            // SetStaticMesh는 FString을 받아서 내부에서 로드함
-            TestCube->GetStaticMeshComponent()->SetStaticMesh(GDataDir + "/Model/Stone.obj");
-            TestCube->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));  // 원점
-            TestCube->SetActorScale(FVector(1.0f, 1.0f, 1.0f));  // 매우 크게 설정 (테스트용)
-
-            // StaticMeshComponent를 Editable로 설정 (SetStaticMesh 후에 호출!)
-            UStaticMeshComponent* MeshComp = TestCube->GetStaticMeshComponent();
-            if (MeshComp)
-            {
-                MeshComp->SetEditability(true);  // 일반 메시로 렌더링되도록 설정
-                UE_LOG("SkeletalMeshViewerContentWidget: StaticMeshComponent SetEditability(true), IsEditable: %d", MeshComp->IsEditable());
-            }
-
-            UE_LOG("SkeletalMeshViewerContentWidget: TestCube configured - Components after: %zu, StaticMesh: %p",
-                   TestCube->GetSceneComponents().size(),
-                   TestCube->GetStaticMeshComponent()->GetStaticMesh());
-        }
-        else
-        {
-            UE_LOG("SkeletalMeshViewerContentWidget: Failed to spawn TestCube");
-        }
-
-        // 최종 Actor 수 확인
-        UE_LOG("SkeletalMeshViewerContentWidget: ViewerWorld total actors: %zu, EditorActors: %zu",
-               ViewerWorld->GetActors().size(), ViewerWorld->GetEditorActors().size());
+        // Grid Actor는 Initialize()에서 자동 생성됨
+        // GPU 인스턴싱 방식으로 변경하여 BoneLineComponent는 더 이상 사용하지 않음
+        UE_LOG("SkeletalMeshViewerContentWidget: Grid Actor present (used for rendering)");
 
         // ========================================
         // Create Dummy Skeleton
@@ -341,7 +319,7 @@ void USkeletalMeshViewerContentWidget::Initialize()
         // BoneHierarchyWidget에 DummySkeleton 전달
         if (BoneHierarchyWidget)
         {
-            BoneHierarchyWidget->BuildBoneTreeFromSkeleton(DummySkeleton.Bones);
+            BoneHierarchyWidget->BuildBoneTreeFromSkeleton(SkeletonEditor.GetSkeleton().Bones);
 
             // 본 선택 콜백 설정
             BoneHierarchyWidget->OnBoneSelectedCallback = [this](int32 BoneIndex)
@@ -364,6 +342,26 @@ void USkeletalMeshViewerContentWidget::Initialize()
         D3D11RHI* RHIDevice = Renderer->GetRHIDevice();
         if (RHIDevice)
         {
+            // ========================================
+            // Initialize GPU Instanced BoneVisualizer
+            // ========================================
+            UE_LOG("SkeletalMeshViewerContentWidget: Creating GPU Instanced BoneVisualizer...");
+            BoneVisualizer = new FBoneInstancedVisualizer();
+            if (BoneVisualizer->Initialize(RHIDevice->GetDevice()))
+            {
+                BoneVisualizer->SetJointRadius(0.2f);       // 4x original
+                BoneVisualizer->SetPyramidWidth(0.09f);     // 3x original
+                BoneVisualizer->SetLeafPyramidWidth(0.06f); // 3x original
+                UE_LOG("SkeletalMeshViewerContentWidget: *** GPU Instanced BoneVisualizer SUCCESSFULLY initialized! ***");
+            }
+            else
+            {
+                delete BoneVisualizer;
+                BoneVisualizer = nullptr;
+                UE_LOG("SkeletalMeshViewerContentWidget: *** ERROR: Failed to initialize GPU Instanced BoneVisualizer! ***");
+                UE_LOG("SkeletalMeshViewerContentWidget: *** Check shader file: Shaders/UI/BoneInstancedShader.hlsl ***");
+            }
+
             // Create Viewport (800x600 default size)
             Viewport = new FViewport();
             if (Viewport->Initialize(0, 0, 800, 600, RHIDevice->GetDevice()))
@@ -412,12 +410,16 @@ void USkeletalMeshViewerContentWidget::Initialize()
 
 void USkeletalMeshViewerContentWidget::RenderWidget()
 {
+    // 초기화되지 않았으면 조기 리턴 (성능 최적화)
+    // ViewerWorld가 생성되기 전이거나 이미 파괴된 경우
+    if (!ViewerWorld || !ViewerCamera || !Viewport)
+    {
+        return;
+    }
+
     // Tick ViewerWorld (고정 60 FPS 기준: 0.0166초)
     float DeltaTime = 0.0166f;
-    if (ViewerWorld)
-    {
-        ViewerWorld->Tick(DeltaTime);
-    }
+    ViewerWorld->Tick(DeltaTime);
 
     // 뷰어 카메라 입력 처리 (우클릭 + WASD/QE)
     if (bEnableViewerCameraInput && ViewerCamera)
@@ -710,9 +712,9 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
     ImGui::BeginChild("BonePropertiesArea", ImVec2(0, 0), true);
 
     // 선택된 본 정보 표시 (우선순위)
-    if (SelectedBoneIndex >= 0 && SelectedBoneIndex < DummySkeleton.Bones.Num())
+    if (SelectedBoneIndex >= 0 && SelectedBoneIndex < SkeletonEditor.GetSkeleton().Bones.Num())
     {
-        const FBone& Bone = DummySkeleton.Bones[SelectedBoneIndex];
+        const FBone& Bone = SkeletonEditor.GetSkeleton().Bones[SelectedBoneIndex];
 
         ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Selected Bone");
         ImGui::Spacing();
@@ -720,10 +722,10 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
         ImGui::Text("Name: %s", Bone.Name.c_str());
         ImGui::Text("Index: %d", SelectedBoneIndex);
 
-        if (Bone.ParentIndex >= 0 && Bone.ParentIndex < DummySkeleton.Bones.Num())
+        if (Bone.ParentIndex >= 0 && Bone.ParentIndex < SkeletonEditor.GetSkeleton().Bones.Num())
         {
             ImGui::Text("Parent: %s (Index: %d)",
-                DummySkeleton.Bones[Bone.ParentIndex].Name.c_str(),
+                SkeletonEditor.GetSkeleton().Bones[Bone.ParentIndex].Name.c_str(),
                 Bone.ParentIndex);
         }
         else
@@ -744,7 +746,7 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
         float posArray[3] = { pos.X, pos.Y, pos.Z };
         if (ImGui::DragFloat3("Position", posArray, 0.1f))
         {
-            DummySkeleton.Bones[SelectedBoneIndex].BindT = FVector(posArray[0], posArray[1], posArray[2]);
+            SkeletonEditor.GetSkeleton().Bones[SelectedBoneIndex].BindT = FVector(posArray[0], posArray[1], posArray[2]);
             UpdateBoneWorldMatrices();
             // UpdateBoneWorldMatrices 내부에서 UpdateBoneActorTransforms()가 호출되어 본 액터 위치가 자동 업데이트됨
         }
@@ -756,7 +758,7 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
         if (ImGui::DragFloat3("Rotation (deg)", rotArray, 1.0f))
         {
             // Euler Degrees → Quaternion
-            DummySkeleton.Bones[SelectedBoneIndex].BindR = FQuat::MakeFromEulerZYX(FVector(
+            SkeletonEditor.GetSkeleton().Bones[SelectedBoneIndex].BindR = FQuat::MakeFromEulerZYX(FVector(
                 rotArray[0],
                 rotArray[1],
                 rotArray[2]
@@ -770,7 +772,7 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
         float sclArray[3] = { scl.X, scl.Y, scl.Z };
         if (ImGui::DragFloat3("Scale", sclArray, 0.01f))
         {
-            DummySkeleton.Bones[SelectedBoneIndex].BindS = FVector(sclArray[0], sclArray[1], sclArray[2]);
+            SkeletonEditor.GetSkeleton().Bones[SelectedBoneIndex].BindS = FVector(sclArray[0], sclArray[1], sclArray[2]);
             UpdateBoneWorldMatrices();
         }
 
@@ -783,9 +785,9 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
         ImGui::Spacing();
 
         FVector worldPos(
-            DummySkeleton.BoneWorldMatrices[SelectedBoneIndex].M[3][0],
-            DummySkeleton.BoneWorldMatrices[SelectedBoneIndex].M[3][1],
-            DummySkeleton.BoneWorldMatrices[SelectedBoneIndex].M[3][2]
+            SkeletonEditor.GetCache().BoneWorldMatrices[SelectedBoneIndex].M[3][0],
+            SkeletonEditor.GetCache().BoneWorldMatrices[SelectedBoneIndex].M[3][1],
+            SkeletonEditor.GetCache().BoneWorldMatrices[SelectedBoneIndex].M[3][2]
         );
         ImGui::Text("World Position: (%.2f, %.2f, %.2f)", worldPos.X, worldPos.Y, worldPos.Z);
 
@@ -981,12 +983,24 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
         // 3D 씬 렌더링 (Viewer World와 Camera가 있을 때만)
         if (ViewerWorld && ViewerCamera)
         {
-            // Update bone lines only when dirty (본이 변경되었을 때만)
+            // 본 GPU 인스턴싱 렌더링 (dirty flag가 설정되었을 때만)
             if (bBoneVisualizationDirty)
             {
-                RenderBones();
-                bBoneVisualizationDirty = false;
+                // Throttling 적용 (1프레임마다 - 부드러움과 성능의 균형)
+                if (VisualizationThrottleCounter >= 1)
+                {
+                    RenderBones();
+                    bBoneVisualizationDirty = false;
+                    VisualizationThrottleCounter = 0;
+                }
+                else
+                {
+                    VisualizationThrottleCounter++;
+                }
             }
+
+            // Set custom instanced batches for GPU bone rendering
+            Viewport->SetCustomInstancedBatches(&BoneInstancedBatches);
 
             Viewport->Render();
         }
@@ -1032,21 +1046,29 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                 }
             }
 
-            // 기즈모 인터랙션 처리 (호버링은 기존 로직 사용)
+            // 기즈모 인터랙션 처리 (마우스 움직일 때만)
             if (bIsImageHovered && ViewerWorld && ViewerCamera)
             {
                 ImVec2 mousePos = ImGui::GetMousePos();
                 FVector2D localMousePos(mousePos.x - imageTopLeft.x, mousePos.y - imageTopLeft.y);
 
+                // 마우스가 움직였을 때만 호버링 체크 (성능 최적화)
+                static FVector2D LastMousePos(-1, -1);
+                bool bMouseMoved = (LastMousePos.X != localMousePos.X || LastMousePos.Y != localMousePos.Y);
+
                 if (AGizmoActor* GizmoActor = ViewerWorld->GetGizmoActor())
                 {
-                    // 기존 ProcessGizmoInteraction 호출 (호버링 처리가 제대로 됨)
-                    GizmoActor->ProcessGizmoInteraction(
-                        ViewerCamera,
-                        Viewport,
-                        static_cast<float>(localMousePos.X),
-                        static_cast<float>(localMousePos.Y)
-                    );
+                    // 마우스가 움직였거나 드래그 중일 때만 ProcessGizmoInteraction 호출
+                    if (bMouseMoved || bViewerGizmoDragging)
+                    {
+                        GizmoActor->ProcessGizmoInteraction(
+                            ViewerCamera,
+                            Viewport,
+                            static_cast<float>(localMousePos.X),
+                            static_cast<float>(localMousePos.Y)
+                        );
+                        LastMousePos = localMousePos;
+                    }
 
                     // 드래그 상태 동기화 (ImGui 마우스 버튼 사용)
                     USceneComponent* SelectedComponent = nullptr;
@@ -1313,9 +1335,8 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                             // 드래그 중에도 본 데이터 동기화하여 스켈레톤 구조 실시간 갱신
                             if (SelectedBoneIndex >= 0)
                             {
-                                SyncBoneDataFromActor(SelectedBoneIndex);
-                                // SyncBoneDataFromActor 내부에서 UpdateBoneWorldMatrices() 호출
-                                // UpdateBoneWorldMatrices 내부에서 UpdateBoneActorTransforms() 호출
+                                SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex);
+                                bBoneVisualizationDirty = true;
                             }
                         }
                     }
@@ -1330,7 +1351,8 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                         // 기즈모 드래그가 끝났을 때 본 액터의 Transform을 본 데이터로 동기화
                         if (SelectedBoneIndex >= 0)
                         {
-                            SyncBoneDataFromActor(SelectedBoneIndex);
+                            SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex);
+                            bBoneVisualizationDirty = true;
                             UE_LOG("SkeletalMeshViewer: Synced bone data after gizmo drag");
                         }
                     }
@@ -1350,6 +1372,10 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
 
             if (bIsImageHovered && bIsLeftMouseClicked && !bGizmoHovering)
             {
+                UE_LOG("=== LEFT MOUSE CLICKED IN VIEWPORT ===");
+                UE_LOG("bIsImageHovered=%d, bIsLeftMouseClicked=%d, bGizmoHovering=%d",
+                       bIsImageHovered, bIsLeftMouseClicked, bGizmoHovering);
+
                 // ImGui 마우스 위치 가져오기
                 ImVec2 mousePos = ImGui::GetMousePos();
 
@@ -1358,11 +1384,17 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                 FVector2D viewportSizeVec(viewportSize.x, viewportSize.y);
                 FVector2D viewportOffset(0.0f, 0.0f);
 
+                UE_LOG("Mouse: Global=(%.2f, %.2f), Local=(%.2f, %.2f), ViewportSize=(%.2f, %.2f)",
+                       mousePos.x, mousePos.y, localMousePos.X, localMousePos.Y,
+                       viewportSizeVec.X, viewportSizeVec.Y);
+
                 // 뷰포트 aspect ratio 계산
                 float aspectRatio = viewportSize.x / viewportSize.y;
 
                 // 먼저 본 피킹 시도
+                UE_LOG(">>> Calling PickBoneFromViewport...");
                 AActor* pickedBone = PickBoneFromViewport(localMousePos, viewportSizeVec);
+                UE_LOG("<<< PickBoneFromViewport returned: %p", pickedBone);
 
                 if (pickedBone)
                 {
@@ -1405,7 +1437,7 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                                 UE_LOG("SkeletalMeshViewerContentWidget: DirectionalLight picked - ignoring");
                             }
                             // 본 액터도 일반 피킹에서 제외 (본 전용 피킹에서만 선택)
-                            else if (std::find(DummySkeleton.BoneActors.begin(), DummySkeleton.BoneActors.end(), pickedActor) != DummySkeleton.BoneActors.end())
+                            else if (std::find(SkeletonEditor.GetCache().BoneActors.begin(), SkeletonEditor.GetCache().BoneActors.end(), pickedActor) != SkeletonEditor.GetCache().BoneActors.end())
                             {
                                 UE_LOG("SkeletalMeshViewerContentWidget: Bone actor picked - handled by bone picking system");
                             }
@@ -1480,453 +1512,50 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
 
 void USkeletalMeshViewerContentWidget::CreateDummySkeleton()
 {
-    UE_LOG("CreateDummySkeleton: CALLED");
+    // Delegate to SkeletonEditor
+    SkeletonEditor.CreateDummySkeleton(ViewerWorld);
 
-    // Simple humanoid skeleton hierarchy
-    DummySkeleton.Bones.clear();
-    DummySkeleton.BoneWorldMatrices.clear();
+    UE_LOG("SkeletalMeshViewerContentWidget: Created dummy skeleton with %d bones",
+           SkeletonEditor.GetSkeleton().Bones.Num());
+}
 
-    // Root bone
-    FBone Root;
-    Root.Name = "Root";
-    Root.ParentIndex = -1;
-    Root.BindT = FVector(0, 0, 0);
-    Root.BindR = FQuat::Identity();
-    Root.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(Root);
+// FSkeleton으로부터 FViewerSkeletonCache 생성
+void USkeletalMeshViewerContentWidget::BuildSkeletonCache()
+{
+    // Delegate to SkeletonEditor
+    SkeletonEditor.BuildCache(ViewerWorld);
 
-    // Scale factor for visibility
-    float Scale = 2.0f;
-
-    // Spine
-    FBone Spine;
-    Spine.Name = "Spine";
-    Spine.ParentIndex = 0;  // Child of Root
-    Spine.BindT = FVector(0, 0, 1.0f * Scale);
-    Spine.BindR = FQuat::Identity();
-    Spine.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(Spine);
-
-    // Spine1
-    FBone Spine1;
-    Spine1.Name = "Spine1";
-    Spine1.ParentIndex = 1;  // Child of Spine
-    Spine1.BindT = FVector(0, 0, 0.8f * Scale);
-    Spine1.BindR = FQuat::Identity();
-    Spine1.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(Spine1);
-
-    // Head
-    FBone Head;
-    Head.Name = "Head";
-    Head.ParentIndex = 2;  // Child of Spine1
-    Head.BindT = FVector(0, 0, 0.8f * Scale);
-    Head.BindR = FQuat::Identity();
-    Head.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(Head);
-
-    // Left Shoulder
-    FBone LeftShoulder;
-    LeftShoulder.Name = "LeftShoulder";
-    LeftShoulder.ParentIndex = 2;  // Child of Spine1
-    LeftShoulder.BindT = FVector(0, 0.5f * Scale, 0.5f * Scale);
-    LeftShoulder.BindR = FQuat::Identity();
-    LeftShoulder.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(LeftShoulder);
-
-    // Left Arm
-    FBone LeftArm;
-    LeftArm.Name = "LeftArm";
-    LeftArm.ParentIndex = 4;  // Child of LeftShoulder
-    LeftArm.BindT = FVector(0, 0.8f * Scale, 0);
-    LeftArm.BindR = FQuat::Identity();
-    LeftArm.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(LeftArm);
-
-    // Left Hand
-    FBone LeftHand;
-    LeftHand.Name = "LeftHand";
-    LeftHand.ParentIndex = 5;  // Child of LeftArm
-    LeftHand.BindT = FVector(0, 0.8f * Scale, 0);
-    LeftHand.BindR = FQuat::Identity();
-    LeftHand.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(LeftHand);
-
-    // Right Shoulder
-    FBone RightShoulder;
-    RightShoulder.Name = "RightShoulder";
-    RightShoulder.ParentIndex = 2;  // Child of Spine1
-    RightShoulder.BindT = FVector(0, -0.5f * Scale, 0.5f * Scale);
-    RightShoulder.BindR = FQuat::Identity();
-    RightShoulder.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(RightShoulder);
-
-    // Right Arm
-    FBone RightArm;
-    RightArm.Name = "RightArm";
-    RightArm.ParentIndex = 7;  // Child of RightShoulder
-    RightArm.BindT = FVector(0, -0.8f * Scale, 0);
-    RightArm.BindR = FQuat::Identity();
-    RightArm.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(RightArm);
-
-    // Right Hand
-    FBone RightHand;
-    RightHand.Name = "RightHand";
-    RightHand.ParentIndex = 8;  // Child of RightArm
-    RightHand.BindT = FVector(0, -0.8f * Scale, 0);
-    RightHand.BindR = FQuat::Identity();
-    RightHand.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(RightHand);
-
-    // Left Leg
-    FBone LeftLeg;
-    LeftLeg.Name = "LeftLeg";
-    LeftLeg.ParentIndex = 0;  // Child of Root
-    LeftLeg.BindT = FVector(0, 0.3f * Scale, -1.0f * Scale);
-    LeftLeg.BindR = FQuat::Identity();
-    LeftLeg.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(LeftLeg);
-
-    // Left Foot
-    FBone LeftFoot;
-    LeftFoot.Name = "LeftFoot";
-    LeftFoot.ParentIndex = 10;  // Child of LeftLeg
-    LeftFoot.BindT = FVector(0, 0, -1.0f * Scale);
-    LeftFoot.BindR = FQuat::Identity();
-    LeftFoot.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(LeftFoot);
-
-    // Right Leg
-    FBone RightLeg;
-    RightLeg.Name = "RightLeg";
-    RightLeg.ParentIndex = 0;  // Child of Root
-    RightLeg.BindT = FVector(0, -0.3f * Scale, -1.0f * Scale);
-    RightLeg.BindR = FQuat::Identity();
-    RightLeg.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(RightLeg);
-
-    // Right Foot
-    FBone RightFoot;
-    RightFoot.Name = "RightFoot";
-    RightFoot.ParentIndex = 12;  // Child of RightLeg
-    RightFoot.BindT = FVector(0, 0, -1.0f * Scale);
-    RightFoot.BindR = FQuat::Identity();
-    RightFoot.BindS = FVector(1, 1, 1);
-    DummySkeleton.Bones.Add(RightFoot);
-
-    // Initialize world matrices and rotations
-    for (int32 i = 0; i < DummySkeleton.Bones.Num(); ++i)
-    {
-        DummySkeleton.BoneWorldMatrices.Add(FMatrix::Identity());
-        DummySkeleton.BoneWorldRotations.Add(FQuat::Identity());
-    }
-    UpdateBoneWorldMatrices();
-
-    // 각 본마다 더미 액터 생성 (기즈모 표시용)
-    if (ViewerWorld)
-    {
-        for (int32 i = 0; i < DummySkeleton.Bones.Num(); ++i)
-        {
-            AActor* BoneActor = ViewerWorld->SpawnActor<AActor>();
-            if (BoneActor)
-            {
-                // 본의 월드 위치로 초기화
-                FVector BonePos(
-                    DummySkeleton.BoneWorldMatrices[i].M[3][0],
-                    DummySkeleton.BoneWorldMatrices[i].M[3][1],
-                    DummySkeleton.BoneWorldMatrices[i].M[3][2]
-                );
-                BoneActor->SetActorLocation(BonePos);
-
-                // 본 액터는 기본적으로 숨김 (선택되면 보임)
-                // 나중에 필요하면 SetActorHiddenInGame 같은 것 추가
-            }
-            DummySkeleton.BoneActors.Add(BoneActor);
-        }
-        UE_LOG("SkeletalMeshViewerContentWidget: Created %d bone actors", DummySkeleton.BoneActors.Num());
-    }
-
-    UE_LOG("SkeletalMeshViewerContentWidget: Created dummy skeleton with %d bones", DummySkeleton.Bones.Num());
+    UE_LOG("BuildSkeletonCache: Cache built successfully");
 }
 
 void USkeletalMeshViewerContentWidget::UpdateBoneWorldMatrices(int32 StartBoneIndex)
 {
-    if (DummySkeleton.Bones.Num() == 0)
-        return;
-
-    // StartBoneIndex가 -1이면 모든 본 업데이트 (기존 동작)
-    if (StartBoneIndex < 0)
-    {
-        // 루트 본들만 찾아서 재귀적으로 업데이트 (최적화)
-        for (int32 i = 0; i < DummySkeleton.Bones.Num(); ++i)
-        {
-            if (DummySkeleton.Bones[i].ParentIndex < 0)
-            {
-                UpdateBoneWorldMatrixRecursive(i);
-            }
-        }
-        UpdateBoneActorTransforms();
-    }
-    else
-    {
-        // 특정 본과 자식들만 업데이트 (최적화)
-        UpdateBoneWorldMatrixRecursive(StartBoneIndex);
-        UpdateBoneActorTransforms(StartBoneIndex);
-    }
+    // Delegate to SkeletonEditor
+    SkeletonEditor.UpdateBoneWorldMatrices(StartBoneIndex);
 
     // 본이 변경되었으므로 시각화 업데이트 필요
     bBoneVisualizationDirty = true;
 }
 
-void USkeletalMeshViewerContentWidget::UpdateBoneWorldMatrixRecursive(int32 BoneIndex)
-{
-    if (BoneIndex < 0 || BoneIndex >= DummySkeleton.Bones.Num())
-        return;
-
-    const FBone& Bone = DummySkeleton.Bones[BoneIndex];
-
-    // Create local TRS matrix
-    FMatrix LocalTransform = FMatrix::Identity();
-
-    // Scale
-    FMatrix ScaleMat = FMatrix::Identity();
-    ScaleMat.M[0][0] = Bone.BindS.X;
-    ScaleMat.M[1][1] = Bone.BindS.Y;
-    ScaleMat.M[2][2] = Bone.BindS.Z;
-
-    // Rotation (Quaternion으로 직접 사용)
-    FQuat RotQuat = Bone.BindR;
-    FMatrix RotMat = RotQuat.ToMatrix();
-
-    // Translation
-    FMatrix TransMat = FMatrix::Identity();
-    TransMat.M[3][0] = Bone.BindT.X;
-    TransMat.M[3][1] = Bone.BindT.Y;
-    TransMat.M[3][2] = Bone.BindT.Z;
-
-    // Combine: Scale * Rotation * Translation
-    LocalTransform = ScaleMat * RotMat * TransMat;
-
-    // Calculate world rotation (cached for performance)
-    FQuat WorldRotation;
-    if (Bone.ParentIndex >= 0 && Bone.ParentIndex < DummySkeleton.BoneWorldRotations.Num())
-    {
-        // World rotation = Parent world rotation * Local rotation
-        WorldRotation = DummySkeleton.BoneWorldRotations[Bone.ParentIndex] * RotQuat;
-        DummySkeleton.BoneWorldMatrices[BoneIndex] = LocalTransform * DummySkeleton.BoneWorldMatrices[Bone.ParentIndex];
-    }
-    else
-    {
-        // Root bone: world rotation = local rotation
-        WorldRotation = RotQuat;
-        DummySkeleton.BoneWorldMatrices[BoneIndex] = LocalTransform;
-    }
-    DummySkeleton.BoneWorldRotations[BoneIndex] = WorldRotation;
-
-    // 재귀적으로 자식 본들 업데이트
-    for (int32 i = 0; i < DummySkeleton.Bones.Num(); ++i)
-    {
-        if (DummySkeleton.Bones[i].ParentIndex == BoneIndex)
-        {
-            UpdateBoneWorldMatrixRecursive(i);
-        }
-    }
-}
-
-void USkeletalMeshViewerContentWidget::UpdateBoneActorTransforms(int32 StartBoneIndex)
-{
-    for (int32 i = 0; i < DummySkeleton.BoneActors.Num(); ++i)
-    {
-        // StartBoneIndex가 -1이면 모든 본 업데이트
-        // 아니면 StartBoneIndex 본인이거나 그 자손만 업데이트
-        if (StartBoneIndex >= 0 && i != StartBoneIndex)
-        {
-            // 간단한 자손 체크: ParentIndex 체인 순회
-            bool bIsDescendant = false;
-            int32 ParentIdx = DummySkeleton.Bones[i].ParentIndex;
-            while (ParentIdx >= 0)
-            {
-                if (ParentIdx == StartBoneIndex)
-                {
-                    bIsDescendant = true;
-                    break;
-                }
-                ParentIdx = DummySkeleton.Bones[ParentIdx].ParentIndex;
-            }
-
-            if (!bIsDescendant)
-                continue;  // 영향받지 않는 본은 건너뛰기
-        }
-
-        if (AActor* BoneActor = DummySkeleton.BoneActors[i])
-        {
-            // 본의 월드 위치 (행렬에서 추출)
-            const FMatrix& WorldMatrix = DummySkeleton.BoneWorldMatrices[i];
-            FVector BonePos(WorldMatrix.M[3][0], WorldMatrix.M[3][1], WorldMatrix.M[3][2]);
-            BoneActor->SetActorLocation(BonePos);
-
-            // 본의 월드 회전 (미리 계산된 캐시 사용 - 성능 최적화)
-            BoneActor->SetActorRotation(DummySkeleton.BoneWorldRotations[i]);
-        }
-    }
-}
-
-AActor* USkeletalMeshViewerContentWidget::GetBoneActor(int32 BoneIndex) const
-{
-    if (BoneIndex >= 0 && BoneIndex < DummySkeleton.BoneActors.Num())
-    {
-        return DummySkeleton.BoneActors[BoneIndex];
-    }
-    return nullptr; 
-}
-
-// 본 액터의 Transform을 본 데이터로 동기화
-void USkeletalMeshViewerContentWidget::SyncBoneDataFromActor(int32 BoneIndex)
-{
-    if (BoneIndex < 0 || BoneIndex >= DummySkeleton.Bones.Num())
-        return;
-
-    AActor* BoneActor = GetBoneActor(BoneIndex);
-    if (!BoneActor)
-        return;
-
-    FBone& Bone = DummySkeleton.Bones[BoneIndex];
-
-    // 본 액터의 현재 월드 Transform 가져오기
-    FVector ActorWorldPos = BoneActor->GetActorLocation();
-    FQuat ActorWorldRot = BoneActor->GetActorRotation();
-    FVector ActorWorldScale = BoneActor->GetActorScale();
-
-    // 부모 본이 있으면 부모의 월드 Transform으로 역변환하여 로컬 Transform 계산
-    if (Bone.ParentIndex >= 0 && Bone.ParentIndex < DummySkeleton.Bones.Num())
-    {
-        // 부모 본의 월드 Transform 계산
-        AActor* ParentActor = GetBoneActor(Bone.ParentIndex);
-        if (!ParentActor)
-            return;
-
-        FVector ParentWorldPos = ParentActor->GetActorLocation();
-        FQuat ParentWorldRot = ParentActor->GetActorRotation();
-        FVector ParentWorldScale = ParentActor->GetActorScale();
-
-        // 로컬 Position 계산
-        // LocalPos = Inverse(ParentRot) * (ChildPos - ParentPos) / ParentScale
-        FVector DeltaPos = ActorWorldPos - ParentWorldPos;
-        FVector RotatedDelta = ParentWorldRot.Inverse().RotateVector(DeltaPos);
-        FVector LocalPos(
-            RotatedDelta.X / ParentWorldScale.X,
-            RotatedDelta.Y / ParentWorldScale.Y,
-            RotatedDelta.Z / ParentWorldScale.Z
-        );
-
-        // 로컬 Rotation 계산
-        // LocalRot = Inverse(ParentRot) * ChildRot
-        FQuat LocalRot = ParentWorldRot.Inverse() * ActorWorldRot;
-
-        // 로컬 Scale 계산
-        // LocalScale = ChildScale / ParentScale
-        FVector LocalScale(
-            ActorWorldScale.X / ParentWorldScale.X,
-            ActorWorldScale.Y / ParentWorldScale.Y,
-            ActorWorldScale.Z / ParentWorldScale.Z
-        );
-
-        // 본 데이터 업데이트
-        Bone.BindT = LocalPos;
-        Bone.BindR = LocalRot;  // Quaternion을 직접 저장
-        Bone.BindS = LocalScale;
-
-        UE_LOG("SkeletalMeshViewerContentWidget: Calculated local transform from parent - LocalPos=(%.2f,%.2f,%.2f)",
-               LocalPos.X, LocalPos.Y, LocalPos.Z);
-    }
-    else
-    {
-        // 루트 본은 월드 Transform이 곧 로컬 Transform
-        Bone.BindT = ActorWorldPos;
-        Bone.BindR = ActorWorldRot;  // Quaternion을 직접 저장
-        Bone.BindS = ActorWorldScale;
-    }
-
-    // 월드 Transform 재계산 (이 본과 자식 본들만 - 최적화)
-    UpdateBoneWorldMatrices(BoneIndex);
-
-    UE_LOG("SkeletalMeshViewerContentWidget: Synced bone data from actor - BoneIndex=%d", BoneIndex);
-}
-
 void USkeletalMeshViewerContentWidget::RenderBones()
 {
-    static int CallCount = 0;
-    if (CallCount++ < 5)
-    {
-        UE_LOG("RenderBones: Called (count=%d), bShowBones=%d, Bones.Num()=%d, BoneLineComponent=%p",
-            CallCount, bShowBones, DummySkeleton.Bones.Num(), BoneLineComponent);
-    }
+    // Clear previous batches
+    BoneInstancedBatches.clear();
 
-    if (!bShowBones)
+    if (!bShowBones || !BoneVisualizer)
     {
-        if (BoneLineComponent)
-        {
-            BoneLineComponent->SetLineVisible(false);
-        }
         return;
     }
 
-    if (DummySkeleton.Bones.Num() == 0)
-    {
-        UE_LOG("RenderBones: DummySkeleton has no bones!");
-        return;
-    }
+    // Generate GPU instanced bone rendering batches
+    BoneVisualizer->RenderSkeleton(
+        SkeletonEditor.GetSkeleton(),
+        SkeletonEditor.GetCache(),
+        SelectedBoneIndex,
+        BoneInstancedBatches
+    );
 
-    if (!BoneLineComponent)
-    {
-        UE_LOG("RenderBones: BoneLineComponent is null!");
-        return;
-    }
-
-    // Clear previous lines
-    BoneLineComponent->ClearLines();
-    BoneLineComponent->SetLineVisible(true);
-
-    // Draw lines between parent and child bones
-    for (int32 i = 0; i < DummySkeleton.Bones.Num(); ++i)
-    {
-        const FBone& Bone = DummySkeleton.Bones[i];
-
-        if (Bone.ParentIndex >= 0)
-        {
-            // Get bone positions in world space
-            FVector BonePos(
-                DummySkeleton.BoneWorldMatrices[i].M[3][0],
-                DummySkeleton.BoneWorldMatrices[i].M[3][1],
-                DummySkeleton.BoneWorldMatrices[i].M[3][2]
-            );
-
-            FVector ParentPos(
-                DummySkeleton.BoneWorldMatrices[Bone.ParentIndex].M[3][0],
-                DummySkeleton.BoneWorldMatrices[Bone.ParentIndex].M[3][1],
-                DummySkeleton.BoneWorldMatrices[Bone.ParentIndex].M[3][2]
-            );
-
-            // Draw line from parent to child
-            FVector4 BoneColor(1.0f, 0.8f, 0.2f, 1.0f);  // Yellow-orange for bones
-            BoneLineComponent->AddLine(ParentPos, BonePos, BoneColor);
-        }
-
-        // Draw joint point
-        FVector JointPos(
-            DummySkeleton.BoneWorldMatrices[i].M[3][0],
-            DummySkeleton.BoneWorldMatrices[i].M[3][1],
-            DummySkeleton.BoneWorldMatrices[i].M[3][2]
-        );
-
-        // Draw a small cross at joint position using lines
-        float Size = 0.05f;
-        FVector4 JointColor(0.2f, 0.8f, 1.0f, 1.0f);  // Cyan for joints
-        BoneLineComponent->AddLine(JointPos + FVector(Size, 0, 0), JointPos - FVector(Size, 0, 0), JointColor);
-        BoneLineComponent->AddLine(JointPos + FVector(0, Size, 0), JointPos - FVector(0, Size, 0), JointColor);
-        BoneLineComponent->AddLine(JointPos + FVector(0, 0, Size), JointPos - FVector(0, 0, Size), JointColor);
-    }
+    UE_LOG("RenderBones: Generated %d instanced batches", BoneInstancedBatches.size());
 }
 
 // 본 선택 설정
@@ -1936,7 +1565,7 @@ void USkeletalMeshViewerContentWidget::SetSelectedBone(int32 BoneIndex)
     if (SelectedBoneIndex == BoneIndex)
         return;
 
-    if (BoneIndex < 0 || BoneIndex >= DummySkeleton.Bones.Num())
+    if (BoneIndex < 0 || BoneIndex >= SkeletonEditor.GetSkeleton().Bones.Num())
     {
         // 선택 해제
         SelectedBoneIndex = -1;
@@ -1960,6 +1589,9 @@ void USkeletalMeshViewerContentWidget::SetSelectedBone(int32 BoneIndex)
             BoneHierarchyWidget->SetSelectedBoneByIndex(-1);
         }
 
+        // 선택 상태 변경으로 시각화 업데이트 필요
+        bBoneVisualizationDirty = true;
+
         UE_LOG("SkeletalMeshViewerContentWidget: Bone selection cleared");
         return;
     }
@@ -1982,7 +1614,7 @@ void USkeletalMeshViewerContentWidget::SetSelectedBone(int32 BoneIndex)
     // 본 전용 액터를 SelectionManager에 등록하여 기즈모 표시
     if (ViewerWorld && ViewerWorld->GetSelectionManager())
     {
-        AActor* BoneActor = GetBoneActor(BoneIndex);
+        AActor* BoneActor = SkeletonEditor.GetBoneActor(BoneIndex);
         if (BoneActor)
         {
             BoneActor->SetIsPicked(true);
@@ -1991,8 +1623,11 @@ void USkeletalMeshViewerContentWidget::SetSelectedBone(int32 BoneIndex)
         }
     }
 
+    // 선택 상태 변경으로 시각화 업데이트 필요 (선택된 본은 노란색으로 표시)
+    bBoneVisualizationDirty = true;
+
     UE_LOG("SkeletalMeshViewerContentWidget: Bone selected - Index=%d, Name=%s",
-           BoneIndex, DummySkeleton.Bones[BoneIndex].Name.c_str());
+           BoneIndex, SkeletonEditor.GetSkeleton().Bones[BoneIndex].Name.c_str());
 }
 
 // Hierarchy에서 본 선택 시 호출되는 콜백
@@ -2007,76 +1642,63 @@ void USkeletalMeshViewerContentWidget::OnBoneSelectedFromHierarchy(int32 BoneInd
 // 뷰포트에서 본 피킹
 AActor* USkeletalMeshViewerContentWidget::PickBoneFromViewport(const FVector2D& MousePos, const FVector2D& ViewportSize)
 {
-    if (!ViewerCamera || DummySkeleton.Bones.Num() == 0)
+    UE_LOG("PickBoneFromViewport: Called with MousePos=(%.2f, %.2f), ViewportSize=(%.2f, %.2f)",
+           MousePos.X, MousePos.Y, ViewportSize.X, ViewportSize.Y);
+
+    if (!ViewerCamera)
+    {
+        UE_LOG("PickBoneFromViewport: ViewerCamera is null!");
         return nullptr;
+    }
 
-    // 마우스 위치를 NDC로 변환
-    float NDC_X = (MousePos.X / ViewportSize.X) * 2.0f - 1.0f;
-    float NDC_Y = -((MousePos.Y / ViewportSize.Y) * 2.0f - 1.0f);  // Y축 반전
+    if (SkeletonEditor.GetSkeleton().Bones.Num() == 0)
+    {
+        UE_LOG("PickBoneFromViewport: No bones in skeleton!");
+        return nullptr;
+    }
 
-    // 카메라 정보
+    // Generate picking ray from camera
     float AspectRatio = ViewportSize.X / ViewportSize.Y;
     FMatrix ViewMatrix = ViewerCamera->GetViewMatrix();
     FMatrix ProjMatrix = ViewerCamera->GetProjectionMatrix(AspectRatio);
-    FMatrix ViewProj = ViewMatrix * ProjMatrix;
-    FMatrix InvViewProj = ViewProj.InverseAffine();
 
-    // 근평면과 원평면 위치 (NDC)
-    FVector NearPoint_NDC(NDC_X, NDC_Y, 0.0f);  // Near plane
-    FVector FarPoint_NDC(NDC_X, NDC_Y, 1.0f);   // Far plane
+    FVector CameraPos = ViewerCamera->GetActorLocation();
+    FQuat CameraRot = ViewerCamera->GetActorRotation();
+    FVector CameraForward = CameraRot.GetForwardVector();
+    FVector CameraRight = CameraRot.GetRightVector();
+    FVector CameraUp = CameraRot.GetUpVector();
 
-    // NDC → World (FVector * FMatrix 연산자 사용)
-    FVector NearPoint_World = NearPoint_NDC * InvViewProj;
-    FVector FarPoint_World = FarPoint_NDC * InvViewProj;
+    FRay Ray = MakeRayFromViewport(
+        ViewMatrix,
+        ProjMatrix,
+        CameraPos,
+        CameraRight,
+        CameraUp,
+        CameraForward,
+        MousePos,
+        ViewportSize,
+        FVector2D(0.0f, 0.0f)
+    );
 
-    // 레이 방향
-    FVector RayDir = (FarPoint_World - NearPoint_World).GetNormalized();
-    FVector RayOrigin = NearPoint_World;
+    UE_LOG("PickBoneFromViewport: Ray - Origin=(%.2f, %.2f, %.2f), Dir=(%.3f, %.3f, %.3f)",
+           Ray.Origin.X, Ray.Origin.Y, Ray.Origin.Z, Ray.Direction.X, Ray.Direction.Y, Ray.Direction.Z);
 
-    // 각 본의 위치와 레이의 거리 계산
-    float MinDistance = FLT_MAX;
-    int32 ClosestBoneIndex = -1;
-
-    for (int32 i = 0; i < DummySkeleton.Bones.Num(); ++i)
-    {
-        // 본의 월드 위치
-        FVector BonePos(
-            DummySkeleton.BoneWorldMatrices[i].M[3][0],
-            DummySkeleton.BoneWorldMatrices[i].M[3][1],
-            DummySkeleton.BoneWorldMatrices[i].M[3][2]
-        );
-
-        // 레이와 점 사이의 최단 거리 계산
-        FVector ToPoint = BonePos - RayOrigin;
-        float ProjectionLength = FVector::Dot(ToPoint, RayDir);
-
-        // 레이 위의 가장 가까운 점
-        FVector ClosestPointOnRay = RayOrigin + RayDir * ProjectionLength;
-
-        // 거리 계산
-        float Distance = (BonePos - ClosestPointOnRay).Size();
-
-        // 스크린 상에서의 거리 임계값 (픽셀 단위를 월드 단위로 변환)
-        float CameraDistance = (BonePos - ViewerCamera->GetActorLocation()).Size();
-        float ClickThreshold = CameraDistance * 0.05f;  // 카메라 거리의 5%
-
-        if (Distance < ClickThreshold && Distance < MinDistance)
-        {
-            MinDistance = Distance;
-            ClosestBoneIndex = i;
-        }
-    }
+    // Delegate to BonePicker
+    int32 ClosestBoneIndex = BonePicker.PickBone(SkeletonEditor.GetSkeleton(), SkeletonEditor.GetCache(), Ray);
 
     // 본을 찾았으면 선택
     if (ClosestBoneIndex >= 0)
     {
-        UE_LOG("SkeletalMeshViewerContentWidget: Bone picked from viewport - Index=%d, Name=%s, Distance=%.2f",
-               ClosestBoneIndex, DummySkeleton.Bones[ClosestBoneIndex].Name.c_str(), MinDistance);
+        UE_LOG("SkeletalMeshViewerContentWidget: Bone picked from viewport - Index=%d, Name=%s",
+               ClosestBoneIndex, SkeletonEditor.GetSkeleton().Bones[ClosestBoneIndex].Name.c_str());
 
         SetSelectedBone(ClosestBoneIndex);
 
-        return SelectedActor;  // 더미 액터 반환
+        AActor* BoneActor = SkeletonEditor.GetBoneActor(ClosestBoneIndex);
+        UE_LOG("PickBoneFromViewport: Returning BoneActor=%p", BoneActor);
+        return BoneActor;
     }
 
+    UE_LOG("PickBoneFromViewport: No bone picked, returning nullptr");
     return nullptr;
 }

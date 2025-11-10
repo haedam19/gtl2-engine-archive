@@ -1,6 +1,10 @@
 #pragma once
 #include "Widget.h"
 #include "SkeletalTypes.h"
+#include "SkeletonEditor.h"
+#include "BoneInstancedVisualizer.h"
+#include "BonePicker.h"
+#include "MeshBatchElement.h"
 
 class UBoneHierarchyWidget;
 class FViewport;
@@ -55,7 +59,6 @@ private:
     UWorld* ViewerWorld = nullptr;  // Viewer 전용 독립 World
     ACameraActor* ViewerCamera = nullptr;
     class ADirectionalLightActor* ViewerDirectionalLight = nullptr;  // Viewer World의 DirectionalLight
-    class ULineComponent* BoneLineComponent = nullptr;  // Bone visualization lines
 
     // UI State
     bool bShowGizmo = true;
@@ -64,6 +67,10 @@ private:
     bool bShowSkeletalMesh = true;
     bool bShowBones = true;  // Show bone visualization
     bool bBoneVisualizationDirty = true;  // Bone lines need update
+    int32 VisualizationThrottleCounter = 0;  // Throttle visualization updates
+
+    // GPU Instanced Bone Rendering
+    TArray<FInstancedMeshBatchElement> BoneInstancedBatches;
 
     // Picking
     AActor* SelectedActor = nullptr;
@@ -91,22 +98,15 @@ private:
     // Layout
     float SidebarWidth = 300.0f;
 
-    // Dummy Skeleton Data
-    struct FDummySkeleton
-    {
-        TArray<FBone> Bones;
-        TArray<FMatrix> BoneWorldMatrices;  // World-space bone transforms for rendering
-        TArray<FQuat> BoneWorldRotations;   // World-space bone rotations (cached for performance)
-        TArray<AActor*> BoneActors;  // 각 본마다 더미 액터 (기즈모 표시용)
-    };
-    FDummySkeleton DummySkeleton;
+    // === Helper Systems (Responsibility Separation) ===
+    FSkeletonEditor SkeletonEditor;        // Skeleton data & transform management
+    FBoneInstancedVisualizer* BoneVisualizer;  // GPU instanced bone rendering
+    FBonePicker BonePicker;                // Bone picking logic
 
-    void CreateDummySkeleton();
-    void UpdateBoneWorldMatrices(int32 StartBoneIndex = -1);  // -1이면 모든 본 업데이트, 아니면 해당 본과 자식들만
-    void UpdateBoneActorTransforms(int32 StartBoneIndex = -1);  // 본 액터들의 Transform 업데이트
-    void SyncBoneDataFromActor(int32 BoneIndex);  // 본 액터의 Transform을 본 데이터로 동기화
-    void UpdateBoneWorldMatrixRecursive(int32 BoneIndex);  // 특정 본과 자식들만 재귀적으로 업데이트
-    void RenderBones();
-    AActor* PickBoneFromViewport(const FVector2D& MousePos, const FVector2D& ViewportSize);
-    AActor* GetBoneActor(int32 BoneIndex) const;  // 본 인덱스로 본 액터 가져오기
+    // === Helper Methods ===
+    void CreateDummySkeleton();       // Initialize test skeleton
+    void BuildSkeletonCache();        // Build cache from skeleton
+    void UpdateBoneWorldMatrices(int32 StartBoneIndex = -1);  // Update bone transforms
+    void RenderBones();               // Render bone visualization
+    AActor* PickBoneFromViewport(const FVector2D& MousePos, const FVector2D& ViewportSize);  // Pick bone from viewport
 };

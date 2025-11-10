@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git log:*)",
+      "Bash(find:*)",
+      "Bash(cmd /c:*)",
+      "Bash(cl /EHsc /std:c++17 /c /I../../ /I../../../ThirdParty/ImGui SkeletonEditor.cpp)",
+      "Bash(nul)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" Mundi.vcxproj /p:Configuration=Debug /p:Platform=x64 /t:ClCompile /v:minimal)",
+      "Bash(Select-String -Pattern \"error|warning|성공|실패|완료\")",
+      "Bash(Select-Object -First 50)",
+      "Bash(\"C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" Mundi.vcxproj //p:Configuration=Debug //p:Platform=x64 //t:ClCompile //v:minimal)",
+      "Bash(\"C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" Mundi.vcxproj //p:Configuration=Debug //p:Platform=x64 //v:minimal)",
+      "Bash(\"C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" Mundi.vcxproj //p:Configuration=Debug //p:Platform=x64 //v:q)",
+      "Bash(dir:*)",
+      "Bash(\"C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" Mundi.vcxproj /p:Configuration=Debug /p:Platform=x64 /t:ClCompile /v:minimal)",
+      "Bash(\"C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" Mundi.vcxproj /p:Configuration=Debug /p:Platform=x64 /v:q)",
+      "Bash('C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe' Mundi.vcxproj '/p:Configuration=Debug' '/p:Platform=x64' '/v:minimal')",
+      "Bash(cmd //c:*)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"C:/Users/Jungle/Documents/GitHub/TechLab_Week_10/Mundi/Mundi.vcxproj\" /p:Configuration=Debug /p:Platform=x64 /v:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"C:/Users/Jungle/Documents/GitHub/TechLab_Week_10/Mundi/Mundi.vcxproj\" //p:Configuration=Debug //p:Platform=x64 //v:minimal)",
+      "Bash(\"C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"C:/Users/Jungle/Documents/GitHub/TechLab_Week_10/Mundi/Mundi.vcxproj\" /p:Configuration=Debug /p:Platform=x64 /v:minimal)",
+      "Bash(\"C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" C:/Users/Jungle/Documents/GitHub/TechLab_Week_10/Mundi/Mundi.vcxproj /p:Configuration=Debug /p:Platform=x64 /v:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" Mundi.vcxproj /p:Configuration=Debug /p:Platform=x64 /v:minimal)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" Mundi.vcxproj /p:Configuration=Debug /p:Platform=x64 /v:minimal)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" Mundi.vcxproj //p:Configuration=Debug //p:Platform=x64 //v:minimal)",
+      "Bash(git restore:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
