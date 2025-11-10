@@ -58,8 +58,8 @@ bool USkeletalMesh::SetVertexType(EVertexLayoutType InVertexLayoutType)
     uint32 Stride = 0;
     switch (VertexType)
     {
-    case EVertexLayoutType::PositionColorTextureNormalSkin:
-        Stride = sizeof(FSkeletalVertex);
+    case EVertexLayoutType::PositionColorTextureNormal:
+        Stride = sizeof(FVertexDynamic);
         break;
     default:
         assert(false && "Invalid vertex type! USkeletalMesh must use EVertexLayoutType::PositionColorTextureNormalSkin");

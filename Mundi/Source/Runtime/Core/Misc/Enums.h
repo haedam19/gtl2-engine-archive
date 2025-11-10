@@ -312,7 +312,7 @@ enum class EVertexLayoutType : uint8
 
     PositionColor,
     PositionColorTextureNormal,       // for static mesh
-    PositionColorTextureNormalSkin,   // for skeletal mesh
+    PositionColorTextureNormalSkin,   // for skeletal mesh (GPU 스키닝용)
     
     PositionTextBillBoard,
     PositionCollisionDebug,

@@ -716,7 +716,7 @@ void FFbxManager::Preload()
 		}
 
 		USkeletalMesh* SkeletalMesh = NewObject<USkeletalMesh>();
-		SkeletalMesh->Load(Entry->Mesh, Device, EVertexLayoutType::PositionColorTextureNormalSkin);
+		SkeletalMesh->Load(Entry->Mesh, Device, EVertexLayoutType::PositionColorTextureNormal);
 		SkeletalMesh->SetFilePath(Path);
 		ResourceManager.Add<USkeletalMesh>(Path, SkeletalMesh);
 	};
