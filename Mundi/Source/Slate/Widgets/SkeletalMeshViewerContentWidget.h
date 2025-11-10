@@ -116,4 +116,5 @@ private:
     void DrawBonePyramid(const FVector& Start, const FVector& End, const FVector4& Color, float Width);  // 피라미드 형태로 본 그리기
     AActor* PickBoneFromViewport(const FVector2D& MousePos, const FVector2D& ViewportSize);
     AActor* GetBoneActor(int32 BoneIndex) const;  // 본 인덱스로 본 액터 가져오기
+    bool IntersectRayPyramid(const FRay& Ray, const FVector& Start, const FVector& End, float Width, float& OutT);  // 레이-피라미드 교차 테스트
 };

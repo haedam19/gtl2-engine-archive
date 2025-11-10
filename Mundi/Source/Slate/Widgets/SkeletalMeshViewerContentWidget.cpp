@@ -2174,6 +2174,85 @@ void USkeletalMeshViewerContentWidget::OnBoneSelectedFromHierarchy(int32 BoneInd
     SetSelectedBone(BoneIndex);
 }
 
+// 레이-피라미드 교차 테스트
+bool USkeletalMeshViewerContentWidget::IntersectRayPyramid(const FRay& Ray, const FVector& Start, const FVector& End, float Width, float& OutT)
+{
+    // 본 방향 벡터
+    FVector Direction = End - Start;
+    float Length = Direction.Size();
+    if (Length < 0.001f)
+        return false;
+
+    Direction = Direction / Length;  // Normalize
+
+    // 방향 벡터에 수직인 벡터 2개 구하기 (DrawBonePyramid와 동일)
+    FVector Up = std::abs(Direction.Z) < 0.99f ? FVector(0, 0, 1) : FVector(1, 0, 0);
+    FVector Right = FVector::Cross(Direction, Up);
+    Right = Right / Right.Size();  // Normalize
+    Up = FVector::Cross(Right, Direction);
+    Up = Up / Up.Size();  // Normalize
+
+    // 밑면 사각형 4개 점 (DrawBonePyramid와 동일)
+    FVector Base1 = End + (Right + Up) * Width;
+    FVector Base2 = End + (Right - Up) * Width;
+    FVector Base3 = End + (-Right - Up) * Width;
+    FVector Base4 = End + (-Right + Up) * Width;
+
+    // 4개의 측면 삼각형과 레이 교차 테스트
+    float ClosestT = FLT_MAX;
+    bool bHit = false;
+
+    float t = 0.0f;
+
+    // 삼각형 1: Start - Base1 - Base2
+    if (IntersectRayTriangleMT(Ray, Start, Base1, Base2, t))
+    {
+        if (t < ClosestT)
+        {
+            ClosestT = t;
+            bHit = true;
+        }
+    }
+
+    // 삼각형 2: Start - Base2 - Base3
+    if (IntersectRayTriangleMT(Ray, Start, Base2, Base3, t))
+    {
+        if (t < ClosestT)
+        {
+            ClosestT = t;
+            bHit = true;
+        }
+    }
+
+    // 삼각형 3: Start - Base3 - Base4
+    if (IntersectRayTriangleMT(Ray, Start, Base3, Base4, t))
+    {
+        if (t < ClosestT)
+        {
+            ClosestT = t;
+            bHit = true;
+        }
+    }
+
+    // 삼각형 4: Start - Base4 - Base1
+    if (IntersectRayTriangleMT(Ray, Start, Base4, Base1, t))
+    {
+        if (t < ClosestT)
+        {
+            ClosestT = t;
+            bHit = true;
+        }
+    }
+
+    if (bHit)
+    {
+        OutT = ClosestT;
+        return true;
+    }
+
+    return false;
+}
+
 // 뷰포트에서 본 피킹
 AActor* USkeletalMeshViewerContentWidget::PickBoneFromViewport(const FVector2D& MousePos, const FVector2D& ViewportSize)
 {
@@ -2223,53 +2302,95 @@ AActor* USkeletalMeshViewerContentWidget::PickBoneFromViewport(const FVector2D& 
     UE_LOG("PickBoneFromViewport: Ray - Origin=(%.2f, %.2f, %.2f), Dir=(%.3f, %.3f, %.3f)",
            Ray.Origin.X, Ray.Origin.Y, Ray.Origin.Z, Ray.Direction.X, Ray.Direction.Y, Ray.Direction.Z);
 
-    // 각 본의 구체와 레이의 교차 검사
+    // 각 본의 구체와 피라미드를 레이로 교차 검사
     float MinDistance = FLT_MAX;
     int32 ClosestBoneIndex = -1;
-    const float SphereRadius = 0.5f;  // 테스트용으로 크게 확대 (원래 0.05)
+    const float SphereRadius = 0.05f;  // DrawWireSphere와 동일 (렌더링 영역과 정확히 일치)
+    const float PyramidWidth = 0.03f;  // DrawBonePyramid와 동일 (렌더링 영역과 정확히 일치)
 
-    int32 IntersectionCount = 0;
+    int32 SphereIntersectionCount = 0;
+    int32 PyramidIntersectionCount = 0;
+
     for (int32 i = 0; i < DummySkeleton.Bones.Num(); ++i)
     {
         // 범위 체크
-        if (i >= DummySkeleton.BoneWorldPositions.Num())
+        if (i >= DummySkeleton.BoneWorldPositions.Num() || i >= DummySkeleton.BoneChildIndices.Num())
             continue;
 
-        // 캐시된 본의 월드 위치 사용
-        const FVector& SphereCenter = DummySkeleton.BoneWorldPositions[i];
+        const FBone& Bone = DummySkeleton.Bones[i];
+        const FVector& BonePos = DummySkeleton.BoneWorldPositions[i];
 
-        // 프로젝트의 레이-구체 교차 함수 사용
-        float t = 0.0f;
-        if (IntersectRaySphere(Ray, SphereCenter, SphereRadius, t))
+        // 1. 조인트(구체) 피킹
+        float sphereT = 0.0f;
+        if (IntersectRaySphere(Ray, BonePos, SphereRadius, sphereT))
         {
-            IntersectionCount++;
+            SphereIntersectionCount++;
 
-            // 첫 3개 교차에 대해서만 디버그 로그
-            if (IntersectionCount <= 3)
+            if (sphereT < MinDistance)
             {
-                UE_LOG("PickBoneFromViewport: Bone[%d] '%s' at (%.2f, %.2f, %.2f), t=%.2f",
-                       i, DummySkeleton.Bones[i].Name.c_str(),
-                       SphereCenter.X, SphereCenter.Y, SphereCenter.Z, t);
-            }
-
-            // 가장 가까운 본 찾기
-            if (t < MinDistance)
-            {
-                MinDistance = t;
+                MinDistance = sphereT;
                 ClosestBoneIndex = i;
             }
         }
-        else if (i < 3)
+
+        // 2. 피라미드 피킹 (RenderBones와 동일한 로직)
+        const TArray<int32>& ChildIndices = DummySkeleton.BoneChildIndices[i];
+
+        if (!ChildIndices.empty())
         {
-            // 첫 3개 본이 교차하지 않으면 로그 출력
-            UE_LOG("PickBoneFromViewport: Bone[%d] '%s' at (%.2f, %.2f, %.2f) - NO intersection",
-                   i, DummySkeleton.Bones[i].Name.c_str(),
-                   SphereCenter.X, SphereCenter.Y, SphereCenter.Z);
+            // 자식이 있는 본: 각 자식을 향한 피라미드
+            for (int32 ChildIdx : ChildIndices)
+            {
+                if (ChildIdx >= DummySkeleton.BoneWorldPositions.Num())
+                    continue;
+
+                const FVector& ChildPos = DummySkeleton.BoneWorldPositions[ChildIdx];
+
+                float pyramidT = 0.0f;
+                if (IntersectRayPyramid(Ray, BonePos, ChildPos, PyramidWidth, pyramidT))
+                {
+                    PyramidIntersectionCount++;
+
+                    if (pyramidT < MinDistance)
+                    {
+                        MinDistance = pyramidT;
+                        ClosestBoneIndex = i;
+                    }
+                }
+            }
+        }
+        else
+        {
+            // Leaf bone (자식 없음): 부모 방향 반대로 작은 피라미드
+            if (Bone.ParentIndex >= 0 && Bone.ParentIndex < DummySkeleton.BoneWorldPositions.Num())
+            {
+                const FVector& ParentPos = DummySkeleton.BoneWorldPositions[Bone.ParentIndex];
+
+                FVector Direction = BonePos - ParentPos;
+                float Length = Direction.Size();
+                if (Length > 0.001f)
+                {
+                    Direction = Direction / Length;
+                    FVector LeafEnd = BonePos + Direction * (Length * 0.2f);
+
+                    float pyramidT = 0.0f;
+                    if (IntersectRayPyramid(Ray, BonePos, LeafEnd, PyramidWidth * 0.5f, pyramidT))
+                    {
+                        PyramidIntersectionCount++;
+
+                        if (pyramidT < MinDistance)
+                        {
+                            MinDistance = pyramidT;
+                            ClosestBoneIndex = i;
+                        }
+                    }
+                }
+            }
         }
     }
 
-    UE_LOG("PickBoneFromViewport: Total intersections=%d, ClosestBoneIndex=%d",
-           IntersectionCount, ClosestBoneIndex);
+    UE_LOG("PickBoneFromViewport: Sphere intersections=%d, Pyramid intersections=%d, ClosestBoneIndex=%d",
+           SphereIntersectionCount, PyramidIntersectionCount, ClosestBoneIndex);
 
     // 본을 찾았으면 선택
     if (ClosestBoneIndex >= 0)
