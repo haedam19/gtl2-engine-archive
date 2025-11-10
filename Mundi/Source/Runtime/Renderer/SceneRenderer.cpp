@@ -2155,4 +2155,9 @@ void FSceneRenderer::DrawInstancedMeshBatches(TArray<FInstancedMeshBatchElement>
 	// Unbind SRV
 	ID3D11ShaderResourceView* nullSRV = nullptr;
 	RHIDevice->GetDeviceContext()->VSSetShaderResources(0, 1, &nullSRV);
+
+	// CRITICAL: Restore render states to default
+	// Without this, the main viewport will be rendered in Wireframe mode!
+	RHIDevice->RSSetState(ERasterizerMode::Solid);  // Restore to solid fill mode
+	RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);  // Keep depth test enabled
 }
