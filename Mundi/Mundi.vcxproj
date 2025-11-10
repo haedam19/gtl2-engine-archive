@@ -349,9 +349,14 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     </ClCompile>
     <ClCompile Include="Source\Runtime\Renderer\TileLightCuller.cpp" />
     <ClCompile Include="Source\Slate\Bezier.cpp" />
+    <ClCompile Include="Source\Slate\Widgets\BoneInstancedVisualizer.cpp" />
+    <ClCompile Include="Source\Slate\Widgets\BoneMeshGenerator.cpp" />
+    <ClCompile Include="Source\Slate\Widgets\BonePicker.cpp" />
+    <ClCompile Include="Source\Slate\Widgets\BoneVisualizer.cpp" />
     <ClCompile Include="Source\Slate\Widgets\GameOverWidget.cpp" />
     <ClCompile Include="Source\Slate\Widgets\GameUIWidget.cpp" />
     <ClCompile Include="Source\Slate\Widgets\PropertyRenderer.cpp" />
+    <ClCompile Include="Source\Slate\Widgets\SkeletonEditor.cpp" />
     <ClCompile Include="ThirdParty\ImGui\imgui.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
@@ -649,7 +654,6 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     <ClInclude Include="pch.h" />
     <ClInclude Include="Source\Editor\FbxManager.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\SkeletalMesh.h" />
-    <ClInclude Include="Source\Runtime\Core\Misc\SkeletalMock.h" />
     <ClInclude Include="Source\Runtime\Core\Misc\SkeletalTypes.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\SkeletalMeshComponent.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\SkinnedMeshComponent.h" />
@@ -712,9 +716,14 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     <ClInclude Include="Source\Runtime\RHI\SwapGuard.h" />
     <ClInclude Include="Source\Runtime\RHI\ConstantBufferType.h" />
     <ClInclude Include="Source\Slate\Bezier.h" />
+    <ClInclude Include="Source\Slate\Widgets\BoneInstancedVisualizer.h" />
+    <ClInclude Include="Source\Slate\Widgets\BoneMeshGenerator.h" />
+    <ClInclude Include="Source\Slate\Widgets\BonePicker.h" />
+    <ClInclude Include="Source\Slate\Widgets\BoneVisualizer.h" />
     <ClInclude Include="Source\Slate\Widgets\GameOverWidget.h" />
     <ClInclude Include="Source\Slate\Widgets\GameUIWidget.h" />
     <ClInclude Include="Source\Slate\Widgets\PropertyRenderer.h" />
+    <ClInclude Include="Source\Slate\Widgets\SkeletonEditor.h" />
     <ClInclude Include="ThirdParty\ImGui\imconfig.h" />
     <ClInclude Include="ThirdParty\ImGui\imgui.h" />
     <ClInclude Include="ThirdParty\ImGui\imgui_impl_dx11.h" />
