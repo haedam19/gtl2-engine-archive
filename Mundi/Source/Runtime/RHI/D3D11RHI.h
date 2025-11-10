@@ -78,8 +78,8 @@ public:
 	static HRESULT CreateVertexBuffer(ID3D11Device* device, const std::vector<FNormalVertex>& srcVertices, ID3D11Buffer** outBuffer);
 
 	static HRESULT CreateVertexBuffer(ID3D11Device* device, const TArray<FSkeletalVertex>& srcVertices, ID3D11Buffer** outBuffer);
-
-	static HRESULT CreateVertexBuffer(ID3D11Device* device, const FSkeletalMesh* skeletalMesh, ID3D11Buffer** outBuffer);
+	// FSkeletalMesh용 CreateVertexBuffer는 제거됨 (CPU 스키닝은 UDynamicMesh 사용)
+	//static HRESULT CreateVertexBuffer(ID3D11Device* device, const FSkeletalMesh* skeletalMesh, ID3D11Buffer** outBuffer);
 
 	static HRESULT CreateIndexBuffer(ID3D11Device* device, const FMeshData* meshData, ID3D11Buffer** outBuffer);
 
@@ -392,12 +392,12 @@ inline HRESULT D3D11RHI::CreateVertexBuffer(ID3D11Device* device, const TArray<F
 	return device->CreateBuffer(&vbd, &initData, outBuffer);
 }
 
-inline HRESULT D3D11RHI::CreateVertexBuffer(ID3D11Device* device, const FSkeletalMesh* skeletalMesh, ID3D11Buffer** outBuffer)
-{
-	if (!skeletalMesh)
-	{
-		return E_INVALIDARG;
-	}
-
-	return CreateVertexBuffer(device, skeletalMesh->Vertices, outBuffer);
-}
+//inline HRESULT D3D11RHI::CreateVertexBuffer(ID3D11Device* device, const FSkeletalMesh* skeletalMesh, ID3D11Buffer** outBuffer)
+//{
+//	if (!skeletalMesh)
+//	{
+//		return E_INVALIDARG;
+//	}
+//
+//	return CreateVertexBuffer(device, skeletalMesh->Vertices, outBuffer);
+//}

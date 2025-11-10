@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "SkeletalMesh.h"
 #include "SkeletalTypes.h"
 #include "SkeletalMeshComponent.h"
@@ -27,17 +27,18 @@ void USkeletalMesh::Load(const FString& InFilePath, ID3D11Device* InDevice, EVer
 void USkeletalMesh::Load(FSkeletalMesh* InData, ID3D11Device* InDevice, EVertexLayoutType InVertexType)
 {
     ReleaseResources();
-    
+
     if (!SetVertexType(InVertexType))
         return;
 
-    CreateVertexBuffer(InData, InDevice, InVertexType);
+    // VertexBuffer는 UDynamicMesh가 인스턴스별로 생성 (CPU 스키닝)
+    //CreateVertexBuffer(InData, InDevice, InVertexType);
     CreateIndexBuffer(InData, InDevice);
     CreateLocalBound(InData);
 
     SkeletalMeshData = InData;
     CacheFilePath = InData->CacheFilePath;
-    
+
     VertexCount = static_cast<uint32>(InData->Vertices.size());
     IndexCount = static_cast<uint32>(InData->Indices.size());
 }
@@ -85,13 +86,12 @@ bool USkeletalMesh::RemoveUsingComponent(USkeletalMeshComponent* InComponent)
     }
     return false;
 }
-
-void USkeletalMesh::CreateVertexBuffer(FSkeletalMesh* InSkeletalMesh, ID3D11Device* InDevice, EVertexLayoutType InVertexType)
-{
-    HRESULT hr;
-    hr = D3D11RHI::CreateVertexBuffer(InDevice, InSkeletalMesh, &VertexBuffer);
-    assert(SUCCEEDED(hr));
-}
+//void USkeletalMesh::CreateVertexBuffer(FSkeletalMesh* InSkeletalMesh, ID3D11Device* InDevice, EVertexLayoutType InVertexType)
+//{
+//    HRESULT hr;
+//    hr = D3D11RHI::CreateVertexBuffer(InDevice, InSkeletalMesh, &VertexBuffer);
+//    assert(SUCCEEDED(hr));
+//}
 
 void USkeletalMesh::CreateIndexBuffer(FSkeletalMesh* InSkeletalMesh, ID3D11Device* InDevice)
 {
@@ -125,11 +125,11 @@ void USkeletalMesh::CreateLocalBound(const FSkeletalMesh* InSkeletalMesh)
 
 void USkeletalMesh::ReleaseResources()
 {
-    if (VertexBuffer)
+    /*if (VertexBuffer)
     {
         VertexBuffer->Release();
         VertexBuffer = nullptr;
-    }
+    }*/
     if (IndexBuffer)
     {
         IndexBuffer->Release();

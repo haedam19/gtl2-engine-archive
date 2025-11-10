@@ -26,7 +26,7 @@ public:
     EVertexLayoutType GetVertexType() const { return VertexType; }
 
     // ===== Buffer Getters ===============================
-    ID3D11Buffer* GetVertexBuffer() const { return VertexBuffer;}
+    //ID3D11Buffer* GetVertexBuffer() const { return VertexBuffer; }
     ID3D11Buffer* GetIndexBuffer() const { return IndexBuffer; }
     uint32 GetVertexCount() const { return VertexCount; }
     uint32 GetIndexCount() const { return IndexCount; }
@@ -56,14 +56,15 @@ public:
     TArray<USkeletalMeshComponent*>& GetUsingComponents() { return UsingComponents; }
 
 private:
-    void CreateVertexBuffer(FSkeletalMesh* InSkeletalMesh, ID3D11Device* InDevice, EVertexLayoutType InVertexType);
+    //void CreateVertexBuffer(FSkeletalMesh* InSkeletalMesh, ID3D11Device* InDevice, EVertexLayoutType InVertexType);
     void CreateIndexBuffer(FSkeletalMesh* InSkeletalMesh, ID3D11Device* InDevice);
     void CreateLocalBound(const FSkeletalMesh* InSkeletalMesh);
     void ReleaseResources();
 
     FString CacheFilePath;
 
-    ID3D11Buffer* VertexBuffer = nullptr; // T-Pose 원본 정점 데이터 저장 (읽기 전용, Static, 공유)
+    // VertexBuffer는 UDynamicMesh가 인스턴스별로 관리 (CPU 스키닝) - 임시 주석처리
+    //ID3D11Buffer* VertexBuffer = nullptr; // T-Pose 원본 정점 데이터 저장 (읽기 전용, Static, 공유)
     ID3D11Buffer* IndexBuffer = nullptr; // 공유 (Static)
 
     uint32 VertexCount = 0;
