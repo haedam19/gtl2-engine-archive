@@ -15,9 +15,10 @@ public:
 	static bool Initialize();
 	static void Shutdown();
 
-	static void Clear();
+    static void Clear();
 
-	static FSkeletalMesh* LoadSkeletalMeshAsset(const FString& PathFileName);
+    static FSkeletalMesh* LoadSkeletalMeshAsset(const FString& PathFileName);
+    static void GetMockUpSkeletalMesh(FSkeletalMesh& OutMesh, FSkeleton& OutSkeleton, const FString& MaterialName = "Default");
 
 private:
 	struct FSkeletalMeshEntry

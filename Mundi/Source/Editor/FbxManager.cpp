@@ -791,3 +791,178 @@ FFbxManager::FSkeletalMeshEntry* FFbxManager::ImportSkeletalMesh(const FString& 
 	CachedEntry = Entry;
 	return &CachedEntry;
 }
+
+// 높이 3, 가로/세로 1의 사각기둥 메시와 루트-중간-상단 3본을 생성하여
+// 스켈레탈 임포트가 완성되기 전 뷰어에서 사용할 수 있는 기본 테스트 데이터를 제공한다.
+void FFbxManager::GetMockUpSkeletalMesh(FSkeletalMesh& OutMesh, FSkeleton& OutSkeleton, const FString& MaterialName)
+{
+	const FString MockPath = "__fbx_mock_prism__";
+
+	if (FSkeletalMeshEntry* Cached = SkeletalMeshCache.Find(MockPath))
+	{
+		if (Cached->Mesh && Cached->Skeleton)
+		{
+			OutMesh = *Cached->Mesh;
+			OutSkeleton = *Cached->Skeleton;
+			OutMesh.Skeleton = &OutSkeleton;
+			return;
+		}
+	}
+
+	OutSkeleton.Bones.Empty();
+	OutMesh.Vertices.Empty();
+	OutMesh.Indices.Empty();
+	OutMesh.GroupInfos.Empty();
+
+	// === Skeleton : three bones aligned along Z (height 3) ===
+	struct FBoneDesc
+	{
+		const char* Name;
+		int32 Parent;
+		float Height;
+	};
+
+	const float Height = 3.0f;
+	const float MidHeight = Height * 0.5f;
+
+	const FBoneDesc BoneDescs[] = {
+		{"Bone_Root",  -1, 0.0f},
+		{"Bone_Mid",    0, Height * 0.5f},
+		{"Bone_Top",    1, Height}
+	};
+
+	for (const FBoneDesc& Desc : BoneDescs)
+	{
+		FBone Bone;
+		Bone.Name = Desc.Name;
+		Bone.ParentIndex = Desc.Parent;
+		Bone.BindT = FVector(0.0f, 0.0f, Desc.Height);
+		Bone.BindR = FQuat(0.0f, 0.0f, 0.0f, 1.0f);
+		Bone.BindS = FVector(1.0f, 1.0f, 1.0f);
+		Bone.InverseBind = FMatrix::MakeTranslation(FVector(0.0f, 0.0f, -Desc.Height));
+		OutSkeleton.Bones.Add(Bone);
+	}
+
+	// === Mesh setup ===
+	OutMesh.PathFileName = MockPath;
+	OutMesh.CacheFilePath.clear();
+	OutMesh.Skeleton = &OutSkeleton;
+	OutMesh.bHasMaterial = true;
+
+	const float HalfWidth = 0.5f;
+	const float HalfDepth = 0.5f;
+	const float Levels[] = {0.0f, Height * 0.5f, Height};
+
+	auto ComputeWeights = [&](FSkeletalVertex& Vertex)
+	{
+		const float Z = Vertex.Position.Z;
+		const float Segment = Height * 0.5f;
+		for (int i = 0; i < 4; ++i)
+		{
+			Vertex.Skin.BoneIndex[i] = 0;
+			Vertex.Skin.Weight[i] = 0.0f;
+		}
+
+		if (Z <= Segment)
+		{
+			float Alpha = Segment > 0.0f ? Z / Segment : 0.0f;
+			Vertex.Skin.BoneIndex[0] = 0;
+			Vertex.Skin.Weight[0] = 1.0f - Alpha;
+			Vertex.Skin.BoneIndex[1] = 1;
+			Vertex.Skin.Weight[1] = Alpha;
+		}
+		else
+		{
+			float Beta = Segment > 0.0f ? (Z - Segment) / Segment : 0.0f;
+			Beta = FMath::Clamp(Beta, 0.0f, 1.0f);
+			Vertex.Skin.BoneIndex[0] = 1;
+			Vertex.Skin.Weight[0] = 1.0f - Beta;
+			Vertex.Skin.BoneIndex[1] = 2;
+			Vertex.Skin.Weight[1] = Beta;
+		}
+	};
+
+	auto MakeVertex = [&](float X, float Y, float Z)
+	{
+		FSkeletalVertex Vertex;
+		Vertex.Position = FVector(X, Y, Z);
+
+		if (FMath::Abs(Z) < KINDA_SMALL_NUMBER)
+		{
+			Vertex.Normal = FVector(0.0f, 0.0f, -1.0f);
+		}
+		else if (FMath::Abs(Z - Height) < KINDA_SMALL_NUMBER)
+		{
+			Vertex.Normal = FVector(0.0f, 0.0f, 1.0f);
+		}
+		else
+		{
+			Vertex.Normal = FVector(X, Y, 0.0f);
+			Vertex.Normal.Normalize();
+		}
+
+		Vertex.Tangent = FVector4(1.0f, 0.0f, 0.0f, 1.0f);
+		Vertex.Color = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
+		Vertex.Tex = FVector2D((X + HalfWidth) / (HalfWidth * 2.0f), (Y + HalfDepth) / (HalfDepth * 2.0f));
+
+		ComputeWeights(Vertex);
+		return Vertex;
+	};
+
+	auto AddCornerVertices = [&](float Z)
+	{
+		const FVector Corners[4] = {
+			{-HalfWidth, -HalfDepth, Z},
+			{ HalfWidth, -HalfDepth, Z},
+			{ HalfWidth,  HalfDepth, Z},
+			{-HalfWidth,  HalfDepth, Z}
+		};
+		for (const FVector& Pos : Corners)
+		{
+			OutMesh.Vertices.Add(MakeVertex(Pos.X, Pos.Y, Pos.Z));
+		}
+	};
+
+	for (float LevelZ : Levels)
+	{
+		AddCornerVertices(LevelZ);
+	}
+
+	auto VertIndex = [](int Level, int Corner) { return static_cast<uint32>(Level * 4 + Corner); };
+
+	// Bottom cap
+	OutMesh.Indices.Add(VertIndex(0, 0)); OutMesh.Indices.Add(VertIndex(0, 1)); OutMesh.Indices.Add(VertIndex(0, 2));
+	OutMesh.Indices.Add(VertIndex(0, 0)); OutMesh.Indices.Add(VertIndex(0, 2)); OutMesh.Indices.Add(VertIndex(0, 3));
+
+	// Top cap
+	OutMesh.Indices.Add(VertIndex(2, 0)); OutMesh.Indices.Add(VertIndex(2, 2)); OutMesh.Indices.Add(VertIndex(2, 1));
+	OutMesh.Indices.Add(VertIndex(2, 0)); OutMesh.Indices.Add(VertIndex(2, 3)); OutMesh.Indices.Add(VertIndex(2, 2));
+
+	// Side quads between each level pair
+	for (int Level = 0; Level < 2; ++Level)
+	{
+		for (int Corner = 0; Corner < 4; ++Corner)
+		{
+			const int NextCorner = (Corner + 1) % 4;
+			uint32 v00 = VertIndex(Level, Corner);
+			uint32 v01 = VertIndex(Level, NextCorner);
+			uint32 v10 = VertIndex(Level + 1, Corner);
+			uint32 v11 = VertIndex(Level + 1, NextCorner);
+
+			OutMesh.Indices.Add(v00); OutMesh.Indices.Add(v01); OutMesh.Indices.Add(v11);
+			OutMesh.Indices.Add(v00); OutMesh.Indices.Add(v11); OutMesh.Indices.Add(v10);
+		}
+	}
+
+	FGroupInfo Group;
+	Group.StartIndex = 0;
+	Group.IndexCount = static_cast<uint32>(OutMesh.Indices.size());
+	Group.InitialMaterialName = MaterialName;
+	OutMesh.GroupInfos.Add(Group);
+
+	FSkeletalMeshEntry Entry;
+	Entry.Mesh = new FSkeletalMesh(OutMesh);
+	Entry.Skeleton = new FSkeleton(OutSkeleton);
+	Entry.Mesh->Skeleton = Entry.Skeleton;
+	SkeletalMeshCache[MockPath] = Entry;
+}
