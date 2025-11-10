@@ -126,9 +126,6 @@ void FViewportClient::Draw(FViewport* Viewport)
 		return;
 	}
 
-	UE_LOG("[VIEWER] FViewportClient::Draw - World has %zu actors, %zu editor actors",
-	       World->GetActors().size(), World->GetEditorActors().size());
-
 	// 1. 뷰 타입에 따라 카메라 설정 등 사전 작업을 먼저 수행
 	switch (ViewportType)
 	{

@@ -79,8 +79,7 @@ void FViewport::Render()
 	}
 
 	BeginRenderFrame();
-
-	UE_LOG("[VIEWER] FViewport::Render - Calling ViewportClient->Draw()");
+	
 	ViewportClient->Draw(this);
 
 	EndRenderFrame();

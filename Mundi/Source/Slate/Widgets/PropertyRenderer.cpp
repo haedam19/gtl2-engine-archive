@@ -267,7 +267,6 @@ void UPropertyRenderer::CacheResources()
 			{
 				CachedAudioItems.push_back(path.c_str());
 			}
-			UE_LOG("PropertyRenderer: Cached %d audio files", CachedAudioPaths.size());
 		}
 		else
 		{
