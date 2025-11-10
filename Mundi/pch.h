@@ -9,6 +9,7 @@
 #pragma comment(lib, "user32")
 #pragma comment(lib, "d3d11")
 #pragma comment(lib, "d3dcompiler")
+#pragma comment(lib, "Advapi32.lib")
 
 // DirectXTK
 #pragma comment(lib, "DirectXTK.lib")

@@ -13,7 +13,25 @@ public:
 	virtual ~USkeletalMeshComponent() override;
 
 	// === 컴포넌트 생명주기 ===
-	
+
+	/**
+	 * @brief 컴포넌트가 월드에 등록될 때 호출
+	 * @param InWorld 등록될 월드
+	 *
+	 * @details
+	 * - UDynamicMesh 생성 및 초기화
+	 * - 초기 CPU 스킨 계산 (Reference Pose)
+	 */
+	void OnRegister(UWorld* InWorld) override;
+
+	/**
+	 * @brief 컴포넌트가 월드에서 제거될 때 호출
+	 *
+	 * @details
+	 * - UDynamicMesh 리소스 해제
+	 */
+	void OnUnregister() override;    
+
 	/**
 	* @brief 매 프레임 호출
 	* @param DeltaTime 프레임 시간 (초)
@@ -50,26 +68,16 @@ private:
 	/**
 	* @brief 스킨 적용된 정점 배열 (CPU 사이드)
 	* - 크기: SkeletalMesh->Vertices.Num()
-	* - 매 프레임 PerformCPUSkinning()에서 갱신
+	* - 매 프레임 PerformCPUSkinning()에서 갱신된 결과 저장
 	*/
 	TArray<FSkeletalVertex> SkinnedVertices;
 
 	/**
-	* @brief Dynamic Vertex Buffer (GPU 사이드)
+	* @brief Dynamic Mesh 리소스 (GPU 버퍼 관리)
 	* - D3D11_USAGE_DYNAMIC으로 매 프레임 업데이트 가능
-	* - Map/Unmap 방식으로 CPU → GPU 복사
+	* - UDynamicMesh가 내부적으로 VertexBuffer/IndexBuffer 관리
 	*/
-	ID3D11Buffer* DynamicVertexBuffer = nullptr;
-
-	/**
-	* @brief 최대 정점 개수 (버퍼 크기)
-	*/
-	uint32 MaxVertexCount = 0;
-
-	/**
-	* @brief 정점 스트라이드 (바이트)
-	*/
-	uint32 VertexStride = sizeof(FSkeletalVertex);
+	UDynamicMesh* DynamicMesh = nullptr;
 
 	// ========== 애니메이션 관련 (Stub) ==========
 
@@ -110,20 +118,13 @@ private:
 	void PerformCPUSkinning();
 
 	/**
-	* @brief 스킨된 정점을 GPU에 업로드 (Map/Unmap)
+	* @brief 스킨된 정점을 UDynamicMesh에 업로드
 	* @param Context D3D11 Device Context
+	*
+	* @details
+	* - SkinnedVertices를 FMeshData로 변환
+	* - UDynamicMesh::UpdateData() 호출하여 GPU 버퍼 업데이트
 	*/
-	void UpdateDynamicVertexBuffer(ID3D11DeviceContext* Context);
-
-	/**
-	* @brief Dynamic Vertex Buffer 생성
-	* @param Device D3D11 Device
-	*/
-	void CreateDynamicVertexBuffer(ID3D11Device* Device);
-
-	/**
-	* @brief Dynamic Vertex Buffer 해제
-	*/
-	void ReleaseDynamicVertexBuffer();
+	void UpdateDynamicMeshData(ID3D11DeviceContext* Context);
 };
 
