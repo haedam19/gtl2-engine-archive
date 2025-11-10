@@ -773,7 +773,7 @@ void FFbxManager::Preload()
 	UE_LOG("FFbxManager::Preload - Total USkeletalMesh resources: %zu", LoadedMeshes.size());
 }
 
-/** @brief FBX 경로를 받아 FSkeletalMesh를 반환 (캐시 사용) */
+/** @brief FBX 경로를 받아 FSkeletalMesh를 반환 (캐시 사용 우선 / 없으면 Import 호출) */
 FSkeletalMesh* FFbxManager::LoadSkeletalMeshAsset(const FString& PathFileName)
 {
 	const FString NormalizedPath = NormalizePath(PathFileName);
