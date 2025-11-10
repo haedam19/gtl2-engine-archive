@@ -103,6 +103,20 @@ bool UDynamicMesh::UpdateData(FMeshData* InData, ID3D11DeviceContext* InContext)
             vertices[i].Color = InData->Color[i];
         }
     }
+    else if (VertexType == EVertexLayoutType::PositionColorTextureNormal)
+    {
+        // SkeletalMeshComponent에서 사용하려고 추가
+        FVertexDynamic* vertices = static_cast<FVertexDynamic*>(mappedVertex.pData);
+        for (uint32 i = 0; i < vertexCount; ++i)
+        {
+            // GPU에 InData를 이용해 FVertexDynamic 구조체 채워서 복사
+            vertices[i].Position = InData->Vertices[i];
+            vertices[i].Normal = (i < InData->Normal.size()) ? InData->Normal[i] : FVector(0, 0, 1);
+            vertices[i].UV = (i < InData->UV.size()) ? InData->UV[i] : FVector2D(0, 0);
+            vertices[i].Tangent = (i < InData->Tangent.size()) ? InData->Tangent[i] : FVector4(1, 0, 0, 1);
+            vertices[i].Color = (i < InData->Color.size()) ? InData->Color[i] : FVector4(1, 1, 1, 1);
+        }
+    }
     // Add other vertex types as needed
 
     InContext->Unmap(VertexBuffer, 0);
@@ -151,6 +165,8 @@ size_t UDynamicMesh::GetVertexSize(EVertexLayoutType InVertexType)
     {
         case EVertexLayoutType::PositionColor:
             return sizeof(FVertexSimple);
+        case EVertexLayoutType::PositionColorTextureNormal:
+            return sizeof(FVertexDynamic);
         case EVertexLayoutType::PositionBillBoard:
             return sizeof(FBillboardVertexInfo);
         // Add other vertex types as needed
