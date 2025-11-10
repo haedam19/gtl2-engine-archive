@@ -1,6 +1,9 @@
 #pragma once
 #include "Widget.h"
 #include "SkeletalTypes.h"
+#include "SkeletonEditor.h"
+#include "BoneVisualizer.h"
+#include "BonePicker.h"
 
 class UBoneHierarchyWidget;
 class FViewport;
@@ -92,36 +95,15 @@ private:
     // Layout
     float SidebarWidth = 300.0f;
 
-    // Viewer-specific skeleton rendering/editor cache
-    struct FViewerSkeletonCache
-    {
-        TArray<FMatrix> BoneWorldMatrices;      // World-space bone transforms for rendering
-        TArray<FQuat> BoneWorldRotations;       // World-space bone rotations (cached for performance)
-        TArray<FVector> BoneWorldPositions;     // World-space bone positions (행렬에서 추출 캐싱)
-        TArray<AActor*> BoneActors;             // 각 본마다 더미 액터 (기즈모 표시용)
-        TArray<TArray<int32>> BoneChildIndices; // 각 본의 자식 인덱스 (성능 최적화용 캐시)
-    };
+    // === Helper Systems (Responsibility Separation) ===
+    FSkeletonEditor SkeletonEditor;   // Skeleton data & transform management
+    FBoneVisualizer* BoneVisualizer;  // Bone rendering (owns ULineComponent)
+    FBonePicker BonePicker;           // Bone picking logic
 
-    // Standard skeleton data (shared with runtime/importer)
-    FSkeleton Skeleton;
-
-    // Viewer-specific cache (separated from logical data)
-    FViewerSkeletonCache SkeletonCache;
-
-    // Cache management functions
-    void BuildSkeletonCache();  // FSkeleton으로부터 FViewerSkeletonCache 생성
-    void BuildBoneChildIndices();  // 본 자식 인덱스 미리 계산 (O(N^2) 방지)
-    void CreateBoneActors();  // 본마다 더미 액터 생성 (기즈모용)
-
-    void CreateDummySkeleton();
-    void UpdateBoneWorldMatrices(int32 StartBoneIndex = -1);  // -1이면 모든 본 업데이트, 아니면 해당 본과 자식들만
-    void UpdateBoneActorTransforms(int32 StartBoneIndex = -1);  // 본 액터들의 Transform 업데이트
-    void SyncBoneDataFromActor(int32 BoneIndex);  // 본 액터의 Transform을 본 데이터로 동기화
-    void UpdateBoneWorldMatrixRecursive(int32 BoneIndex);  // 특정 본과 자식들만 재귀적으로 업데이트
-    void RenderBones();
-    void DrawWireSphere(const FVector& Center, float Radius, const FVector4& Color, int32 Segments = 8);  // 와이어프레임 구체 그리기
-    void DrawBonePyramid(const FVector& Start, const FVector& End, const FVector4& Color, float Width);  // 피라미드 형태로 본 그리기
-    AActor* PickBoneFromViewport(const FVector2D& MousePos, const FVector2D& ViewportSize);
-    AActor* GetBoneActor(int32 BoneIndex) const;  // 본 인덱스로 본 액터 가져오기
-    bool IntersectRayPyramid(const FRay& Ray, const FVector& Start, const FVector& End, float Width, float& OutT);  // 레이-피라미드 교차 테스트
+    // === Helper Methods ===
+    void CreateDummySkeleton();       // Initialize test skeleton
+    void BuildSkeletonCache();        // Build cache from skeleton
+    void UpdateBoneWorldMatrices(int32 StartBoneIndex = -1);  // Update bone transforms
+    void RenderBones();               // Render bone visualization
+    AActor* PickBoneFromViewport(const FVector2D& MousePos, const FVector2D& ViewportSize);  // Pick bone from viewport
 };
