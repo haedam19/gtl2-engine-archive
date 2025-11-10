@@ -506,6 +506,13 @@
     <ClCompile Include="ThirdParty\ImGui\imgui_widgets.cpp">
       <Filter>ThirdParty\ImGui</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Runtime\AssetManagement\SkeletalMesh.cpp" />
+    <ClCompile Include="Source\Runtime\Engine\Components\SkeletalMeshComponent.cpp" />
+    <ClCompile Include="Source\Runtime\Engine\Components\SkinnedMeshComponent.cpp" />
+    <ClCompile Include="Source\Slate\Widgets\BoneHierarchyWidget.cpp" />
+    <ClCompile Include="Source\Slate\Widgets\SkeletalMeshViewerContentWidget.cpp" />
+    <ClCompile Include="Source\Slate\Widgets\SkeletalMeshViewerLauncherWidget.cpp" />
+    <ClCompile Include="Source\Slate\Windows\SSkeletalMeshViewerWindow.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Runtime\Core\Misc\DelegateBinding.h" />
@@ -1045,6 +1052,14 @@
     <ClInclude Include="Source\Runtime\Core\Misc\SkeletalTypes.h">
       <Filter>Source\Runtime\Core\Misc</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Runtime\AssetManagement\SkeletalMesh.h" />
+    <ClInclude Include="Source\Runtime\Engine\Components\SkeletalMeshComponent.h" />
+    <ClInclude Include="Source\Runtime\Engine\Components\SkinnedMeshComponent.h" />
+    <ClInclude Include="Source\Slate\Widgets\BoneHierarchyWidget.h" />
+    <ClInclude Include="Source\Slate\Widgets\SkeletalMeshViewerContentWidget.h" />
+    <ClInclude Include="Source\Slate\Widgets\SkeletalMeshViewerLauncherWidget.h" />
+    <ClInclude Include="Source\Slate\Windows\SSkeletalMeshViewerWindow.h" />
+    <ClInclude Include="Source\Runtime\AssetManagement\FBXTest.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Shaders">
