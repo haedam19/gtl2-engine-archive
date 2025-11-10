@@ -38,7 +38,7 @@ struct FBone
     FString Name;   // 뼈 하나의 이름
     int32   ParentIndex = -1; // 부모 뼈 인덱스, 나중에 재귀적으로 타고 올라가며 뼈의 최종위치를 계산하는데 사용
 
-    // T-Pose(Reference Pose) 일 때, 부모 뼈를 기준으로 나의 로컬 Transform, Rotation, Scale 값
+    // T-Pose(Reference Pose) 일 때, '부모 뼈를 기준'으로 나의 로컬 Transform, Rotation, Scale 값
     // 로컬 바인드 포즈(간단 TRS) — 에디터 기즈모에 직접 노출하기 쉬움
     FVector BindT = FVector(0, 0, 0);
     FQuat BindR = FQuat(0, 0, 0);

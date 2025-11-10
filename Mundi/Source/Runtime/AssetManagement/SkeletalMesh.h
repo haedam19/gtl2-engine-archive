@@ -63,8 +63,8 @@ private:
 
     FString CacheFilePath;
 
-    ID3D11Buffer* VertexBuffer = nullptr;
-    ID3D11Buffer* IndexBuffer = nullptr;
+    ID3D11Buffer* VertexBuffer = nullptr; // T-Pose 원본 정점 데이터 저장 (읽기 전용, Static, 공유)
+    ID3D11Buffer* IndexBuffer = nullptr; // 공유 (Static)
 
     uint32 VertexCount = 0;
     uint32 IndexCount = 0;

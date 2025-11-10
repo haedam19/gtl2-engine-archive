@@ -24,7 +24,13 @@ void USkinnedMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 		const FSkeletalMesh* MeshData = SkeletalMesh->GetSkeletalMeshData();
 		if (MeshData)
 		{
-			MaterialSlots.resize(MeshData->GroupInfos.Num(), nullptr);
+			MaterialSlots.resize(MeshData->GroupInfos.Num());
+
+			// FBX에서 로드된 머티리얼 이름으로 자동 로드
+			for (int32 i = 0; i < MeshData->GroupInfos.Num(); ++i)
+			{
+				SetMaterialByName(i, MeshData->GroupInfos[i].InitialMaterialName);
+			}
 		}
 	}
 }
