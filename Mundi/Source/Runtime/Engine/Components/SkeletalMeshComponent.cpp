@@ -347,3 +347,27 @@ FAABB USkeletalMeshComponent::GetWorldAABB() const
 
     return FAABB(WorldMin, WorldMax);
 }
+
+void USkeletalMeshComponent::OnSerialized()
+{
+    Super::OnSerialized();
+
+    // 로드 후 DynamicMesh 재생성 (이미 등록된 경우에만)
+    if (bRegistered && SkeletalMesh && !DynamicMesh)
+    {
+        DynamicMesh = NewObject<UDynamicMesh>();
+
+        ID3D11Device* Device = URenderManager::GetInstance().GetRenderer()->GetRHIDevice()->GetDevice();
+        uint32 MaxVertexCount = SkeletalMesh->GetVertexCount();
+        uint32 MaxIndexCount = SkeletalMesh->GetIndexCount();
+        EVertexLayoutType VertexType = EVertexLayoutType::PositionColorTextureNormal;
+
+        DynamicMesh->Initialize(MaxVertexCount, MaxIndexCount, Device, VertexType);
+        PerformCPUSkinning();
+    }
+}
+
+void USkeletalMeshComponent::DuplicateSubObjects()
+{
+    Super::DuplicateSubObjects();
+}

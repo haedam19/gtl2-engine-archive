@@ -1,6 +1,9 @@
 ﻿#include "pch.h"
 #include "SkinnedMeshComponent.h"
 #include "SkeletalMesh.h"
+#include "JsonSerializer.h"
+#include "Material.h"
+#include "ResourceManager.h"
 
 IMPLEMENT_CLASS(USkinnedMeshComponent)
 
@@ -140,4 +143,91 @@ void USkinnedMeshComponent::SetMaterial(uint32 InElementIndex, UMaterialInterfac
 	{
 		MaterialSlots[InElementIndex] = InNewMaterial;
 	}
+}
+
+void USkinnedMeshComponent::Serialize(const bool bInIsLoading, JSON& InOutHandle)
+{
+	Super::Serialize(bInIsLoading, InOutHandle);
+
+	const FString MaterialSlotsKey = "MaterialSlots";
+
+	if (bInIsLoading) // --- 로드 ---
+	{
+		JSON SlotsArrayJson;
+		if (FJsonSerializer::ReadArray(InOutHandle, MaterialSlotsKey, SlotsArrayJson, JSON::Make(JSON::Class::Array), false))
+		{
+			MaterialSlots.resize(SlotsArrayJson.size());
+
+			for (int i = 0; i < SlotsArrayJson.size(); ++i)
+			{
+				JSON& SlotJson = SlotsArrayJson.at(i);
+				if (SlotJson.IsNull())
+				{
+					MaterialSlots[i] = nullptr;
+					continue;
+				}
+
+				// JSON에서 클래스 이름 읽기
+				FString ClassName;
+				FJsonSerializer::ReadString(SlotJson, "Type", ClassName, "None", false);
+
+				UMaterialInterface* LoadedMaterial = nullptr;
+
+				// UMaterial만 지원 (SkinnedMeshComponent는 동적 머티리얼 인스턴스 불필요)
+				if (ClassName == UMaterial::StaticClass()->Name)
+				{
+					// UMaterial은 리소스이므로, AssetPath로 리소스 매니저에서 로드
+					FString AssetPath;
+					FJsonSerializer::ReadString(SlotJson, "AssetPath", AssetPath, "", false);
+					if (!AssetPath.empty())
+					{
+						LoadedMaterial = UResourceManager::GetInstance().Load<UMaterial>(AssetPath);
+					}
+				}
+
+				MaterialSlots[i] = LoadedMaterial;
+			}
+		}
+	}
+	else // --- 저장 ---
+	{
+		JSON SlotsArrayJson = JSON::Make(JSON::Class::Array);
+		for (UMaterialInterface* Mtl : MaterialSlots)
+		{
+			JSON SlotJson = JSON::Make(JSON::Class::Object);
+
+			if (Mtl == nullptr)
+			{
+				SlotJson["Type"] = "None";
+			}
+			else
+			{
+				// 클래스 이름 저장
+				SlotJson["Type"] = Mtl->GetClass()->Name;
+
+				// 객체 스스로 데이터를 저장하도록 위임
+				Mtl->Serialize(false, SlotJson);
+			}
+
+			SlotsArrayJson.append(SlotJson);
+		}
+		InOutHandle[MaterialSlotsKey] = SlotsArrayJson;
+	}
+}
+
+void USkinnedMeshComponent::OnSerialized()
+{
+	Super::OnSerialized();
+
+	// AutoSerialize로 로드된 SkeletalMesh 후처리
+	if (SkeletalMesh)
+	{
+		// Reference Pose 초기화 (본 행렬 재생성)
+		InitializeReferencePose();
+	}
+}
+
+void USkinnedMeshComponent::DuplicateSubObjects()
+{
+	Super::DuplicateSubObjects();
 }

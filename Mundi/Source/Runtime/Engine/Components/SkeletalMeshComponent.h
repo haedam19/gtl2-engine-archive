@@ -73,6 +73,10 @@ public:
 	 */
 	FAABB GetWorldAABB() const;
 
+	// === 직렬화 및 복제 ===
+	void OnSerialized() override;
+	void DuplicateSubObjects() override;
+	DECLARE_DUPLICATE(USkeletalMeshComponent)
 	// === CPU Skinning ===
 	/**
 	* @brief CPU에서 스킨 정점 계산
