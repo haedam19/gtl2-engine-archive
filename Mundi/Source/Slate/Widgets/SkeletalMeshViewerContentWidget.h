@@ -84,6 +84,9 @@ private:
     TArray<class USkeletalMesh*> LoadedMeshes;
     class ASkeletalMeshActor* ViewerSkeletalMeshActor = nullptr;
     int32 CurrentMeshIndex = -1;
+    float MeshScale = 1.0f;           // Uniform scale for mesh
+    float BoneVisualizationScale = 1.0f;  // Uniform scale for bone visualization
+    bool bSyncScale = true;           // Sync mesh and bone visualization scales
 
     // Camera Input
     bool bIsViewerRightMouseDown = false;

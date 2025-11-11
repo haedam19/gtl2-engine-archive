@@ -44,7 +44,8 @@ public:
     void RenderSkeleton(const FSkeleton& Skeleton,
                        const FViewerSkeletonCache& Cache,
                        int32 SelectedBoneIndex,
-                       TArray<struct FInstancedMeshBatchElement>& OutBatches);
+                       TArray<struct FInstancedMeshBatchElement>& OutBatches,
+                       float MeshScale = 1.0f);
 
     // Configuration
     void SetJointRadius(float Radius) { JointRadius = Radius; }

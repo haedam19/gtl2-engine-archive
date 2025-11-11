@@ -777,12 +777,74 @@ void USkeletalMeshViewerContentWidget::RenderSidebar()
 
 void USkeletalMeshViewerContentWidget::RenderMeshList()
 {
-    ImGui::BeginChild("MeshListArea", ImVec2(0, 150), true);
+    ImGui::BeginChild("MeshListArea", ImVec2(0, 250), true);
 
     // Load FBX Button
     if (ImGui::Button("Load FBX...", ImVec2(-1, 0)))
     {
         LoadSkeletalMeshFromFile();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Sync Scale Checkbox
+    if (ImGui::Checkbox("Sync Scale", &bSyncScale))
+    {
+        // When enabling sync, match bone scale to mesh scale
+        if (bSyncScale)
+        {
+            BoneVisualizationScale = MeshScale;
+            bBoneVisualizationDirty = true;
+        }
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Synchronize mesh and bone visualization scales");
+    }
+
+    ImGui::Spacing();
+
+    // Mesh Scale Slider
+    float PrevMeshScale = MeshScale;
+    if (ImGui::SliderFloat("Mesh Scale", &MeshScale, 0.1f, 10.0f, "%.2f"))
+    {
+        if (ViewerSkeletalMeshActor)
+        {
+            ViewerSkeletalMeshActor->SetActorScale(FVector(MeshScale, MeshScale, MeshScale));
+
+            // Sync bone visualization scale if enabled
+            if (bSyncScale)
+            {
+                BoneVisualizationScale = MeshScale;
+            }
+
+            // Force bone visualization update
+            bBoneVisualizationDirty = true;
+        }
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Scale the skeletal mesh");
+    }
+
+    // Bone Visualization Scale Slider
+    if (ImGui::SliderFloat("Bone Scale", &BoneVisualizationScale, 0.1f, 10.0f, "%.2f"))
+    {
+        // Sync mesh scale if enabled
+        if (bSyncScale && ViewerSkeletalMeshActor)
+        {
+            MeshScale = BoneVisualizationScale;
+            ViewerSkeletalMeshActor->SetActorScale(FVector(MeshScale, MeshScale, MeshScale));
+        }
+
+        // Force bone visualization update
+        bBoneVisualizationDirty = true;
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Scale the bone visualization");
     }
 
     ImGui::Spacing();
@@ -1796,7 +1858,8 @@ void USkeletalMeshViewerContentWidget::RenderBones()
         SkeletonEditor.GetSkeleton(),
         SkeletonEditor.GetCache(),
         SelectedBoneIndex,
-        BoneInstancedBatches
+        BoneInstancedBatches,
+        BoneVisualizationScale  // Pass bone visualization scale
     );
 
     UE_LOG("RenderBones: Generated %d instanced batches", BoneInstancedBatches.size());
@@ -2085,8 +2148,18 @@ void USkeletalMeshViewerContentWidget::SetCurrentMesh(int32 MeshIndex)
     if (Component)
     {
         Component->SetSkeletalMesh(NewMesh);
-        UE_LOG("SkeletalMeshViewerContentWidget: Switched to mesh %d: %s",
-               MeshIndex, NewMesh->GetFilePath().c_str());
+
+        // Apply current mesh scale
+        ViewerSkeletalMeshActor->SetActorScale(FVector(MeshScale, MeshScale, MeshScale));
+
+        // Sync bone visualization scale if enabled
+        if (bSyncScale)
+        {
+            BoneVisualizationScale = MeshScale;
+        }
+
+        UE_LOG("SkeletalMeshViewerContentWidget: Switched to mesh %d: %s (MeshScale: %.2f, BoneScale: %.2f)",
+               MeshIndex, NewMesh->GetFilePath().c_str(), MeshScale, BoneVisualizationScale);
 
         // Update SkeletonEditor with new skeleton
         if (NewMesh->GetSkeleton())
