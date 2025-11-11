@@ -94,12 +94,6 @@ bool USkeletalMesh::RemoveUsingComponent(USkeletalMeshComponent* InComponent)
     }
     return false;
 }
-//void USkeletalMesh::CreateVertexBuffer(FSkeletalMesh* InSkeletalMesh, ID3D11Device* InDevice, EVertexLayoutType InVertexType)
-//{
-//    HRESULT hr;
-//    hr = D3D11RHI::CreateVertexBuffer(InDevice, InSkeletalMesh, &VertexBuffer);
-//    assert(SUCCEEDED(hr));
-//}
 
 void USkeletalMesh::CreateIndexBuffer(FSkeletalMesh* InSkeletalMesh, ID3D11Device* InDevice)
 {
@@ -133,11 +127,6 @@ void USkeletalMesh::CreateLocalBound(const FSkeletalMesh* InSkeletalMesh)
 
 void USkeletalMesh::ReleaseResources()
 {
-    /*if (VertexBuffer)
-    {
-        VertexBuffer->Release();
-        VertexBuffer = nullptr;
-    }*/
     if (IndexBuffer)
     {
         IndexBuffer->Release();

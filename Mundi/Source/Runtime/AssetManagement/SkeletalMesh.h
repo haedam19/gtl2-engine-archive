@@ -26,7 +26,6 @@ public:
     EVertexLayoutType GetVertexType() const { return VertexType; }
 
     // ===== Buffer Getters ===============================
-    //ID3D11Buffer* GetVertexBuffer() const { return VertexBuffer; }
     ID3D11Buffer* GetIndexBuffer() const { return IndexBuffer; }
     uint32 GetVertexCount() const { return VertexCount; }
     uint32 GetIndexCount() const { return IndexCount; }
@@ -64,8 +63,7 @@ private:
     FString CacheFilePath;
 
     // VertexBuffer는 UDynamicMesh가 인스턴스별로 관리 (CPU 스키닝) - 임시 주석처리
-    //ID3D11Buffer* VertexBuffer = nullptr; // T-Pose 원본 정점 데이터 저장 (읽기 전용, Static, 공유)
-    ID3D11Buffer* IndexBuffer = nullptr; // 공유 (Static)
+    ID3D11Buffer* IndexBuffer = nullptr; // 인덱스 버퍼는 공용
 
     uint32 VertexCount = 0;
     uint32 IndexCount = 0;
