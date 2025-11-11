@@ -49,8 +49,8 @@ public:
     void ClearSelection();
 
     // === Transform Management ===
-    void UpdateBoneWorldMatrices(int32 StartBoneIndex = -1);  // -1 = update all
-    void SyncBoneDataFromActor(int32 BoneIndex);  // Sync bone data from actor transform
+    void UpdateBoneWorldMatrices(int32 StartBoneIndex = -1, float BoneVisualizationScale = 1.0f);  // -1 = update all
+    void SyncBoneDataFromActor(int32 BoneIndex, float BoneVisualizationScale = 1.0f);  // Sync bone data from actor transform
 
     // === Cache Management ===
     void BuildCache(UWorld* World);  // Build entire cache from skeleton
@@ -75,6 +75,6 @@ private:
     // Cache building helpers
     void BuildBoneChildIndices();  // Pre-calculate child indices (O(N) optimization)
     void CreateBoneActors(UWorld* World);  // Create dummy actors for gizmo
-    void UpdateBoneActorTransforms(int32 StartBoneIndex = -1);  // Update actor transforms
+    void UpdateBoneActorTransforms(int32 StartBoneIndex = -1, float BoneVisualizationScale = 1.0f);  // Update actor transforms
     void UpdateBoneWorldMatrixRecursive(int32 BoneIndex);  // Recursive update for bone and children
 };

@@ -828,9 +828,10 @@ void USkeletalMeshViewerContentWidget::RenderMeshList()
 
     ImGui::Spacing();
 
-    // Mesh Scale Slider
-    float PrevMeshScale = MeshScale;
-    if (ImGui::SliderFloat("Mesh Scale", &MeshScale, 0.1f, 10.0f, "%.2f"))
+    // Mesh Scale
+    ImGui::Text("Mesh Scale");
+    ImGui::SetNextItemWidth(FixedWidth);
+    if (ImGui::DragFloat("##MeshScale", &MeshScale, 0.01f, 0.1f, 10.0f, "%.2f"))
     {
         if (ViewerSkeletalMeshActor)
         {
@@ -848,11 +849,13 @@ void USkeletalMeshViewerContentWidget::RenderMeshList()
     }
     if (ImGui::IsItemHovered())
     {
-        ImGui::SetTooltip("Scale the skeletal mesh");
+        ImGui::SetTooltip("Scale the skeletal mesh (double-click to input)");
     }
 
-    // Bone Visualization Scale Slider
-    if (ImGui::SliderFloat("Bone Scale", &BoneVisualizationScale, 0.1f, 10.0f, "%.2f"))
+    // Bone Visualization Scale
+    ImGui::Text("Bone Scale");
+    ImGui::SetNextItemWidth(FixedWidth);
+    if (ImGui::DragFloat("##BoneScale", &BoneVisualizationScale, 0.01f, 0.1f, 10.0f, "%.2f"))
     {
         // Sync mesh scale if enabled
         if (bSyncScale && ViewerSkeletalMeshActor)
@@ -864,25 +867,12 @@ void USkeletalMeshViewerContentWidget::RenderMeshList()
         // Force bone visualization update
         bBoneVisualizationDirty = true;
 
-        // Update gizmo position if a bone is selected
-        if (SelectedBoneIndex >= 0)
-        {
-            AActor* BoneActor = SkeletonEditor.GetBoneActor(SelectedBoneIndex);
-            if (BoneActor)
-            {
-                const FViewerSkeletonCache& CacheRef = SkeletonEditor.GetCache();
-                if (SelectedBoneIndex < CacheRef.BoneWorldPositions.Num())
-                {
-                    FVector OriginalBonePos = CacheRef.BoneWorldPositions[SelectedBoneIndex];
-                    FVector ScaledBonePos = OriginalBonePos * BoneVisualizationScale;
-                    BoneActor->SetActorLocation(ScaledBonePos);
-                }
-            }
-        }
+        // Update all bone actor positions with new scale
+        UpdateBoneWorldMatrices();
     }
     if (ImGui::IsItemHovered())
     {
-        ImGui::SetTooltip("Scale the bone visualization");
+        ImGui::SetTooltip("Scale the bone visualization (double-click to input)");
     }
 
     ImGui::Spacing();
@@ -1134,7 +1124,6 @@ void USkeletalMeshViewerContentWidget::RenderLightingControls()
 {
     // Fixed width for sliders
     float FixedWidth = 280.0f;
-    ImGui::PushItemWidth(FixedWidth);
 
     ImGui::BeginChild("LightingControlsArea", ImVec2(0, 200), true);
 
@@ -1152,20 +1141,23 @@ void USkeletalMeshViewerContentWidget::RenderLightingControls()
 
         bool bRotationChanged = false;
 
-        // Roll slider
-        if (ImGui::SliderFloat("Roll", &rotArray[0], -180.0f, 180.0f, "%.1f"))
+        // Roll
+        ImGui::SetNextItemWidth(FixedWidth);
+        if (ImGui::DragFloat("Roll", &rotArray[0], 0.5f, -180.0f, 180.0f, "%.1f"))
         {
             bRotationChanged = true;
         }
 
-        // Pitch slider
-        if (ImGui::SliderFloat("Pitch", &rotArray[1], -89.0f, 89.0f, "%.1f"))
+        // Pitch
+        ImGui::SetNextItemWidth(FixedWidth);
+        if (ImGui::DragFloat("Pitch", &rotArray[1], 0.5f, -89.0f, 89.0f, "%.1f"))
         {
             bRotationChanged = true;
         }
 
-        // Yaw slider
-        if (ImGui::SliderFloat("Yaw", &rotArray[2], -180.0f, 180.0f, "%.1f"))
+        // Yaw
+        ImGui::SetNextItemWidth(FixedWidth);
+        if (ImGui::DragFloat("Yaw", &rotArray[2], 0.5f, -180.0f, 180.0f, "%.1f"))
         {
             bRotationChanged = true;
         }
@@ -1180,16 +1172,21 @@ void USkeletalMeshViewerContentWidget::RenderLightingControls()
         ImGui::Separator();
         ImGui::Spacing();
 
-        // Intensity slider
+        // Intensity
         if (UDirectionalLightComponent* LightComp = ViewerDirectionalLight->GetLightComponent())
         {
             ImGui::Text("Intensity");
             ImGui::Spacing();
 
             float currentIntensity = LightComp->GetIntensity();
-            if (ImGui::SliderFloat("##Intensity", &currentIntensity, 0.0f, 10.0f, "%.2f"))
+            ImGui::SetNextItemWidth(FixedWidth);
+            if (ImGui::DragFloat("##Intensity", &currentIntensity, 0.01f, 0.0f, 10.0f, "%.2f"))
             {
                 LightComp->SetIntensity(currentIntensity);
+            }
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::SetTooltip("Light intensity (double-click to input)");
             }
 
             ImGui::Spacing();
@@ -1210,8 +1207,6 @@ void USkeletalMeshViewerContentWidget::RenderLightingControls()
     }
 
     ImGui::EndChild();
-
-    ImGui::PopItemWidth();
 }
 
 void USkeletalMeshViewerContentWidget::RenderViewport()
@@ -1598,7 +1593,7 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                                     FVector OldActorPos = BoneActor ? BoneActor->GetActorLocation() : FVector::Zero();
                                     FQuat OldActorRot = BoneActor ? BoneActor->GetActorRotation() : FQuat::Identity();
 
-                                    SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex);
+                                    SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex, BoneVisualizationScale);
 
                                     // 변화가 거의 없으면 원래 값 복원 (부동소수점 오차 누적 방지)
                                     const float EPSILON_SQ = 1e-8f;
@@ -1643,7 +1638,7 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                         // 기즈모 드래그가 끝났을 때 본 액터의 Transform을 본 데이터로 동기화
                         if (SelectedBoneIndex >= 0)
                         {
-                            SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex);
+                            SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex, BoneVisualizationScale);
                             UpdateBoneWorldMatrices(SelectedBoneIndex);  // 자식 본들도 업데이트
                             bBoneVisualizationDirty = true;
                             UE_LOG("SkeletalMeshViewer: Synced bone data after gizmo drag");
@@ -1823,7 +1818,7 @@ void USkeletalMeshViewerContentWidget::BuildSkeletonCache()
 
 void USkeletalMeshViewerContentWidget::UpdateBoneWorldMatrices(int32 StartBoneIndex)
 {
-    SkeletonEditor.UpdateBoneWorldMatrices(StartBoneIndex);
+    SkeletonEditor.UpdateBoneWorldMatrices(StartBoneIndex, BoneVisualizationScale);
 
     if (!ViewerSkeletalMeshActor)
     {
