@@ -27,6 +27,8 @@ TMap<FString, FFbxManager::FSkeletalMeshEntry> FFbxManager::SkeletalMeshCache;
 namespace
 {
 	using FBoneIndexMap = TMap<FbxNode*, int32>;
+	static size_t GSkeletalClassifications = 0;
+	static size_t GStaticClassifications = 0;
 
 	/** @brief 파일 경로에서 확장자를 소문자로 변환해 추출 */
 	FString ToLowerExt(const FString& Path)
@@ -274,6 +276,58 @@ namespace
 		{
 			NormalizeSkinWeights(Skin);
 		}
+	}
+
+	bool HasSkinDeformerWithWeights(FbxMesh* Mesh)
+	{
+		if (!Mesh)
+		{
+			return false;
+		}
+
+		const int SkinCount = Mesh->GetDeformerCount(FbxDeformer::eSkin);
+		if (SkinCount <= 0)
+		{
+			return false;
+		}
+
+		const double WeightEpsilon = 1e-6;
+
+		for (int SkinIdx = 0; SkinIdx < SkinCount; ++SkinIdx)
+		{
+			FbxSkin* Skin = static_cast<FbxSkin*>(Mesh->GetDeformer(SkinIdx, FbxDeformer::eSkin));
+			if (!Skin)
+			{
+				continue;
+			}
+
+			const int ClusterCount = Skin->GetClusterCount();
+			for (int ClusterIdx = 0; ClusterIdx < ClusterCount; ++ClusterIdx)
+			{
+				FbxCluster* Cluster = Skin->GetCluster(ClusterIdx);
+				if (!Cluster)
+				{
+					continue;
+				}
+
+				const int IndexCount = Cluster->GetControlPointIndicesCount();
+				const double* Weights = Cluster->GetControlPointWeights();
+				if (IndexCount <= 0 || !Weights)
+				{
+					continue;
+				}
+
+				for (int Index = 0; Index < IndexCount; ++Index)
+				{
+					if (std::fabs(Weights[Index]) > WeightEpsilon)
+					{
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
 	}
 
 	/** @brief FBX 노멀 데이터를 읽어 FVector로 반환 */
@@ -642,6 +696,27 @@ namespace
 		TArray<FSkinWeight4> SkinWeights;
 		BuildSkinWeights(Mesh, NodeToBone, SkinWeights);
 
+		// Skin 데이터가 전혀 없는 메시(예: 눈알 같이 본의 자식으로 붙은 단일 메시)를 위해
+		// 부모 본을 찾아 해당 본에 100% 가중치로 묶어 준다.
+		const int32 FallbackBoneIndex = FindParentBoneIndex(MeshNode, NodeToBone);
+		if (FallbackBoneIndex != -1)
+		{
+			for (FSkinWeight4& Skin : SkinWeights)
+			{
+				const float WeightSum = Skin.Weight[0] + Skin.Weight[1] + Skin.Weight[2] + Skin.Weight[3];
+				if (WeightSum <= KINDA_SMALL_NUMBER)
+				{
+					for (int32 Slot = 0; Slot < 4; ++Slot)
+					{
+						Skin.Weight[Slot] = 0.0f;
+						Skin.BoneIndex[Slot] = 0;
+					}
+					Skin.Weight[0] = 1.0f;
+					Skin.BoneIndex[0] = static_cast<uint16>(FallbackBoneIndex);
+				}
+			}
+		}
+
 		FbxAMatrix GlobalTransform = MeshNode->EvaluateGlobalTransform();
 		FbxVector4* ControlPoints = Mesh->GetControlPoints();
 		if (!ControlPoints)
@@ -766,6 +841,58 @@ namespace
 
 		OutMesh.GroupInfos.Add(Group);
 		return !OutMesh.Vertices.empty() && !OutMesh.Indices.empty();
+	}
+
+	/**
+	 * Skeletal mesh 분류 기준:
+	 * 1) 메시가 Skin 디포머를 보유하고, 클러스터에 유효한 weight가 하나라도 존재하거나
+	 * 2) Skin 데이터는 없지만 메시 노드의 부모 계층이 Skeleton 노드에 연결되어 리짓 본 자식으로 취급 가능한 경우
+	 */
+	bool SceneContainsSkeletalData(FbxScene* Scene, const FBoneIndexMap& NodeToBone)
+	{
+		if (!Scene)
+		{
+			return false;
+		}
+
+		FbxNode* Root = Scene->GetRootNode();
+		if (!Root)
+		{
+			return false;
+		}
+
+		TArray<FbxNode*> Stack;
+		Stack.push_back(Root);
+
+		while (!Stack.empty())
+		{
+			FbxNode* Node = Stack.back();
+			Stack.pop_back();
+
+			FbxNodeAttribute* Attribute = Node->GetNodeAttribute();
+			if (Attribute && Attribute->GetAttributeType() == FbxNodeAttribute::eMesh)
+			{
+				FbxMesh* Mesh = Node->GetMesh();
+				// 스킨 디포머 + 유효 weight 존재하는 경우
+				if (HasSkinDeformerWithWeights(Mesh))
+				{
+					return true;
+				}
+				// 본 계층에 속한 rigid mesh인 경우
+				if (FindParentBoneIndex(Node, NodeToBone) != -1)
+				{
+					return true;
+				}
+			}
+
+			const int ChildCount = Node->GetChildCount();
+			for (int ChildIdx = 0; ChildIdx < ChildCount; ++ChildIdx)
+			{
+				Stack.push_back(Node->GetChild(ChildIdx));
+			}
+		}
+
+		return false;
 	}
 
 	/** @brief 씬 그래프에서 모든 메시를 찾아 변환 (FIXED: 첫 번째 메시만이 아닌 모든 메시 처리) */
@@ -937,6 +1064,9 @@ void FFbxManager::Preload()
 		ResourceManager.Add<USkeletalMesh>(Path, SkeletalMesh);
 	};
 
+	const size_t PrevSkeletalClassifications = GSkeletalClassifications;
+	const size_t PrevStaticClassifications = GStaticClassifications;
+
 	{
 		FSkeletalMesh MockMesh;
 		FSkeleton MockSkeleton;
@@ -987,7 +1117,13 @@ void FFbxManager::Preload()
 
 	const TArray<USkeletalMesh*> LoadedMeshes = ResourceManager.GetAll<USkeletalMesh>();
 	UE_LOG("FFbxManager::Preload - Total USkeletalMesh resources: %zu", LoadedMeshes.size());
-}
+
+	const size_t SkeletalRunCount = GSkeletalClassifications;
+	const size_t StaticRunCount = GStaticClassifications;
+	const size_t PreloadRunSkeletal = SkeletalRunCount - PrevSkeletalClassifications;
+	const size_t PreloadRunStatic = StaticRunCount - PrevStaticClassifications;
+	UE_LOG("FFbxManager::Preload - Classified Skeletal: %zu, Static: %zu (this run)", PreloadRunSkeletal, PreloadRunStatic);
+ }
 
 /** @brief FBX 경로를 받아 FSkeletalMesh를 반환 (캐시 사용 우선 / 없으면 Import 호출) */
 FSkeletalMesh* FFbxManager::LoadSkeletalMeshAsset(const FString& PathFileName)
@@ -1083,6 +1219,17 @@ FFbxManager::FSkeletalMeshEntry* FFbxManager::ImportSkeletalMesh(const FString& 
 
 	FBoneIndexMap BoneMap;
 	ExtractSkeleton(Scene, *Entry.Skeleton, BoneMap);
+
+	if (!SceneContainsSkeletalData(Scene, BoneMap))
+	{
+		++GStaticClassifications;
+		UE_LOG("FFbxManager: Scene classified as static mesh. Skeletal import skipped for %s", NormalizedPath.c_str());
+		Scene->Destroy();
+		ReleaseEntry(Entry);
+		return nullptr;
+	}
+
+	++GSkeletalClassifications;
 
 	TArray<FMaterialInfo> MaterialInfos;
 	if (!ExtractSkeletalMesh(Scene, BoneMap, *Entry.Mesh, MaterialInfos))
