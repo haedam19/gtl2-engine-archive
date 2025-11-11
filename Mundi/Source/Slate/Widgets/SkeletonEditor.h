@@ -16,6 +16,7 @@ struct FViewerSkeletonCache
     TArray<FMatrix> BoneWorldMatrices;      // World-space bone transforms for rendering
     TArray<FQuat> BoneWorldRotations;       // World-space bone rotations (cached for performance)
     TArray<FVector> BoneWorldPositions;     // World-space bone positions (extracted from matrices)
+    TArray<FVector> BoneWorldScales;        // World-space bone scales (cached for performance)
     TArray<AActor*> BoneActors;             // Dummy actor for each bone (for gizmo display)
     TArray<TArray<int32>> BoneChildIndices; // Child indices for each bone (performance cache)
 };
