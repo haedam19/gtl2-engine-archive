@@ -11,6 +11,7 @@
 #include "CameraActor.h"
 #include "FbxManager.h"
 #include "SplashScreen.h"
+#include <chrono>
 
 
 float UEditorEngine::ClientWidth = 1024.0f;
@@ -226,8 +227,19 @@ bool UEditorEngine::Startup(HINSTANCE hInstance)
     UI.Initialize(HWnd, RHIDevice.GetDevice(), RHIDevice.GetDeviceContext());
     INPUT.Initialize(HWnd);
 
-    FObjManager::Preload();
-    FFbxManager::Preload();
+    using namespace std::chrono;
+    {
+        const auto Start = steady_clock::now();
+        FObjManager::Preload();
+        const auto Duration = duration_cast<milliseconds>(steady_clock::now() - Start).count();
+        UE_LOG("FObjManager::Preload completed in %lld ms", Duration);
+    }
+    {
+        const auto Start = steady_clock::now();
+        FFbxManager::Preload();
+        const auto Duration = duration_cast<milliseconds>(steady_clock::now() - Start).count();
+        UE_LOG("FFbxManager::Preload completed in %lld ms", Duration);
+    }
 
     ///////////////////////////////////
     WorldContexts.Add(FWorldContext(NewObject<UWorld>(), EWorldType::Editor));

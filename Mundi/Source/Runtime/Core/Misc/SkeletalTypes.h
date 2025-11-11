@@ -2,6 +2,7 @@
 #include "UEContainer.h"
 #include "Vector.h"
 #include "Enums.h"
+#include "Archive.h"
 
 //////////////////////////////////////////////////////////////
 // Cooked-Logical: 에디터/런타임/임포터가 "공유"하는 표준 계약
@@ -86,3 +87,149 @@ struct FSkeletalMesh
     TArray<FGroupInfo> GroupInfos;     // StartIndex/IndexCount/InitialMatName
     bool bHasMaterial = true;          // 머티리얼 유무
 };
+
+inline FArchive& operator<<(FArchive& Ar, FSkinWeight4& Skin)
+{
+    for (uint32 i = 0; i < 4; ++i)
+    {
+        Ar << Skin.BoneIndex[i];
+    }
+    for (uint32 i = 0; i < 4; ++i)
+    {
+        Ar << Skin.Weight[i];
+    }
+    return Ar;
+}
+
+inline FArchive& operator<<(FArchive& Ar, FSkeletalVertex& Vertex)
+{
+    Ar << Vertex.Position;
+    Ar << Vertex.Normal;
+    Ar << Vertex.Tex;
+    Ar << Vertex.Tangent;
+    Ar << Vertex.Color;
+    Ar << Vertex.Skin;
+    return Ar;
+}
+
+namespace Serialization
+{
+    template<>
+    inline void WriteArray<FSkeletalVertex>(FArchive& Ar, const TArray<FSkeletalVertex>& Arr)
+    {
+        uint32 Count = static_cast<uint32>(Arr.size());
+        Ar << Count;
+        for (const FSkeletalVertex& Vertex : Arr)
+        {
+            Ar << const_cast<FSkeletalVertex&>(Vertex);
+        }
+    }
+
+    template<>
+    inline void ReadArray<FSkeletalVertex>(FArchive& Ar, TArray<FSkeletalVertex>& Arr)
+    {
+        uint32 Count;
+        Ar << Count;
+        Arr.resize(Count);
+        for (auto& Vertex : Arr)
+        {
+            Ar << Vertex;
+        }
+    }
+}
+
+inline FArchive& operator<<(FArchive& Ar, FBone& Bone)
+{
+    if (Ar.IsSaving())
+    {
+        Serialization::WriteString(Ar, Bone.Name);
+    }
+    else if (Ar.IsLoading())
+    {
+        Serialization::ReadString(Ar, Bone.Name);
+    }
+
+    Ar << Bone.ParentIndex;
+    Ar << Bone.BindT;
+    Ar << Bone.BindR;
+    Ar << Bone.BindS;
+    Ar << Bone.InverseBind;
+    return Ar;
+}
+
+namespace Serialization
+{
+    template<>
+    inline void WriteArray<FBone>(FArchive& Ar, const TArray<FBone>& Arr)
+    {
+        uint32 Count = static_cast<uint32>(Arr.size());
+        Ar << Count;
+        for (const FBone& Bone : Arr)
+        {
+            Ar << const_cast<FBone&>(Bone);
+        }
+    }
+
+    template<>
+    inline void ReadArray<FBone>(FArchive& Ar, TArray<FBone>& Arr)
+    {
+        uint32 Count;
+        Ar << Count;
+        Arr.resize(Count);
+        for (auto& Bone : Arr)
+        {
+            Ar << Bone;
+        }
+    }
+}
+
+inline FArchive& operator<<(FArchive& Ar, FSkeleton& Skeleton)
+{
+    if (Ar.IsSaving())
+    {
+        Serialization::WriteArray(Ar, Skeleton.Bones);
+    }
+    else if (Ar.IsLoading())
+    {
+        Serialization::ReadArray(Ar, Skeleton.Bones);
+    }
+    return Ar;
+}
+
+inline FArchive& operator<<(FArchive& Ar, FSkeletalMesh& Mesh)
+{
+    if (Ar.IsSaving())
+    {
+        Serialization::WriteString(Ar, Mesh.PathFileName);
+        Serialization::WriteString(Ar, Mesh.CacheFilePath);
+        Serialization::WriteArray(Ar, Mesh.Vertices);
+        Serialization::WriteArray(Ar, Mesh.Indices);
+
+        uint32_t GroupCount = (uint32_t)Mesh.GroupInfos.size();
+        Ar << GroupCount;
+        for (auto& Group : Mesh.GroupInfos)
+        {
+            Ar << Group;
+        }
+
+        Ar << Mesh.bHasMaterial;
+    }
+    else if (Ar.IsLoading())
+    {
+        Serialization::ReadString(Ar, Mesh.PathFileName);
+        Serialization::ReadString(Ar, Mesh.CacheFilePath);
+        Serialization::ReadArray(Ar, Mesh.Vertices);
+        Serialization::ReadArray(Ar, Mesh.Indices);
+
+        uint32_t GroupCount;
+        Ar << GroupCount;
+        Mesh.GroupInfos.resize(GroupCount);
+        for (auto& Group : Mesh.GroupInfos)
+        {
+            Ar << Group;
+        }
+
+        Ar << Mesh.bHasMaterial;
+    }
+    return Ar;
+}

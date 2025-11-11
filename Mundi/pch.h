@@ -4,6 +4,7 @@
 // Uncomment to enable DDS texture caching (faster loading, uses Data/TextureCache/)
 #define USE_DDS_CACHE
 #define USE_OBJ_CACHE
+#define USE_FBX_CACHE
 
 // Linker
 #pragma comment(lib, "user32")

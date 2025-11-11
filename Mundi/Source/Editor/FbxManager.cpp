@@ -6,6 +6,8 @@
 #include "SkeletalMesh.h"
 #include "Material.h"
 #include "Enums.h"
+#include "WindowsBinReader.h"
+#include "WindowsBinWriter.h"
 
 #include <fbxsdk.h>
 
@@ -280,6 +282,124 @@ namespace
 
 		return false;
 	}
+
+	struct FSkeletalCachePaths
+	{
+		FString MeshBinPath;
+		FString MaterialBinPath;
+	};
+
+	FSkeletalCachePaths GetSkeletalCachePaths(const FString& NormalizedPath)
+	{
+		const FString CacheBase = ConvertDataPathToCachePath(NormalizedPath);
+		return FSkeletalCachePaths{
+			CacheBase + ".skelmesh.bin",
+			CacheBase + ".skelmat.bin"
+		};
+	}
+
+	bool ShouldRegenerateFbxCache(const FString& FbxPath, const FSkeletalCachePaths& CachePaths)
+	{
+		if (!fs::exists(CachePaths.MeshBinPath) || !fs::exists(CachePaths.MaterialBinPath))
+		{
+			return true;
+		}
+
+		try
+		{
+			const auto MeshTimestamp = fs::last_write_time(CachePaths.MeshBinPath);
+			const auto MatTimestamp = fs::last_write_time(CachePaths.MaterialBinPath);
+			const auto CacheTimestamp = std::min(MeshTimestamp, MatTimestamp);
+
+			if (fs::last_write_time(FbxPath) > CacheTimestamp)
+			{
+				return true;
+			}
+		}
+		catch (const fs::filesystem_error& Error)
+		{
+			UE_LOG("FFbxManager: Cache validation failed for %s (%s). Forcing regeneration.", FbxPath.c_str(), Error.what());
+			return true;
+		}
+
+		return false;
+	}
+
+	void PrepareAndRegisterMaterials(const FString& NormalizedPath, TArray<FMaterialInfo>& MaterialInfos)
+	{
+		if (MaterialInfos.empty())
+		{
+			return;
+		}
+
+		UE_LOG("FFbxManager: Processing %d materials for '%s'", static_cast<int>(MaterialInfos.size()), NormalizedPath.c_str());
+
+		FWideString WNormalizedPath = UTF8ToWide(NormalizedPath);
+		std::filesystem::path BaseDirFs = std::filesystem::path(WNormalizedPath).parent_path();
+		FString FbxBaseDir = NormalizePath(WideToUTF8(BaseDirFs.wstring()));
+
+		for (auto& MaterialInfo : MaterialInfos)
+		{
+			MaterialInfo.DiffuseTextureFileName =
+				ResolveAssetRelativePath(MaterialInfo.DiffuseTextureFileName, FbxBaseDir);
+
+			MaterialInfo.NormalTextureFileName =
+				ResolveAssetRelativePath(MaterialInfo.NormalTextureFileName, FbxBaseDir);
+
+			MaterialInfo.TransparencyTextureFileName =
+				ResolveAssetRelativePath(MaterialInfo.TransparencyTextureFileName, FbxBaseDir);
+
+			MaterialInfo.AmbientTextureFileName =
+				ResolveAssetRelativePath(MaterialInfo.AmbientTextureFileName, FbxBaseDir);
+
+			MaterialInfo.SpecularTextureFileName =
+				ResolveAssetRelativePath(MaterialInfo.SpecularTextureFileName, FbxBaseDir);
+
+			MaterialInfo.SpecularExponentTextureFileName =
+				ResolveAssetRelativePath(MaterialInfo.SpecularExponentTextureFileName, FbxBaseDir);
+
+			MaterialInfo.EmissiveTextureFileName =
+				ResolveAssetRelativePath(MaterialInfo.EmissiveTextureFileName, FbxBaseDir);
+		}
+
+		UShader* DefaultUberlitShader = nullptr;
+		UMaterial* DefaultMaterial = UResourceManager::GetInstance().GetDefaultMaterial();
+		if (DefaultMaterial)
+		{
+			DefaultUberlitShader = DefaultMaterial->GetShader();
+		}
+
+		if (DefaultUberlitShader == nullptr)
+		{
+			UE_LOG("CRITICAL: Default Uberlit Shader not found. FBX materials may fail.");
+		}
+
+		for (const FMaterialInfo& InMaterialInfo : MaterialInfos)
+		{
+			if (!UResourceManager::GetInstance().Get<UMaterial>(InMaterialInfo.MaterialName))
+			{
+				UMaterial* Material = NewObject<UMaterial>();
+				Material->SetMaterialInfo(InMaterialInfo);
+				if (DefaultMaterial)
+				{
+					Material->SetShaderMacros(DefaultMaterial->GetShaderMacros());
+				}
+
+				if (!Material->GetShader())
+				{
+					Material->SetShader(DefaultUberlitShader);
+				}
+
+				UResourceManager::GetInstance().Add<UMaterial>(InMaterialInfo.MaterialName, Material);
+				UE_LOG("FFbxManager: Material '%s' REGISTERED to ResourceManager", InMaterialInfo.MaterialName.c_str());
+			}
+			else
+			{
+				UE_LOG("FFbxManager: Material '%s' already exists in ResourceManager", InMaterialInfo.MaterialName.c_str());
+			}
+		}
+	}
+
 }
 // ====================================================================
 // FFbxManager Member Methods
@@ -395,6 +515,19 @@ void FFbxManager::Preload()
 		}
 
 		FSkeletalMeshEntry* SkeletalEntry = nullptr;
+		const FSkeletalCachePaths CachePaths = GetSkeletalCachePaths(FilePath);
+		bool bShouldRegenerate = ShouldRegenerateFbxCache(FilePath, CachePaths);
+
+		if (!bShouldRegenerate)
+		{
+			if (LoadSkeletalMeshFromCache(FilePath, CachePaths.MeshBinPath, CachePaths.MaterialBinPath, SkeletalEntry))
+			{
+				++GSkeletalClassifications;
+				RegisterEntry(FilePath, SkeletalEntry);
+				continue;
+			}
+			bShouldRegenerate = true;
+		}
 
 		FbxScene* Scene = LoadSceneFromFile(SdkManager, IOSettings, FilePath);
 		if (!Scene)
@@ -409,7 +542,12 @@ void FFbxManager::Preload()
 		case EFbxSceneClassification::Unknown:
 			break;
 		case EFbxSceneClassification::Skeletal:
-			SkeletalEntry = ImportSkeletalMesh(Scene, FilePath);
+			SkeletalEntry = ImportSkeletalMesh(
+				Scene,
+				FilePath,
+				CachePaths.MeshBinPath,
+				CachePaths.MaterialBinPath,
+				bShouldRegenerate);
 			Scene = nullptr; // Import 함수에서 Scene 파괴
 			if (SkeletalEntry)
 			{
@@ -446,11 +584,6 @@ void FFbxManager::Preload()
 /** @brief FBX 경로를 받아 FSkeletalMesh를 반환 (캐시 사용 우선 / 없으면 Import 호출) */
 FSkeletalMesh* FFbxManager::LoadSkeletalMeshAsset(const FString& PathFileName)
 {
-	if (!EnsureInitialized())
-	{
-		return nullptr;
-	}
-
 	const FString NormalizedPath = NormalizePath(PathFileName);
 
 	if (NormalizedPath.empty())
@@ -468,19 +601,45 @@ FSkeletalMesh* FFbxManager::LoadSkeletalMeshAsset(const FString& PathFileName)
 	{
 		return Existing->Mesh;
 	}
-	
-	FbxScene* Scene = LoadSceneFromFile(SdkManager, IOSettings, NormalizedPath);
-	EFbxSceneClassification Classification = ClassifyFbxScene(Scene);
-	if(Classification != EFbxSceneClassification::Skeletal)
+
+	if (!EnsureInitialized())
 	{
-		if (Scene)
-		{
-			Scene->Destroy();
-		}
 		return nullptr;
 	}
 
-	FSkeletalMeshEntry* Entry = ImportSkeletalMesh(Scene, NormalizedPath);
+	FSkeletalMeshEntry* Entry = nullptr;
+	const FSkeletalCachePaths CachePaths = GetSkeletalCachePaths(NormalizedPath);
+	bool bShouldRegenerate = ShouldRegenerateFbxCache(NormalizedPath, CachePaths);
+
+	if (!bShouldRegenerate)
+	{
+		if (LoadSkeletalMeshFromCache(NormalizedPath, CachePaths.MeshBinPath, CachePaths.MaterialBinPath, Entry))
+		{
+			++GSkeletalClassifications;
+			return Entry->Mesh;
+		}
+		bShouldRegenerate = true;
+	}
+
+	FbxScene* Scene = LoadSceneFromFile(SdkManager, IOSettings, NormalizedPath);
+	if (!Scene)
+	{
+		return nullptr;
+	}
+
+	EFbxSceneClassification Classification = ClassifyFbxScene(Scene);
+	if (Classification != EFbxSceneClassification::Skeletal)
+	{
+		Scene->Destroy();
+		return nullptr;
+	}
+
+	Entry = ImportSkeletalMesh(
+		Scene,
+		NormalizedPath,
+		CachePaths.MeshBinPath,
+		CachePaths.MaterialBinPath,
+		bShouldRegenerate);
 	return Entry ? Entry->Mesh : nullptr;
 }
 
@@ -527,6 +686,114 @@ void FFbxManager::ReleaseEntry(FSkeletalMeshEntry& Entry)
 	}
 }
 
+FFbxManager::FSkeletalMeshEntry* FFbxManager::StoreEntry(const FString& NormalizedPath, FSkeletalMeshEntry& Entry)
+{
+	auto InsertResult = SkeletalMeshCache.emplace(NormalizedPath, FSkeletalMeshEntry{});
+	FSkeletalMeshEntry& CachedEntry = InsertResult.first->second;
+	if (!InsertResult.second)
+	{
+		ReleaseEntry(CachedEntry);
+	}
+	CachedEntry = Entry;
+	return &CachedEntry;
+}
+
+bool FFbxManager::SaveSkeletalMeshCache(
+	const FSkeletalMeshEntry& Entry,
+	const FString& MeshCachePath,
+	const FString& MaterialCachePath,
+	const TArray<FMaterialInfo>& MaterialInfos)
+{
+	try
+	{
+		fs::path MeshPath(MeshCachePath);
+		if (MeshPath.has_parent_path())
+		{
+			std::error_code DirEc;
+			fs::create_directories(MeshPath.parent_path(), DirEc);
+		}
+
+		fs::path MatPath(MaterialCachePath);
+		if (MatPath.has_parent_path())
+		{
+			std::error_code DirEc;
+			fs::create_directories(MatPath.parent_path(), DirEc);
+		}
+
+		FWindowsBinWriter MeshWriter(MeshCachePath);
+		MeshWriter << *Entry.Skeleton;
+		MeshWriter << *Entry.Mesh;
+		MeshWriter.Close();
+
+		FWindowsBinWriter MatWriter(MaterialCachePath);
+		Serialization::WriteArray(MatWriter, MaterialInfos);
+		MatWriter.Close();
+
+		return true;
+	}
+	catch (const std::exception& Error)
+	{
+		UE_LOG("FFbxManager: Failed to write cache '%s' (%s)", MeshCachePath.c_str(), Error.what());
+		return false;
+	}
+}
+
+bool FFbxManager::LoadSkeletalMeshFromCache(
+	const FString& NormalizedPath,
+	const FString& MeshCachePath,
+	const FString& MaterialCachePath,
+	FSkeletalMeshEntry*& OutEntry)
+{
+	if (!fs::exists(MeshCachePath) || !fs::exists(MaterialCachePath))
+	{
+		return false;
+	}
+
+	FSkeletalMeshEntry TempEntry;
+	TempEntry.Mesh = new FSkeletalMesh();
+	TempEntry.Skeleton = new FSkeleton();
+	TempEntry.Mesh->Skeleton = TempEntry.Skeleton;
+
+	try
+	{
+		FWindowsBinReader MeshReader(MeshCachePath);
+		if (!MeshReader.IsOpen())
+		{
+			throw std::runtime_error("Failed to open skeletal mesh cache file.");
+		}
+		MeshReader << *TempEntry.Skeleton;
+		MeshReader << *TempEntry.Mesh;
+		MeshReader.Close();
+
+		TempEntry.Mesh->Skeleton = TempEntry.Skeleton;
+		TempEntry.Mesh->CacheFilePath = MeshCachePath;
+
+		FWindowsBinReader MatReader(MaterialCachePath);
+		if (!MatReader.IsOpen())
+		{
+			throw std::runtime_error("Failed to open material cache file.");
+		}
+		TArray<FMaterialInfo> MaterialInfos;
+		Serialization::ReadArray(MatReader, MaterialInfos);
+		MatReader.Close();
+
+		PrepareAndRegisterMaterials(NormalizedPath, MaterialInfos);
+
+		OutEntry = StoreEntry(NormalizedPath, TempEntry);
+		if (OutEntry && OutEntry->Mesh)
+		{
+			OutEntry->Mesh->Skeleton = OutEntry->Skeleton;
+		}
+		return true;
+	}
+	catch (const std::exception& Error)
+	{
+		UE_LOG("FFbxManager: Failed to load cache for '%s' (%s)", NormalizedPath.c_str(), Error.what());
+		ReleaseEntry(TempEntry);
+		return false;
+	}
+}
+
 EFbxSceneClassification FFbxManager::ClassifyFbxScene(FbxScene* Scene)
 {
 	if (!Scene)
@@ -544,7 +811,12 @@ EFbxSceneClassification FFbxManager::ClassifyFbxScene(FbxScene* Scene)
 }
 
 /** @brief FBX Scene으로부터 스켈레탈 캐시 엔트리를 생성 */
-FFbxManager::FSkeletalMeshEntry* FFbxManager::ImportSkeletalMesh(FbxScene* Scene, const FString& NormalizedPath)
+FFbxManager::FSkeletalMeshEntry* FFbxManager::ImportSkeletalMesh(
+	FbxScene* Scene,
+	const FString& NormalizedPath,
+	const FString& MeshCachePath,
+	const FString& MaterialCachePath,
+	bool bSaveCache)
 {
 	if (!EnsureInitialized())
 	{
@@ -556,7 +828,14 @@ FFbxManager::FSkeletalMeshEntry* FFbxManager::ImportSkeletalMesh(FbxScene* Scene
 	Entry.Skeleton = new FSkeleton();
 	Entry.Mesh->Skeleton = Entry.Skeleton;
 	Entry.Mesh->PathFileName = NormalizedPath;
-	Entry.Mesh->CacheFilePath = ConvertDataPathToCachePath(NormalizedPath);
+	if (!MeshCachePath.empty())
+	{
+		Entry.Mesh->CacheFilePath = MeshCachePath;
+	}
+	else
+	{
+		Entry.Mesh->CacheFilePath = ConvertDataPathToCachePath(NormalizedPath);
+	}
 
 	TArray<FMaterialInfo> MaterialInfos;
 	if (!FFbxSkeletalMeshBuilder::Build(
@@ -571,92 +850,17 @@ FFbxManager::FSkeletalMeshEntry* FFbxManager::ImportSkeletalMesh(FbxScene* Scene
 	}
 
 	Scene->Destroy();
+
+	PrepareAndRegisterMaterials(NormalizedPath, MaterialInfos);
+
+	if (bSaveCache && !MeshCachePath.empty() && !MaterialCachePath.empty())
+	{
+		SaveSkeletalMeshCache(Entry, MeshCachePath, MaterialCachePath, MaterialInfos);
+	}
+
+	FSkeletalMeshEntry* CachedEntry = StoreEntry(NormalizedPath, Entry);
 	++GSkeletalClassifications;
-
-	// ====================================================================
-	// 머티리얼 처리 (ObjManager 방식)
-	// ====================================================================
-
-	// FBX 파일의 기본 디렉토리 경로
-	FWideString WNormalizedPath = UTF8ToWide(NormalizedPath);
-	std::filesystem::path BaseDirFs = std::filesystem::path(WNormalizedPath).parent_path();
-	FString FbxBaseDir = NormalizePath(WideToUTF8(BaseDirFs.wstring()));
-
-	// 텍스처 경로를 절대 경로로 변환
-	for (auto& MaterialInfo : MaterialInfos)
-	{
-		MaterialInfo.DiffuseTextureFileName =
-			ResolveAssetRelativePath(MaterialInfo.DiffuseTextureFileName, FbxBaseDir);
-
-		MaterialInfo.NormalTextureFileName =
-			ResolveAssetRelativePath(MaterialInfo.NormalTextureFileName, FbxBaseDir);
-
-		MaterialInfo.TransparencyTextureFileName =
-			ResolveAssetRelativePath(MaterialInfo.TransparencyTextureFileName, FbxBaseDir);
-
-		MaterialInfo.AmbientTextureFileName =
-			ResolveAssetRelativePath(MaterialInfo.AmbientTextureFileName, FbxBaseDir);
-
-		MaterialInfo.SpecularTextureFileName =
-			ResolveAssetRelativePath(MaterialInfo.SpecularTextureFileName, FbxBaseDir);
-
-		MaterialInfo.SpecularExponentTextureFileName =
-			ResolveAssetRelativePath(MaterialInfo.SpecularExponentTextureFileName, FbxBaseDir);
-
-		MaterialInfo.EmissiveTextureFileName =
-			ResolveAssetRelativePath(MaterialInfo.EmissiveTextureFileName, FbxBaseDir);
-	}
-
-	// 기본 UberLit 셰이더 포인터를 한 번만 가져옵니다.
-	UShader* DefaultUberlitShader = nullptr;
-	UMaterial* DefaultMaterial = UResourceManager::GetInstance().GetDefaultMaterial();
-	if (DefaultMaterial)
-	{
-		DefaultUberlitShader = DefaultMaterial->GetShader();
-	}
-
-	if (DefaultUberlitShader == nullptr)
-	{
-		UE_LOG("CRITICAL: Default Uberlit Shader not found. FBX materials may fail.");
-	}
-
-	// UMaterial 생성 및 ResourceManager 등록
-	UE_LOG("FFbxManager: Processing %d materials from FBX", MaterialInfos.size());
-	for (const FMaterialInfo& InMaterialInfo : MaterialInfos)
-	{
-		UE_LOG("FFbxManager: Material '%s' - Diffuse: '%s'",
-			InMaterialInfo.MaterialName.c_str(),
-			InMaterialInfo.DiffuseTextureFileName.c_str());
-
-		if (!UResourceManager::GetInstance().Get<UMaterial>(InMaterialInfo.MaterialName))
-		{
-			UMaterial* Material = NewObject<UMaterial>();
-			Material->SetMaterialInfo(InMaterialInfo);
-			Material->SetShaderMacros(DefaultMaterial->GetShaderMacros());
-
-			// 모든 FBX 파생 머티리얼의 셰이더가 없으면 기본 셰이더로 강제 설정합니다.
-			if (!Material->GetShader())
-			{
-				Material->SetShader(DefaultUberlitShader);
-			}
-
-			UResourceManager::GetInstance().Add<UMaterial>(InMaterialInfo.MaterialName, Material);
-			UE_LOG("FFbxManager: Material '%s' REGISTERED to ResourceManager", InMaterialInfo.MaterialName.c_str());
-		}
-		else
-		{
-			UE_LOG("FFbxManager: Material '%s' already exists in ResourceManager", InMaterialInfo.MaterialName.c_str());
-		}
-	}
-
-	auto InsertResult = SkeletalMeshCache.emplace(NormalizedPath, FSkeletalMeshEntry{});
-	FSkeletalMeshEntry& CachedEntry = InsertResult.first->second;
-	if (!InsertResult.second)
-	{
-		ReleaseEntry(CachedEntry);
-	}
-	CachedEntry = Entry;
-	return &CachedEntry;
+	return CachedEntry;
 }
 
 // 높이 3, 가로/세로 1의 사각기둥 메시와 루트-중간-상단 3본을 생성하여

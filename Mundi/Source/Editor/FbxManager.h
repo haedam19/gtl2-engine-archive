@@ -44,7 +44,26 @@ private:
 	static EFbxSceneClassification ClassifyFbxScene(FbxScene* Scene);
 
 	/** @brief FBX Scene으로부터 스켈레탈 캐시 엔트리를 생성 */
-	static FSkeletalMeshEntry* ImportSkeletalMesh(FbxScene* Scene, const FString& NormalizedPath);
+	static FSkeletalMeshEntry* ImportSkeletalMesh(
+		FbxScene* Scene,
+		const FString& NormalizedPath,
+		const FString& MeshCachePath = "",
+		const FString& MaterialCachePath = "",
+		bool bSaveCache = false);
+
+	static FSkeletalMeshEntry* StoreEntry(const FString& NormalizedPath, FSkeletalMeshEntry& Entry);
+
+	static bool SaveSkeletalMeshCache(
+		const FSkeletalMeshEntry& Entry,
+		const FString& MeshCachePath,
+		const FString& MaterialCachePath,
+		const TArray<FMaterialInfo>& MaterialInfos);
+
+	static bool LoadSkeletalMeshFromCache(
+		const FString& NormalizedPath,
+		const FString& MeshCachePath,
+		const FString& MaterialCachePath,
+		FSkeletalMeshEntry*& OutEntry);
 
 	static TMap<FString, FSkeletalMeshEntry> SkeletalMeshCache;
 	static FbxManager* SdkManager;
