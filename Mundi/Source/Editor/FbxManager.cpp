@@ -461,7 +461,7 @@ namespace
 		/**
 		 * <FbxAxisSystem 초기화>
 		 * - 첫 번째: Up Axis
-		 * - 두 번째: Parity(=Forward). XYZ에서 up vector로 쓰이는 축 빼고 첫 번째가 Even, 두 번째가 Odd
+		 * - 두 번째: Parity(=Forward). X-Y-Z에서 up vector로 쓰이는 축 빼고 첫 번째가 Even, 두 번째가 Odd
 		 * - 세 번째: Handedness (LH / RH)
 		 */
 		FbxAxisSystem EngineAxis(FbxAxisSystem::eZAxis, FbxAxisSystem::eParityEven, FbxAxisSystem::eLeftHanded);
@@ -522,6 +522,7 @@ namespace
 		{
 			FbxSystemUnit::cm.ConvertScene(Scene);
 		}
+		FbxSystemUnit::m.ConvertScene(Scene);
 	}
 
 	/** @brief FBX GeometryConverter를 활용해 삼각형으로 변환 */
