@@ -205,24 +205,31 @@ void USkeletalMeshViewerContentWidget::Initialize()
         ViewerCamera = ViewerWorld->SpawnActor<ACameraActor>();
         if (ViewerCamera)
         {
-            // Camera 초기 위치 설정 (큰 Cube를 보도록)
+            // Camera 초기 위치 설정: 비스듬한 각도에서 원점을 바라봄
             // X forward, Z up 좌표계
-            // 뒤로 충분히 물러나서 전체를 볼 수 있도록
-            ViewerCamera->SetActorLocation(FVector(-20.0f, 0.0f, 0.0f));  // 더 멀리, 같은 높이
+            ViewerCamera->SetActorLocation(FVector(20.0f, 0.0f, 10.0f));  // +X, +Z 위치 (위에서 대각선으로)
 
-            // LookAt으로 Cube를 향하도록 설정
-            FVector CubePos(0.0f, 0.0f, 0.0f);  // 원점의 큐브
+            // LookAt으로 원점을 향하도록 설정
+            FVector CubePos(0.0f, 0.0f, 0.0f);  // 원점
             FVector CameraPos = ViewerCamera->GetActorLocation();
             FVector Direction = (CubePos - CameraPos).GetNormalized();
 
-            // Pitch 계산 (상하 회전, Y축)
-            float Pitch = RadiansToDegrees(std::asin(Direction.Z));
-            // Yaw 계산 (좌우 회전, Z축)
+            // X forward, Y right, Z up (LH) 좌표계
+            // Direction = (Dx, Dy, Dz)에서 Yaw/Pitch 추출
+
+            // Yaw: XY 평면에 투영한 방향의 각도 (Z축 회전)
             float Yaw = RadiansToDegrees(std::atan2(Direction.Y, Direction.X));
 
-            // FQuat::MakeFromEulerZYX는 (Roll, Pitch, Yaw) 순서로 해석
-            // Roll(X축)=0, Pitch(Y축), Yaw(Z축)
-            ViewerCamera->SetActorRotation(FVector(0.0f, Pitch, Yaw));
+            // Pitch: 수평면(XY)에서 위/아래로 얼마나 벗어났는지
+            // XY 평면 거리
+            float HorizontalDist = std::sqrt(Direction.X * Direction.X + Direction.Y * Direction.Y);
+            float Pitch = RadiansToDegrees(std::atan2(Direction.Z, HorizontalDist));
+
+            // Y축 회전의 방향이 반대이므로 Pitch 부호 반전
+            Pitch = -Pitch;
+
+            // CameraActor는 내부 Pitch/Yaw 상태를 관리하므로 SetAnglesImmediate 사용
+            ViewerCamera->SetAnglesImmediate(Pitch, Yaw);
 
             UE_LOG("SkeletalMeshViewerContentWidget: Camera LookAt - Direction:(%.2f,%.2f,%.2f), Pitch:%.1f, Yaw:%.1f",
                    Direction.X, Direction.Y, Direction.Z, Pitch, Yaw);
@@ -280,17 +287,20 @@ void USkeletalMeshViewerContentWidget::Initialize()
 
             // 에디터 전용 컴포넌트는 bSuppressEditorComponents 플래그로 애초에 생성되지 않음
 
-            // 목표: 좌상단(+X, +Y, +Z)에서 원점을 향해 빛이 비춤
+            // 목표: 위에서 아래로 비추되, XY 평면에서 180도 회전 (-X, 0, -Z)
             // 셰이더에서 lightDir = -Direction을 사용하므로
-            // 빛이 (-X, -Y, -Z) 방향에서 오려면 Direction = (+X, +Y, +Z)
-            // Y축이 반전되므로 입력은 -Y 사용
-            FVector TargetDirection(1.0f, 0.0f, 0.0f);
+            // 원하는 빛의 방향이 (-X, 0, -Z)면 Direction = (+X, 0, +Z) 필요
+            // 하지만 위에서 아래로 비추려면 Z가 음수여야 함
+            // 최종 목표: 빛이 (-X, 0, -Z) 방향으로 비춤 → Direction = (+X, 0, +Z)
+            // 아니면 빛이 위에서 아래로 (-Z 방향) + XY 평면에서 180도 회전
+            // 실제로는: Direction = (-1, 0, -1) normalized
+            FVector TargetDirection(-1.0f, 0.0f, -1.0f);
             TargetDirection = TargetDirection.GetNormalized();
 
             // XY 평면에서의 각도 (Yaw, Z축 회전) - 부호 반전
             float yaw = -RadiansToDegrees(std::atan2(TargetDirection.Y, TargetDirection.X));
 
-            // 수직 각도 (Pitch) - Z가 +이므로 위를 향함
+            // 수직 각도 (Pitch) - Z가 음수이므로 아래를 향함
             float xyLength = std::sqrt(TargetDirection.X * TargetDirection.X + TargetDirection.Y * TargetDirection.Y);
             float pitch = RadiansToDegrees(std::atan2(TargetDirection.Z, xyLength));
 
@@ -444,6 +454,25 @@ void USkeletalMeshViewerContentWidget::RenderWidget()
     // Tick ViewerWorld (고정 60 FPS 기준: 0.0166초)
     float DeltaTime = 0.0166f;
     ViewerWorld->Tick(DeltaTime);
+
+    // 카메라 회전 추적 로그 (1초마다 출력)
+    static float LogTimer = 0.0f;
+    LogTimer += DeltaTime;
+    if (LogTimer >= 1.0f && ViewerCamera)
+    {
+        LogTimer = 0.0f;
+        FVector CamPos = ViewerCamera->GetActorLocation();
+        FQuat CamRotQuat = ViewerCamera->GetActorRotation();
+        FVector CamRot = CamRotQuat.ToEulerZYXDeg(); // (Roll, Pitch, Yaw)
+        FVector CamForward = ViewerCamera->GetForward();
+
+        UE_LOG("===== CAMERA STATE =====");
+        UE_LOG("Position: (%.2f, %.2f, %.2f)", CamPos.X, CamPos.Y, CamPos.Z);
+        UE_LOG("Rotation: Roll=%.2f, Pitch=%.2f, Yaw=%.2f", CamRot.X, CamRot.Y, CamRot.Z);
+        UE_LOG("Forward: (%.3f, %.3f, %.3f)", CamForward.X, CamForward.Y, CamForward.Z);
+        UE_LOG("Internal: Pitch=%.2f, Yaw=%.2f", ViewerCamera->GetCameraPitch(), ViewerCamera->GetCameraYaw());
+        UE_LOG("========================");
+    }
 
     // 뷰어 카메라 입력 처리 (우클릭 + WASD/QE)
     if (bEnableViewerCameraInput && ViewerCamera)
