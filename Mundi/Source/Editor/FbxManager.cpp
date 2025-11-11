@@ -3,6 +3,8 @@
 #include "PathUtils.h"
 #include "ResourceManager.h"
 #include "SkeletalMesh.h"
+#include "Material.h"
+#include "Enums.h"
 
 #include <fbxsdk.h>
 
@@ -329,6 +331,125 @@ namespace
 		return Result;
 	}
 
+	/** @brief FBX Property에서 연결된 텍스처 파일 경로를 추출 */
+	FString GetTextureFilePath(FbxProperty& Property)
+	{
+		if (!Property.IsValid())
+		{
+			return "";
+		}
+
+		// FbxFileTexture가 연결되어 있는지 확인
+		const int TextureCount = Property.GetSrcObjectCount<FbxFileTexture>();
+		if (TextureCount > 0)
+		{
+			FbxFileTexture* Texture = Property.GetSrcObject<FbxFileTexture>(0);
+			if (Texture)
+			{
+				const char* FilePath = Texture->GetFileName();
+				if (FilePath && FilePath[0] != '\0')
+				{
+					return FString(FilePath);
+				}
+			}
+		}
+
+		// Layered Texture 처리 (필요시 확장 가능)
+		const int LayeredTextureCount = Property.GetSrcObjectCount<FbxLayeredTexture>();
+		if (LayeredTextureCount > 0)
+		{
+			FbxLayeredTexture* LayeredTexture = Property.GetSrcObject<FbxLayeredTexture>(0);
+			if (LayeredTexture && LayeredTexture->GetSrcObjectCount<FbxFileTexture>() > 0)
+			{
+				FbxFileTexture* Texture = LayeredTexture->GetSrcObject<FbxFileTexture>(0);
+				if (Texture)
+				{
+					const char* FilePath = Texture->GetFileName();
+					if (FilePath && FilePath[0] != '\0')
+					{
+						return FString(FilePath);
+					}
+				}
+			}
+		}
+
+		return "";
+	}
+
+	/** @brief FBX Material을 FMaterialInfo로 변환 */
+	bool ExtractMaterialInfo(FbxSurfaceMaterial* FbxMaterial, FMaterialInfo& OutInfo)
+	{
+		if (!FbxMaterial)
+		{
+			return false;
+		}
+
+		OutInfo.MaterialName = FbxMaterial->GetName();
+
+		// Lambert 머티리얼 (기본)
+		if (FbxMaterial->GetClassId().Is(FbxSurfaceLambert::ClassId))
+		{
+			FbxSurfaceLambert* Lambert = static_cast<FbxSurfaceLambert*>(FbxMaterial);
+
+			// Diffuse Color
+			FbxDouble3 Diffuse = Lambert->Diffuse.Get();
+			OutInfo.DiffuseColor = FVector(
+				static_cast<float>(Diffuse[0]),
+				static_cast<float>(Diffuse[1]),
+				static_cast<float>(Diffuse[2]));
+
+			// Ambient Color
+			FbxDouble3 Ambient = Lambert->Ambient.Get();
+			OutInfo.AmbientColor = FVector(
+				static_cast<float>(Ambient[0]),
+				static_cast<float>(Ambient[1]),
+				static_cast<float>(Ambient[2]));
+
+			// Emissive Color
+			FbxDouble3 Emissive = Lambert->Emissive.Get();
+			OutInfo.EmissiveColor = FVector(
+				static_cast<float>(Emissive[0]),
+				static_cast<float>(Emissive[1]),
+				static_cast<float>(Emissive[2]));
+
+			// Transparency
+			double TransparencyFactor = Lambert->TransparencyFactor.Get();
+			OutInfo.Transparency = static_cast<float>(TransparencyFactor);
+
+			// Textures
+			OutInfo.DiffuseTextureFileName = GetTextureFilePath(Lambert->Diffuse);
+			OutInfo.AmbientTextureFileName = GetTextureFilePath(Lambert->Ambient);
+			OutInfo.EmissiveTextureFileName = GetTextureFilePath(Lambert->Emissive);
+			OutInfo.NormalTextureFileName = GetTextureFilePath(Lambert->NormalMap);
+			OutInfo.TransparencyTextureFileName = GetTextureFilePath(Lambert->TransparentColor);
+		}
+
+		// Phong 머티리얼 (Lambert + Specular)
+		if (FbxMaterial->GetClassId().Is(FbxSurfacePhong::ClassId))
+		{
+			FbxSurfacePhong* Phong = static_cast<FbxSurfacePhong*>(FbxMaterial);
+
+			// Specular Color
+			FbxDouble3 Specular = Phong->Specular.Get();
+			OutInfo.SpecularColor = FVector(
+				static_cast<float>(Specular[0]),
+				static_cast<float>(Specular[1]),
+				static_cast<float>(Specular[2]));
+
+			// Specular Exponent (Shininess)
+			double Shininess = Phong->Shininess.Get();
+			OutInfo.SpecularExponent = static_cast<float>(Shininess);
+
+			// Specular Texture
+			OutInfo.SpecularTextureFileName = GetTextureFilePath(Phong->Specular);
+			OutInfo.SpecularExponentTextureFileName = GetTextureFilePath(Phong->Shininess);
+
+			OutInfo.IlluminationModel = 2; // Phong
+		}
+
+		return true;
+	}
+
 	/** @brief 씬을 엔진 좌표계/단위계에 맞춰 변환 */
 	void ConvertSceneAxisAndUnit(FbxScene* Scene)
 	{
@@ -461,7 +582,7 @@ namespace
 	}
 
 	/** @brief FBX Mesh 를 FSkeletalMesh 정점/인덱스 배열로 변환 */
-	bool ProcessMesh(FbxNode* MeshNode, FbxMesh* Mesh, const FBoneIndexMap& NodeToBone, FSkeletalMesh& OutMesh)
+	bool ProcessMesh(FbxNode* MeshNode, FbxMesh* Mesh, const FBoneIndexMap& NodeToBone, FSkeletalMesh& OutMesh, TArray<FMaterialInfo>& OutMaterialInfos)
 	{
 		if (!MeshNode || !Mesh)
 		{
@@ -548,10 +669,31 @@ namespace
 
 		if (MeshNode->GetMaterialCount() > 0)
 		{
-			FbxSurfaceMaterial* Material = MeshNode->GetMaterial(0);
-			if (Material)
+			FbxSurfaceMaterial* FbxMaterial = MeshNode->GetMaterial(0);
+			if (FbxMaterial)
 			{
-				Group.InitialMaterialName = Material->GetName();
+				// 머티리얼 정보 추출
+				FMaterialInfo MaterialInfo;
+				if (ExtractMaterialInfo(FbxMaterial, MaterialInfo))
+				{
+					Group.InitialMaterialName = MaterialInfo.MaterialName;
+
+					// 중복 체크: 같은 이름의 머티리얼이 이미 있는지 확인
+					bool bAlreadyExists = false;
+					for (const FMaterialInfo& Existing : OutMaterialInfos)
+					{
+						if (Existing.MaterialName == MaterialInfo.MaterialName)
+						{
+							bAlreadyExists = true;
+							break;
+						}
+					}
+
+					if (!bAlreadyExists)
+					{
+						OutMaterialInfos.Add(MaterialInfo);
+					}
+				}
 			}
 			OutMesh.bHasMaterial = true;
 		}
@@ -565,7 +707,7 @@ namespace
 	}
 
 	/** @brief 씬 그래프에서 모든 메시를 찾아 변환 (FIXED: 첫 번째 메시만이 아닌 모든 메시 처리) */
-	bool ExtractSkeletalMesh(FbxScene* Scene, const FBoneIndexMap& NodeToBone, FSkeletalMesh& OutMesh)
+	bool ExtractSkeletalMesh(FbxScene* Scene, const FBoneIndexMap& NodeToBone, FSkeletalMesh& OutMesh, TArray<FMaterialInfo>& OutMaterialInfos)
 	{
 		if (!Scene)
 		{
@@ -582,6 +724,7 @@ namespace
 		OutMesh.Vertices.Empty();
 		OutMesh.Indices.Empty();
 		OutMesh.GroupInfos.Empty();
+		OutMaterialInfos.Empty();
 
 		// 1. DFS 순회 스택 준비
 		TArray<FbxNode*> Stack;
@@ -598,7 +741,7 @@ namespace
 			if (Attribute && Attribute->GetAttributeType() == FbxNodeAttribute::eMesh)
 			{
 				// 2. 메시를 찾으면 변환 시도 (FIXED: return하지 않고 계속 순회)
-				if (ProcessMesh(Node, Node->GetMesh(), NodeToBone, OutMesh))
+				if (ProcessMesh(Node, Node->GetMesh(), NodeToBone, OutMesh, OutMaterialInfos))
 				{
 					bFoundAnyMesh = true;
 				}
@@ -879,7 +1022,8 @@ FFbxManager::FSkeletalMeshEntry* FFbxManager::ImportSkeletalMesh(const FString& 
 	FBoneIndexMap BoneMap;
 	ExtractSkeleton(Scene, *Entry.Skeleton, BoneMap);
 
-	if (!ExtractSkeletalMesh(Scene, BoneMap, *Entry.Mesh))
+	TArray<FMaterialInfo> MaterialInfos;
+	if (!ExtractSkeletalMesh(Scene, BoneMap, *Entry.Mesh, MaterialInfos))
 	{
 		UE_LOG("FFbxManager: Failed to extract mesh from %s", NormalizedPath.c_str());
 		Scene->Destroy();
@@ -888,6 +1032,72 @@ FFbxManager::FSkeletalMeshEntry* FFbxManager::ImportSkeletalMesh(const FString& 
 	}
 
 	Scene->Destroy();
+
+	// ====================================================================
+	// 머티리얼 처리 (ObjManager 방식)
+	// ====================================================================
+
+	// FBX 파일의 기본 디렉토리 경로
+	FWideString WNormalizedPath = UTF8ToWide(NormalizedPath);
+	std::filesystem::path BaseDirFs = std::filesystem::path(WNormalizedPath).parent_path();
+	FString FbxBaseDir = NormalizePath(WideToUTF8(BaseDirFs.wstring()));
+
+	// 텍스처 경로를 절대 경로로 변환
+	for (auto& MaterialInfo : MaterialInfos)
+	{
+		MaterialInfo.DiffuseTextureFileName =
+			ResolveAssetRelativePath(MaterialInfo.DiffuseTextureFileName, FbxBaseDir);
+
+		MaterialInfo.NormalTextureFileName =
+			ResolveAssetRelativePath(MaterialInfo.NormalTextureFileName, FbxBaseDir);
+
+		MaterialInfo.TransparencyTextureFileName =
+			ResolveAssetRelativePath(MaterialInfo.TransparencyTextureFileName, FbxBaseDir);
+
+		MaterialInfo.AmbientTextureFileName =
+			ResolveAssetRelativePath(MaterialInfo.AmbientTextureFileName, FbxBaseDir);
+
+		MaterialInfo.SpecularTextureFileName =
+			ResolveAssetRelativePath(MaterialInfo.SpecularTextureFileName, FbxBaseDir);
+
+		MaterialInfo.SpecularExponentTextureFileName =
+			ResolveAssetRelativePath(MaterialInfo.SpecularExponentTextureFileName, FbxBaseDir);
+
+		MaterialInfo.EmissiveTextureFileName =
+			ResolveAssetRelativePath(MaterialInfo.EmissiveTextureFileName, FbxBaseDir);
+	}
+
+	// 기본 UberLit 셰이더 포인터를 한 번만 가져옵니다.
+	UShader* DefaultUberlitShader = nullptr;
+	UMaterial* DefaultMaterial = UResourceManager::GetInstance().GetDefaultMaterial();
+	if (DefaultMaterial)
+	{
+		DefaultUberlitShader = DefaultMaterial->GetShader();
+	}
+
+	if (DefaultUberlitShader == nullptr)
+	{
+		UE_LOG("CRITICAL: Default Uberlit Shader not found. FBX materials may fail.");
+	}
+
+	// UMaterial 생성 및 ResourceManager 등록
+	for (const FMaterialInfo& InMaterialInfo : MaterialInfos)
+	{
+		if (!UResourceManager::GetInstance().Get<UMaterial>(InMaterialInfo.MaterialName))
+		{
+			UMaterial* Material = NewObject<UMaterial>();
+			Material->SetMaterialInfo(InMaterialInfo);
+			Material->SetShaderMacros(DefaultMaterial->GetShaderMacros());
+
+			// 모든 FBX 파생 머티리얼의 셰이더가 없으면 기본 셰이더로 강제 설정합니다.
+			if (!Material->GetShader())
+			{
+				Material->SetShader(DefaultUberlitShader);
+			}
+
+			UResourceManager::GetInstance().Add<UMaterial>(InMaterialInfo.MaterialName, Material);
+		}
+	}
 
 	auto InsertResult = SkeletalMeshCache.emplace(NormalizedPath, FSkeletalMeshEntry{});
 	FSkeletalMeshEntry& CachedEntry = InsertResult.first->second;

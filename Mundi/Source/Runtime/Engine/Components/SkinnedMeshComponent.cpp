@@ -33,19 +33,10 @@ void USkinnedMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 		{
 			MaterialSlots.resize(MeshData->GroupInfos.Num());
 
-			// FBX에서 로드된 머티리얼 이름으로 자동 로드
+			// FBX/OBJ에서 로드된 머티리얼 이름으로 자동 로드
 			for (int32 i = 0; i < MeshData->GroupInfos.Num(); ++i)
 			{
-				const FString& MaterialName = MeshData->GroupInfos[i].InitialMaterialName;
-
-				// 유효한 머티리얼 이름인지 체크 (.dds 또는 .hlsl만 지원)
-				if (!MaterialName.empty() &&
-				    (MaterialName.find(".dds") != std::string::npos ||
-				     MaterialName.find(".hlsl") != std::string::npos))
-				{
-					SetMaterialByName(i, MaterialName);
-				}
-				// else: 머티리얼 없음 → nullptr 유지 (기본 머티리얼 사용)
+				SetMaterialByName(i, MeshData->GroupInfos[i].InitialMaterialName);
 			}
 		}
 	}
