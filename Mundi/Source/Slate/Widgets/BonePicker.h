@@ -20,11 +20,13 @@ public:
      * @param Skeleton The skeleton to pick from
      * @param Cache The cached bone data for collision testing
      * @param Ray The picking ray (from mouse)
+     * @param BoneScale The scale applied to bone visualization (default 1.0)
      * @return Bone index if picked, -1 if no bone was picked
      */
     int32 PickBone(const FSkeleton& Skeleton,
                   const FViewerSkeletonCache& Cache,
-                  const FRay& Ray);
+                  const FRay& Ray,
+                  float BoneScale = 1.0f);
 
     // === Configuration ===
     void SetSphereRadius(float Radius) { SphereRadius = Radius; }

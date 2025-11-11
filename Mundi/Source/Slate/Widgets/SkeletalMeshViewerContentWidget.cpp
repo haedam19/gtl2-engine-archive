@@ -621,6 +621,24 @@ void USkeletalMeshViewerContentWidget::RenderWidget()
 
         ImGui::SameLine();
 
+        // Splitter (draggable divider)
+        ImGui::Button("##splitter", ImVec2(4.0f, -1));
+        if (ImGui::IsItemActive())
+        {
+            float delta = ImGui::GetIO().MouseDelta.x;
+            SidebarWidth += delta;
+
+            // Clamp sidebar width between 200 and 600 pixels
+            if (SidebarWidth < 200.0f) SidebarWidth = 200.0f;
+            if (SidebarWidth > 600.0f) SidebarWidth = 600.0f;
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        }
+
+        ImGui::SameLine();
+
         // Right viewport area
         ImGui::BeginChild("Viewport", ImVec2(0, 0), true);
         {
@@ -777,6 +795,10 @@ void USkeletalMeshViewerContentWidget::RenderSidebar()
 
 void USkeletalMeshViewerContentWidget::RenderMeshList()
 {
+    // Fixed width for sliders to prevent stretching
+    float FixedWidth = 280.0f;
+    ImGui::PushItemWidth(FixedWidth);
+
     ImGui::BeginChild("MeshListArea", ImVec2(0, 250), true);
 
     // Load FBX Button
@@ -841,6 +863,22 @@ void USkeletalMeshViewerContentWidget::RenderMeshList()
 
         // Force bone visualization update
         bBoneVisualizationDirty = true;
+
+        // Update gizmo position if a bone is selected
+        if (SelectedBoneIndex >= 0)
+        {
+            AActor* BoneActor = SkeletonEditor.GetBoneActor(SelectedBoneIndex);
+            if (BoneActor)
+            {
+                const FViewerSkeletonCache& CacheRef = SkeletonEditor.GetCache();
+                if (SelectedBoneIndex < CacheRef.BoneWorldPositions.Num())
+                {
+                    FVector OriginalBonePos = CacheRef.BoneWorldPositions[SelectedBoneIndex];
+                    FVector ScaledBonePos = OriginalBonePos * BoneVisualizationScale;
+                    BoneActor->SetActorLocation(ScaledBonePos);
+                }
+            }
+        }
     }
     if (ImGui::IsItemHovered())
     {
@@ -902,10 +940,15 @@ void USkeletalMeshViewerContentWidget::RenderMeshList()
     }
 
     ImGui::EndChild();
+
+    ImGui::PopItemWidth();
 }
 
 void USkeletalMeshViewerContentWidget::RenderBoneHierarchy()
 {
+    // Use available width (-1) to stretch with splitter
+    ImGui::PushItemWidth(-1);
+
     ImGui::BeginChild("BoneHierarchyArea", ImVec2(0, 300), true);
 
     // Render BoneHierarchyWidget
@@ -919,10 +962,16 @@ void USkeletalMeshViewerContentWidget::RenderBoneHierarchy()
     }
 
     ImGui::EndChild();
+
+    ImGui::PopItemWidth();
 }
 
 void USkeletalMeshViewerContentWidget::RenderBoneProperties()
 {
+    // Fixed width for sliders
+    float FixedWidth = 280.0f;
+    ImGui::PushItemWidth(FixedWidth);
+
     ImGui::BeginChild("BonePropertiesArea", ImVec2(0, 0), true);
 
     // 선택된 본 정보 표시 (우선순위)
@@ -1077,10 +1126,16 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
     }
 
     ImGui::EndChild();
+
+    ImGui::PopItemWidth();
 }
 
 void USkeletalMeshViewerContentWidget::RenderLightingControls()
 {
+    // Fixed width for sliders
+    float FixedWidth = 280.0f;
+    ImGui::PushItemWidth(FixedWidth);
+
     ImGui::BeginChild("LightingControlsArea", ImVec2(0, 200), true);
 
     if (ViewerDirectionalLight)
@@ -1141,26 +1196,6 @@ void USkeletalMeshViewerContentWidget::RenderLightingControls()
             ImGui::Separator();
             ImGui::Spacing();
 
-            // Shadow Bias slider
-            ImGui::Text("Shadow Bias");
-            ImGui::Spacing();
-
-            float currentBias = LightComp->GetShadowBias();
-            if (ImGui::SliderFloat("Bias##ShadowBias", &currentBias, 0.0f, 0.01f, "%.5f"))
-            {
-                LightComp->SetShadowBias(currentBias);
-            }
-
-            float currentSlopeBias = LightComp->GetShadowSlopeBias();
-            if (ImGui::SliderFloat("Slope Bias##SlopeBias", &currentSlopeBias, 0.0f, 10.0f, "%.2f"))
-            {
-                LightComp->SetShadowSlopeBias(currentSlopeBias);
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-
             // Display current light direction (for debugging)
             FVector ActualDirection = LightComp->GetLightDirection();
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Light Direction:");
@@ -1175,6 +1210,8 @@ void USkeletalMeshViewerContentWidget::RenderLightingControls()
     }
 
     ImGui::EndChild();
+
+    ImGui::PopItemWidth();
 }
 
 void USkeletalMeshViewerContentWidget::RenderViewport()
@@ -1924,9 +1961,18 @@ void USkeletalMeshViewerContentWidget::SetSelectedBone(int32 BoneIndex)
         AActor* BoneActor = SkeletonEditor.GetBoneActor(BoneIndex);
         if (BoneActor)
         {
+            // Apply bone visualization scale to bone actor position for gizmo
+            const FViewerSkeletonCache& CacheRef = SkeletonEditor.GetCache();
+            if (BoneIndex < CacheRef.BoneWorldPositions.Num())
+            {
+                FVector OriginalBonePos = CacheRef.BoneWorldPositions[BoneIndex];
+                FVector ScaledBonePos = OriginalBonePos * BoneVisualizationScale;
+                BoneActor->SetActorLocation(ScaledBonePos);
+            }
+
             BoneActor->SetIsPicked(true);
             ViewerWorld->GetSelectionManager()->SelectActor(BoneActor);
-            UE_LOG("SkeletalMeshViewerContentWidget: Bone actor selected for gizmo display");
+            UE_LOG("SkeletalMeshViewerContentWidget: Bone actor selected for gizmo display (scaled position)");
         }
     }
 
@@ -1990,8 +2036,8 @@ AActor* USkeletalMeshViewerContentWidget::PickBoneFromViewport(const FVector2D& 
     UE_LOG("PickBoneFromViewport: Ray - Origin=(%.2f, %.2f, %.2f), Dir=(%.3f, %.3f, %.3f)",
            Ray.Origin.X, Ray.Origin.Y, Ray.Origin.Z, Ray.Direction.X, Ray.Direction.Y, Ray.Direction.Z);
 
-    // Delegate to BonePicker
-    int32 ClosestBoneIndex = BonePicker.PickBone(SkeletonEditor.GetSkeleton(), SkeletonEditor.GetCache(), Ray);
+    // Delegate to BonePicker (with bone visualization scale)
+    int32 ClosestBoneIndex = BonePicker.PickBone(SkeletonEditor.GetSkeleton(), SkeletonEditor.GetCache(), Ray, BoneVisualizationScale);
 
     // 본을 찾았으면 선택
     if (ClosestBoneIndex >= 0)

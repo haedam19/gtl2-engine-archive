@@ -13,7 +13,8 @@ FBonePicker::~FBonePicker()
 
 int32 FBonePicker::PickBone(const FSkeleton& Skeleton,
                            const FViewerSkeletonCache& Cache,
-                           const FRay& Ray)
+                           const FRay& Ray,
+                           float BoneScale)
 {
     if (Skeleton.Bones.Num() == 0)
         return -1;
@@ -31,7 +32,7 @@ int32 FBonePicker::PickBone(const FSkeleton& Skeleton,
             continue;
 
         const FBone& Bone = Skeleton.Bones[i];
-        const FVector& BonePos = Cache.BoneWorldPositions[i];
+        const FVector BonePos = Cache.BoneWorldPositions[i] * BoneScale;
 
         // 1. Joint (sphere) picking
         float sphereT = 0.0f;
@@ -57,7 +58,7 @@ int32 FBonePicker::PickBone(const FSkeleton& Skeleton,
                 if (ChildIdx >= Cache.BoneWorldPositions.Num())
                     continue;
 
-                const FVector& ChildPos = Cache.BoneWorldPositions[ChildIdx];
+                const FVector ChildPos = Cache.BoneWorldPositions[ChildIdx] * BoneScale;
 
                 float pyramidT = 0.0f;
                 if (IntersectRayPyramid(Ray, BonePos, ChildPos, PyramidWidth, pyramidT))
@@ -77,7 +78,7 @@ int32 FBonePicker::PickBone(const FSkeleton& Skeleton,
             // Leaf bone (no children): test small pyramid
             if (Bone.ParentIndex >= 0 && Bone.ParentIndex < Cache.BoneWorldPositions.Num())
             {
-                const FVector& ParentPos = Cache.BoneWorldPositions[Bone.ParentIndex];
+                const FVector ParentPos = Cache.BoneWorldPositions[Bone.ParentIndex] * BoneScale;
 
                 FVector Direction = BonePos - ParentPos;
                 float Length = Direction.Size();
