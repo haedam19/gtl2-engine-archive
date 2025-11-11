@@ -461,7 +461,7 @@ namespace
 		/**
 		 * <FbxAxisSystem 초기화>
 		 * - 첫 번째: Up Axis
-		 * - 두 번째: Parity(=Forward). XYZ에서 up vector로 쓰이는 축 빼고 첫 번째가 Even, 두 번째가 Odd
+		 * - 두 번째: Parity(=Forward). X-Y-Z에서 up vector로 쓰이는 축 빼고 첫 번째가 Even, 두 번째가 Odd
 		 * - 세 번째: Handedness (LH / RH)
 		 */
 		FbxAxisSystem EngineAxis(FbxAxisSystem::eZAxis, FbxAxisSystem::eParityEven, FbxAxisSystem::eLeftHanded);
@@ -522,6 +522,7 @@ namespace
 		{
 			FbxSystemUnit::cm.ConvertScene(Scene);
 		}
+		FbxSystemUnit::m.ConvertScene(Scene);
 	}
 
 	/** @brief FBX GeometryConverter를 활용해 삼각형으로 변환 */
@@ -1319,12 +1320,12 @@ void FFbxManager::GetMockUpSkeletalMesh(FSkeletalMesh& OutMesh, FSkeleton& OutSk
 	auto VertIndex = [](int Level, int Corner) { return static_cast<uint32>(Level * 4 + Corner); };
 
 	// Bottom cap
-	OutMesh.Indices.Add(VertIndex(0, 0)); OutMesh.Indices.Add(VertIndex(0, 1)); OutMesh.Indices.Add(VertIndex(0, 2));
-	OutMesh.Indices.Add(VertIndex(0, 0)); OutMesh.Indices.Add(VertIndex(0, 2)); OutMesh.Indices.Add(VertIndex(0, 3));
+	OutMesh.Indices.Add(VertIndex(0, 0)); OutMesh.Indices.Add(VertIndex(0, 2)); OutMesh.Indices.Add(VertIndex(0, 1));
+	OutMesh.Indices.Add(VertIndex(0, 0)); OutMesh.Indices.Add(VertIndex(0, 3)); OutMesh.Indices.Add(VertIndex(0, 2));
 
 	// Top cap
-	OutMesh.Indices.Add(VertIndex(2, 0)); OutMesh.Indices.Add(VertIndex(2, 2)); OutMesh.Indices.Add(VertIndex(2, 1));
-	OutMesh.Indices.Add(VertIndex(2, 0)); OutMesh.Indices.Add(VertIndex(2, 3)); OutMesh.Indices.Add(VertIndex(2, 2));
+	OutMesh.Indices.Add(VertIndex(2, 0)); OutMesh.Indices.Add(VertIndex(2, 1)); OutMesh.Indices.Add(VertIndex(2, 2));
+	OutMesh.Indices.Add(VertIndex(2, 0)); OutMesh.Indices.Add(VertIndex(2, 2)); OutMesh.Indices.Add(VertIndex(2, 3));
 
 	// Side quads between each level pair
 	for (int Level = 0; Level < 2; ++Level)

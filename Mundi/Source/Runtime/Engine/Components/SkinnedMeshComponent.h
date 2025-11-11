@@ -82,4 +82,9 @@ protected:
 	*/
 	void ComputeBoneMatrix(int32 BoneIndex);
 
+	// === 직렬화 및 복제 ===
+	void Serialize(const bool bInIsLoading, JSON& InOutHandle) override;
+	void OnSerialized() override;
+	void DuplicateSubObjects() override;
+	DECLARE_DUPLICATE(USkinnedMeshComponent)
 };
