@@ -545,6 +545,10 @@
     <ClCompile Include="Source\Slate\Widgets\SkeletonEditor.cpp">
       <Filter>Source\Slate\Widgets</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Runtime\Engine\GameFramework\SkeletalMeshActor.cpp" />
+    <ClCompile Include="FbxSkeletalMeshBuilder.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Runtime\Core\Misc\DelegateBinding.h">
@@ -1123,6 +1127,10 @@
     </ClInclude>
     <ClInclude Include="Source\Slate\Widgets\SkeletonEditor.h">
       <Filter>Source\Slate\Widgets</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\Engine\GameFramework\SkeletalMeshActor.h" />
+    <ClInclude Include="FbxSkeletalMeshBuilder.h">
+      <Filter>Source\Editor</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

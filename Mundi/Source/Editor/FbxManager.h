@@ -3,6 +3,13 @@
 #include "UEContainer.h"
 #include "SkeletalTypes.h"
 
+enum class EFbxSceneClassification
+{
+	Unknown,
+	Static,
+	Skeletal
+};
+
 /**
  * @brief FBX 임포터/캐시 관리
  * - Autodesk FBX SDK를 엔진에 통합
@@ -34,8 +41,10 @@ private:
 	/** @brief 캐시 엔트리의 메모리를 정리 */
 	static void ReleaseEntry(FSkeletalMeshEntry& Entry);
 
-	/** @brief FBX 파일을 파싱하여 캐시 엔트리를 생성 */
-	static FSkeletalMeshEntry* ImportSkeletalMesh(const FString& NormalizedPath);
+	static EFbxSceneClassification ClassifyFbxScene(FbxScene* Scene);
+
+	/** @brief FBX Scene으로부터 스켈레탈 캐시 엔트리를 생성 */
+	static FSkeletalMeshEntry* ImportSkeletalMesh(FbxScene* Scene, const FString& NormalizedPath);
 
 	static TMap<FString, FSkeletalMeshEntry> SkeletalMeshCache;
 	static FbxManager* SdkManager;
