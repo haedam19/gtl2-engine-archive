@@ -461,14 +461,60 @@ namespace
 		/**
 		 * <FbxAxisSystem 초기화>
 		 * - 첫 번째: Up Axis
-		 * - 두 번째: Parity(=Forward). Odd면 Up Axis 다음 축, Even이면 Up Axis 다다음축
+		 * - 두 번째: Parity(=Forward). XYZ에서 up vector로 쓰이는 축 빼고 첫 번째가 Even, 두 번째가 Odd
 		 * - 세 번째: Handedness (LH / RH)
 		 */
-		FbxAxisSystem EngineAxis(FbxAxisSystem::eZAxis, FbxAxisSystem::eParityOdd, FbxAxisSystem::eLeftHanded);
+		FbxAxisSystem EngineAxis(FbxAxisSystem::eZAxis, FbxAxisSystem::eParityEven, FbxAxisSystem::eLeftHanded);
 		FbxAxisSystem SceneAxis = Scene->GetGlobalSettings().GetAxisSystem();
+
+		const auto UpAxisToString = [](FbxAxisSystem::EUpVector Value) -> const char*
+		{
+		switch (Value)
+		{
+		case FbxAxisSystem::eXAxis: return "X";
+			case FbxAxisSystem::eYAxis: return "Y";
+			case FbxAxisSystem::eZAxis: return "Z";
+			default: return "Unknown";
+			}
+		};
+
+		const auto FrontAxisToString = [](FbxAxisSystem::EFrontVector Value) -> const char*
+		{
+		switch (Value)
+		{
+			case FbxAxisSystem::eParityEven: return "ParityEven";
+			case FbxAxisSystem::eParityOdd: return "ParityOdd";
+			default: return "Unknown";
+			}
+		};
+
+		const auto CoordSystemToString = [](FbxAxisSystem::ECoordSystem Value) -> const char*
+		{
+		switch (Value)
+		{
+			case FbxAxisSystem::eRightHanded: return "RightHanded";
+			case FbxAxisSystem::eLeftHanded: return "LeftHanded";
+			default: return "Unknown";
+			}
+		};
+
+		int UpSign = 0;
+		const FbxAxisSystem::EUpVector UpVector = SceneAxis.GetUpVector(UpSign);
+		int FrontSign = 0;
+		const FbxAxisSystem::EFrontVector FrontVector = SceneAxis.GetFrontVector(FrontSign);
+		const FbxAxisSystem::ECoordSystem CoordSystem = SceneAxis.GetCoorSystem();
+
+		UE_LOG(
+			"FFbxManager: SceneAxis Up=%s(Sign=%d) Front=%s(Sign=%d) Coord=%s",
+			UpAxisToString(UpVector),
+			UpSign,
+			FrontAxisToString(FrontVector),
+			FrontSign,
+			CoordSystemToString(CoordSystem));
+
 		if (SceneAxis != EngineAxis)
 		{
-			EngineAxis.ConvertScene(Scene);
+			EngineAxis.DeepConvertScene(Scene);
 		}
 
 		const FbxSystemUnit SceneUnit = Scene->GetGlobalSettings().GetSystemUnit();
