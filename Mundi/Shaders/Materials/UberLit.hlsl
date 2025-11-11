@@ -256,7 +256,7 @@ float CalculateSlopeBias(float3 normal, float3 lightDir, float ShadowBias, float
 float4 GetBaseColor(PS_INPUT Input, float2 uv)
 {
     float4 baseColor = Input.Color;
-    
+
     if (bHasTexture)
     {
         // 텍스처 샘플링
@@ -271,7 +271,7 @@ float4 GetBaseColor(PS_INPUT Input, float2 uv)
     {
         baseColor.rgb = lerp(baseColor.rgb, LerpColor.rgb, LerpColor.a);
     }
-    
+
     return baseColor;
 }
 
@@ -695,7 +695,8 @@ PS_INPUT mainVS(VS_INPUT Input)
 // 픽셀 셰이더 (Pixel Shader)
 //================================================================================================
 PS_OUTPUT mainPS(PS_INPUT Input)
-{    PS_OUTPUT Output;
+{
+    PS_OUTPUT Output;
     Output.UUID = UUID;
 
 #ifdef VIEWMODE_WORLD_NORMAL 
@@ -711,7 +712,7 @@ PS_OUTPUT mainPS(PS_INPUT Input)
     
     float4 finalPixel = float4(0.0f, 0.0f, 0.0f, 1.0f);
     
-#if LIGHTING_MODEL_GOURAUD 
+#if LIGHTING_MODEL_GOURAUD
     // Gouraud Shading: 조명이 이미 버텍스 셰이더에서 계산됨
     finalPixel = Input.Color;
     if (bHasTexture)                                                              // 텍스처 또는 머티리얼 색상 적용
@@ -749,7 +750,7 @@ PS_OUTPUT mainPS(PS_INPUT Input)
     // 머티리얼 투명도 적용 (0=불투명, 1=투명)
     if (bHasMaterial)
         finalPixel.a *= (1.0f - Material.Transparency);
-    
+
     Output.Color = finalPixel;
     return Output;
 }

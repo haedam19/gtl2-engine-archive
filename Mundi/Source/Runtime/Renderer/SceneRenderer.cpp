@@ -191,8 +191,6 @@ void FSceneRenderer::RenderLitPath()
 		ID3D11RenderTargetView* RTV = Viewport->GetRenderTargetView();
 		ID3D11DepthStencilView* DSV = Viewport->GetDepthStencilView();
 		Context->OMSetRenderTargets(1, &RTV, DSV);
-
-		UE_LOG("[VIEWER] RenderLitPath: Re-bound Viewport RenderTarget");
 	}
 	// Viewport에 RenderTarget이 없을 때만 메인 백버퍼로 설정
 	else if (!Viewport || !Viewport->HasRenderTarget())
@@ -1002,23 +1000,6 @@ void FSceneRenderer::RenderOpaquePass(EViewModeIndex InRenderViewMode)
 		MeshComponent->CollectMeshBatches(MeshBatchElements, View);
 	}
 
-	// Viewer World 디버깅
-	if (Viewport && Viewport->HasRenderTarget())
-	{
-		UE_LOG("[VIEWER] RenderOpaquePass: Collected %zu MeshBatchElements from %zu Meshes",
-		       MeshBatchElements.size(), Proxies.Meshes.size());
-
-		// View/Projection Matrix 디버깅
-		UE_LOG("[VIEWER] View Matrix row0: (%.2f, %.2f, %.2f, %.2f)",
-		       View->ViewMatrix.M[0][0], View->ViewMatrix.M[0][1], View->ViewMatrix.M[0][2], View->ViewMatrix.M[0][3]);
-		UE_LOG("[VIEWER] View Matrix row3: (%.2f, %.2f, %.2f, %.2f)",
-		       View->ViewMatrix.M[3][0], View->ViewMatrix.M[3][1], View->ViewMatrix.M[3][2], View->ViewMatrix.M[3][3]);
-		UE_LOG("[VIEWER] Projection Matrix row0: (%.2f, %.2f, %.2f, %.2f)",
-		       View->ProjectionMatrix.M[0][0], View->ProjectionMatrix.M[0][1], View->ProjectionMatrix.M[0][2], View->ProjectionMatrix.M[0][3]);
-		UE_LOG("[VIEWER] Projection Matrix row2: (%.2f, %.2f, %.2f, %.2f)",
-		       View->ProjectionMatrix.M[2][0], View->ProjectionMatrix.M[2][1], View->ProjectionMatrix.M[2][2], View->ProjectionMatrix.M[2][3]);
-	}
-
 	// --- UMeshComponent 셰이더 오버라이드 ---
 	if (bNeedsShaderOverride && ShaderVariant)
 	{
@@ -1044,12 +1025,6 @@ void FSceneRenderer::RenderOpaquePass(EViewModeIndex InRenderViewMode)
 
 	// --- 2. 정렬 (Sort) ---
 	MeshBatchElements.Sort();
-
-	// Viewer World 디버깅
-	if (Viewport && Viewport->HasRenderTarget())
-	{
-		UE_LOG("[VIEWER] RenderOpaquePass: About to draw %zu batches", MeshBatchElements.size());
-	}
 
 	// --- 3. 그리기 (Draw) ---
 	DrawMeshBatches(MeshBatchElements, true);
@@ -1616,13 +1591,6 @@ void FSceneRenderer::RenderOverayEditorPrimitivesPass()
 // 수집한 Batch 그리기
 void FSceneRenderer::DrawMeshBatches(TArray<FMeshBatchElement>& InMeshBatches, bool bClearListAfterDraw, bool bIsOverlay)
 {
-	// Viewer World 디버깅
-	bool bIsViewerWorld = (Viewport && Viewport->HasRenderTarget());
-	if (bIsViewerWorld)
-	{
-		UE_LOG("[VIEWER] DrawMeshBatches: Called with %zu batches, bIsOverlay=%d", InMeshBatches.size(), bIsOverlay);
-	}
-
 	if (InMeshBatches.IsEmpty())
 		return;
 
@@ -1634,15 +1602,8 @@ void FSceneRenderer::DrawMeshBatches(TArray<FMeshBatchElement>& InMeshBatches, b
 	}
 	else
 	{
-		// Depth test 활성화 (모든 World에서 동일)
+		// Depth test 활성화
 		RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
-	}
-
-	// Viewer World는 디버깅을 위해 Culling 비활성화
-	if (bIsViewerWorld)
-	{
-		RHIDevice->RSSetState(ERasterizerMode::Solid_NoCull);  // Culling 비활성화
-		UE_LOG("[VIEWER] Culling disabled for debugging, Depth test enabled");
 	}
 
 	// PS 리소스 초기화
@@ -1745,11 +1706,17 @@ void FSceneRenderer::DrawMeshBatches(TArray<FMeshBatchElement>& InMeshBatches, b
 		{
 			const FMaterialInfo& Info = Batch.Material->GetMaterialInfo();
 
-			if (UTexture* DiffuseTex = Batch.Material->GetTexture(EMaterialTextureSlot::Diffuse))
+			UTexture* DiffuseTex = Batch.Material->GetTexture(EMaterialTextureSlot::Diffuse);
+			if (DiffuseTex)
+			{
 				DiffuseSRV = DiffuseTex->GetShaderResourceView();
+			}
 
-			if (UTexture* NormalTex = Batch.Material->GetTexture(EMaterialTextureSlot::Normal))
+			UTexture* NormalTex = Batch.Material->GetTexture(EMaterialTextureSlot::Normal);
+			if (NormalTex)
+			{
 				NormalSRV = NormalTex->GetShaderResourceView();
+			}
 
 			PixelConst.bHasDiffuseTexture = (DiffuseSRV != nullptr);
 			PixelConst.bHasNormalTexture = (NormalSRV != nullptr);

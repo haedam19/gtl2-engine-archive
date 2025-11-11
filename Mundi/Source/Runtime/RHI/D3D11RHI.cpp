@@ -132,7 +132,7 @@ void D3D11RHI::CreateBlendState()
     BlendDesc.IndependentBlendEnable = TRUE;
     Rt0 = BlendDesc.RenderTarget[0];
     Rt0.BlendEnable = FALSE;
-    Rt0.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+    Rt0.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_RED | D3D11_COLOR_WRITE_ENABLE_GREEN | D3D11_COLOR_WRITE_ENABLE_BLUE;  // Alpha 쓰지 않음 (ImGui viewer 호환)
 
     Rt1 = BlendDesc.RenderTarget[1];
     Rt1.BlendEnable = FALSE;

@@ -192,6 +192,7 @@ void USkeletalMeshViewerContentWidget::Initialize()
         // ========================================
         auto& RenderSettings = ViewerWorld->GetRenderSettings();
         RenderSettings.EnableShowFlag(EEngineShowFlags::SF_StaticMeshes);
+        RenderSettings.EnableShowFlag(EEngineShowFlags::SF_SkeletalMeshes);
         RenderSettings.EnableShowFlag(EEngineShowFlags::SF_Lighting);
         RenderSettings.EnableShowFlag(EEngineShowFlags::SF_Grid);
 
@@ -335,9 +336,7 @@ void USkeletalMeshViewerContentWidget::Initialize()
             };
         }
 
-        // ========================================
         // Create Skeletal Mesh Actor
-        // ========================================
         ViewerSkeletalMeshActor = ViewerWorld->SpawnActor<ASkeletalMeshActor>();
         if (ViewerSkeletalMeshActor)
         {
@@ -637,6 +636,27 @@ void USkeletalMeshViewerContentWidget::RenderToolbar()
         ImGui::Checkbox("Bone Names", &bShowBoneNames);
         ImGui::SameLine();
         ImGui::Checkbox("Gizmo", &bShowGizmo);
+
+        // Lighting toggle
+        ImGui::SameLine();
+        static bool bLit = true;
+        if (ImGui::Checkbox("Lit", &bLit))
+        {
+            if (ViewerWorld)
+            {
+                auto& RenderSettings = ViewerWorld->GetRenderSettings();
+                if (bLit)
+                {
+                    RenderSettings.EnableShowFlag(EEngineShowFlags::SF_Lighting);
+                    UE_LOG("SkeletalMeshViewerContentWidget: Lighting ENABLED");
+                }
+                else
+                {
+                    RenderSettings.DisableShowFlag(EEngineShowFlags::SF_Lighting);
+                    UE_LOG("SkeletalMeshViewerContentWidget: Lighting DISABLED (Unlit mode)");
+                }
+            }
+        }
     }
     ImGui::EndChild();
 }
@@ -1067,7 +1087,7 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
         {
             // ImGui::Image 렌더링
             ImVec2 imageTopLeft = ImGui::GetCursorScreenPos();
-            ImGui::Image((void*)srv, viewportSize);
+            ImGui::Image((void*)srv, viewportSize, ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(1, 1, 1, 1));
 
             // Image 위에 InvisibleButton을 겹쳐서 입력 가로채기
             ImGui::SetCursorScreenPos(imageTopLeft);  // 커서를 이미지 시작 위치로 되돌림
@@ -1914,6 +1934,33 @@ void USkeletalMeshViewerContentWidget::SetCurrentMesh(int32 MeshIndex)
 
     CurrentMeshIndex = MeshIndex;
     USkeletalMesh* NewMesh = LoadedMeshes[MeshIndex];
+
+    // ========================================
+    // 머티리얼이 ResourceManager에 등록되어 있는지 확인하고 재등록
+    // ========================================
+    const FSkeletalMesh* MeshData = NewMesh->GetSkeletalMeshData();
+    if (MeshData && !MeshData->GroupInfos.empty())
+    {
+        UE_LOG("SkeletalMeshViewerContentWidget::SetCurrentMesh - Mesh has %d material groups", MeshData->GroupInfos.Num());
+        for (int32 i = 0; i < MeshData->GroupInfos.Num(); ++i)
+        {
+            const FString& MatName = MeshData->GroupInfos[i].InitialMaterialName;
+            UE_LOG("  Group %d: InitialMaterialName = '%s'", i, MatName.c_str());
+
+            if (!MatName.empty())
+            {
+                UMaterial* Mat = UResourceManager::GetInstance().Get<UMaterial>(MatName);
+                if (Mat)
+                {
+                    UE_LOG("    -> Found in ResourceManager!");
+                }
+                else
+                {
+                    UE_LOG("    -> NOT FOUND in ResourceManager! Will attempt to re-register...");
+                }
+            }
+        }
+    }
 
     // Set mesh on component
     USkeletalMeshComponent* Component = ViewerSkeletalMeshActor->GetSkeletalMeshComponent();
