@@ -164,9 +164,17 @@ void USkeletalMeshComponent::UpdateAnimation(float DeltaTime)
 {
     AnimTime += DeltaTime;
 
+    if (!SkeletalMesh)
+        return;
+
     const FSkeleton* Skeleton = SkeletalMesh->GetSkeleton();
     if (!Skeleton || Skeleton->Bones.Num() <= 5)
         return;
+
+    // BoneMatrices가 초기화되지 않았으면 종료 (크래시 방지)
+    if (BoneMatrices.empty() || BoneMatrices.size() <= 5)
+        return;
+
 
     float RotationAngle = AnimTime * 1.0f; // 얼마나 회전할지
     const FBone& Bone5 = Skeleton->Bones[5]; //5번뼈의 T-Pose 원본 데이터
@@ -175,7 +183,7 @@ void USkeletalMeshComponent::UpdateAnimation(float DeltaTime)
     FQuat FinalRotation = Bone5.BindR * AnimRotation; // 회전 적용
     FMatrix LocalMatrix = FMatrix::FromTRS(Bone5.BindT, FinalRotation, Bone5.BindS); // 최종 로컬 회전
 
-    if (Bone5.ParentIndex >= 0)
+    if (Bone5.ParentIndex >= 0 && Bone5.ParentIndex < BoneMatrices.size())
     {
         // 내 로컬 회전에 이미 계산된 부모 뼈의 모델 공간 행렬 곱
         BoneMatrices[5] = LocalMatrix * BoneMatrices[Bone5.ParentIndex];
