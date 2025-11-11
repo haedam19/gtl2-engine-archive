@@ -99,7 +99,7 @@ UWorld::~UWorld()
 	// AudioManager 종료 - 모든 Actor와 Component가 정리된 후에 호출 (PIE World가 아닐 때만)
 	if (!bPie)
 	{
-		UAudioManager::GetInstance().Shutdown();
+		//UAudioManager::GetInstance().Shutdown();
 	}
 }
 
@@ -127,7 +127,7 @@ void UWorld::Initialize()
 	// AudioManager 초기화 (PIE World가 아닐 때만)
 	if (!bPie)
 	{
-		UAudioManager::GetInstance().Initialize();
+		//UAudioManager::GetInstance().Initialize();
 	}
 
 	if (this == GWorld)
@@ -681,7 +681,7 @@ void UWorld::Tick(float DeltaSeconds)
 	CoroutineManager.Update(DeltaSeconds);
 
 	// AudioManager 업데이트
-	UAudioManager::GetInstance().Update(DeltaSeconds);
+	//UAudioManager::GetInstance().Update(DeltaSeconds);
 
 	if (PlayerController)
 	{
