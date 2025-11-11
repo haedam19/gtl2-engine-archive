@@ -1408,11 +1408,53 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                                 SelectedComponent->SetWorldScale(NewScale);
                             }
 
+                            // 드래그 중에도 동기화하지만, 값이 실질적으로 변하지 않았으면 기존 값 유지
                             if (SelectedBoneIndex >= 0)
                             {
-                                SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex);
-                                UpdateBoneWorldMatrices(SelectedBoneIndex);
-                                bBoneVisualizationDirty = true;
+                                FSkeleton& Skeleton = SkeletonEditor.GetSkeleton();
+                                if (SelectedBoneIndex < Skeleton.Bones.Num())
+                                {
+                                    // 기존 본 데이터 저장
+                                    FVector OldBindT = Skeleton.Bones[SelectedBoneIndex].BindT;
+                                    FQuat OldBindR = Skeleton.Bones[SelectedBoneIndex].BindR;
+                                    FVector OldBindS = Skeleton.Bones[SelectedBoneIndex].BindS;
+
+                                    // Actor Transform 저장 (비교용)
+                                    AActor* BoneActor = SkeletonEditor.GetBoneActor(SelectedBoneIndex);
+                                    FVector OldActorPos = BoneActor ? BoneActor->GetActorLocation() : FVector::Zero();
+                                    FQuat OldActorRot = BoneActor ? BoneActor->GetActorRotation() : FQuat::Identity();
+
+                                    SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex);
+
+                                    // 변화가 거의 없으면 원래 값 복원 (부동소수점 오차 누적 방지)
+                                    const float EPSILON_SQ = 1e-8f;
+                                    const float QUAT_DOT_THRESHOLD = 0.999999f;
+
+                                    FVector NewBindT = Skeleton.Bones[SelectedBoneIndex].BindT;
+                                    FQuat NewBindR = Skeleton.Bones[SelectedBoneIndex].BindR;
+                                    FVector NewBindS = Skeleton.Bones[SelectedBoneIndex].BindS;
+
+                                    float posDiff = (NewBindT - OldBindT).SizeSquared();
+                                    float rotDot = std::abs(FQuat::Dot(NewBindR, OldBindR));
+                                    float scaleDiff = (NewBindS - OldBindS).SizeSquared();
+
+                                    if (posDiff < EPSILON_SQ && rotDot > QUAT_DOT_THRESHOLD && scaleDiff < EPSILON_SQ)
+                                    {
+                                        // 값이 거의 같으면 기존 값 유지
+                                        Skeleton.Bones[SelectedBoneIndex].BindT = OldBindT;
+                                        Skeleton.Bones[SelectedBoneIndex].BindR = OldBindR;
+                                        Skeleton.Bones[SelectedBoneIndex].BindS = OldBindS;
+                                    }
+                                    else
+                                    {
+                                        // 드래그 중에도 자식 본들의 BoneActor 업데이트 필요 (기즈모 표시 위해)
+                                        // UpdateBoneActorTransforms에서 StartBoneIndex는 skip되므로
+                                        // 드래그 중인 본은 업데이트 안 되고, 자식들만 업데이트됨
+                                        // SyncBoneDataFromActor의 변환이 정확하면 drift 발생 안 함
+                                        UpdateBoneWorldMatrices(SelectedBoneIndex);
+                                        bBoneVisualizationDirty = true;
+                                    }
+                                }
                             }
                         }
                     }
@@ -1428,6 +1470,7 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                         if (SelectedBoneIndex >= 0)
                         {
                             SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex);
+                            UpdateBoneWorldMatrices(SelectedBoneIndex);  // 자식 본들도 업데이트
                             bBoneVisualizationDirty = true;
                             UE_LOG("SkeletalMeshViewer: Synced bone data after gizmo drag");
                         }

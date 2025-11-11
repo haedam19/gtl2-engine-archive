@@ -378,9 +378,12 @@ void FSkeletonEditor::UpdateBoneActorTransforms(int32 StartBoneIndex)
     for (int32 i = 0; i < Cache.BoneActors.Num(); ++i)
     {
         // StartBoneIndex가 -1이면 모든 본 업데이트
-        // 아니면 StartBoneIndex 본인이거나 그 자손만 업데이트
-        if (StartBoneIndex >= 0 && i != StartBoneIndex)
+        // 아니면 StartBoneIndex의 자손만 업데이트 (본인은 제외 - 드래그 중 순환 참조 방지)
+        if (StartBoneIndex >= 0)
         {
+            if (i == StartBoneIndex)
+                continue;  // 본인은 건너뛰기 (기즈모가 제어 중)
+
             // 간단한 자손 체크: ParentIndex 체인 순회
             bool bIsDescendant = false;
             int32 ParentIdx = Skeleton.Bones[i].ParentIndex;
@@ -428,7 +431,7 @@ void FSkeletonEditor::SyncBoneDataFromActor(int32 BoneIndex)
     // 부모 본이 있으면 부모의 월드 Transform으로 역변환하여 로컬 Transform 계산
     if (Bone.ParentIndex >= 0 && Bone.ParentIndex < Skeleton.Bones.Num())
     {
-        // 부모 본의 월드 Transform 계산
+        // 부모 본의 캐시된 월드 Transform 사용
         AActor* ParentActor = GetBoneActor(Bone.ParentIndex);
         if (!ParentActor)
             return;
@@ -437,35 +440,37 @@ void FSkeletonEditor::SyncBoneDataFromActor(int32 BoneIndex)
         FQuat ParentWorldRot = ParentActor->GetActorRotation();
         FVector ParentWorldScale = ParentActor->GetActorScale();
 
-        // 로컬 Position 계산
-        // LocalPos = Inverse(ParentRot) * (ChildPos - ParentPos) / ParentScale
-        FVector DeltaPos = ActorWorldPos - ParentWorldPos;
-        FVector RotatedDelta = ParentWorldRot.Inverse().RotateVector(DeltaPos);
-        FVector LocalPos(
-            RotatedDelta.X / ParentWorldScale.X,
-            RotatedDelta.Y / ParentWorldScale.Y,
-            RotatedDelta.Z / ParentWorldScale.Z
-        );
+        // Row-major 행렬 변환과 일치하도록 계산
+        // ChildWorld = LocalTranslation * LocalRotation * LocalScale * ParentWorld (행렬 곱셈)
+        // 이를 역변환하면:
 
-        // 로컬 Rotation 계산
-        // LocalRot = Inverse(ParentRot) * ChildRot
+        // 1. Rotation: LocalRot = Inv(ParentRot) * ChildRot
         FQuat LocalRot = ParentWorldRot.Inverse() * ActorWorldRot;
+        Bone.BindR = LocalRot;
 
-        // 로컬 Scale 계산
-        // LocalScale = ChildScale / ParentScale
+        // 2. Scale: LocalScale = ChildScale / ParentScale
         FVector LocalScale(
             ActorWorldScale.X / ParentWorldScale.X,
             ActorWorldScale.Y / ParentWorldScale.Y,
             ActorWorldScale.Z / ParentWorldScale.Z
         );
-
-        // 본 데이터 업데이트
-        Bone.BindT = LocalPos;
-        Bone.BindR = LocalRot;  // Quaternion을 직접 저장
         Bone.BindS = LocalScale;
 
+        // 3. Translation: Row-major 정방향 변환 역산
+        // Forward: WorldPos = ParentR.Rotate(BindT * ParentS) + ParentPos
+        // Inverse: BindT = Inv(ParentR).Rotate(WorldPos - ParentPos) / ParentS
+        // 중요: LocalRot/LocalScale이 아니라 ParentRot/ParentScale을 사용해야 함!
+        FVector DeltaPos = ActorWorldPos - ParentWorldPos;
+        FVector UnrotatedDelta = ParentWorldRot.Inverse().RotateVector(DeltaPos);
+        FVector LocalPos(
+            UnrotatedDelta.X / ParentWorldScale.X,
+            UnrotatedDelta.Y / ParentWorldScale.Y,
+            UnrotatedDelta.Z / ParentWorldScale.Z
+        );
+        Bone.BindT = LocalPos;
+
         UE_LOG("FSkeletonEditor: Calculated local transform from parent - LocalPos=(%.2f,%.2f,%.2f)",
-               LocalPos.X, LocalPos.Y, LocalPos.Z);
+               Bone.BindT.X, Bone.BindT.Y, Bone.BindT.Z);
     }
     else
     {
