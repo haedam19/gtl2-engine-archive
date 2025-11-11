@@ -51,6 +51,23 @@ void FSkeletonEditor::ClearSelection()
     SetSelectedBone(-1);
 }
 
+void FSkeletonEditor::SetSkeleton(const FSkeleton* InSkeleton)
+{
+    if (!InSkeleton)
+    {
+        UE_LOG("FSkeletonEditor: Cannot set null skeleton");
+        return;
+    }
+
+    // Copy skeleton data
+    Skeleton = *InSkeleton;
+
+    // Clear selection
+    SelectedBoneIndex = -1;
+
+    UE_LOG("FSkeletonEditor: Skeleton set - %d bones", Skeleton.Bones.Num());
+}
+
 AActor* FSkeletonEditor::GetBoneActor(int32 BoneIndex) const
 {
     if (BoneIndex >= 0 && BoneIndex < Cache.BoneActors.Num())

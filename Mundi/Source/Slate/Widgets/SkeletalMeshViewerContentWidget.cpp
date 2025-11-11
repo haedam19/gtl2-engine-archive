@@ -28,6 +28,13 @@
 #include "BillboardComponent.h"
 #include "Gizmo/GizmoArrowComponent.h"
 #include "LineComponent.h"
+#include "SkeletalMeshActor.h"
+#include "SkeletalMeshComponent.h"
+#include "SkeletalMesh.h"
+#include "FbxManager.h"
+#include "ResourceManager.h"
+#include <Windows.h>
+#include <commdlg.h>
 
 // 전역 EditorEngine 접근
 extern UEditorEngine GEngine;
@@ -327,6 +334,24 @@ void USkeletalMeshViewerContentWidget::Initialize()
                 OnBoneSelectedFromHierarchy(BoneIndex);
             };
         }
+
+        // ========================================
+        // Create Skeletal Mesh Actor
+        // ========================================
+        ViewerSkeletalMeshActor = ViewerWorld->SpawnActor<ASkeletalMeshActor>();
+        if (ViewerSkeletalMeshActor)
+        {
+            ViewerSkeletalMeshActor->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
+
+            USkeletalMeshComponent* SkeletalMeshComp = ViewerSkeletalMeshActor->GetSkeletalMeshComponent();
+            if (SkeletalMeshComp)
+            {
+                SkeletalMeshComp->SetCanEverTick(false);
+            }
+        }
+
+        // Refresh loaded mesh list from ResourceManager
+        RefreshLoadedMeshList();
     }
     else
     {
@@ -659,33 +684,65 @@ void USkeletalMeshViewerContentWidget::RenderMeshList()
 {
     ImGui::BeginChild("MeshListArea", ImVec2(0, 150), true);
 
-    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No meshes loaded");
-    ImGui::Spacing();
-
+    // Load FBX Button
     if (ImGui::Button("Load FBX...", ImVec2(-1, 0)))
     {
-        // TODO: FBX loading
-        ImGui::OpenPopup("NotImplemented");
+        LoadSkeletalMeshFromFile();
     }
 
-    // Not implemented popup
-    if (ImGui::BeginPopup("NotImplemented"))
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Display loaded mesh list
+    if (LoadedMeshes.empty())
     {
-        ImGui::Text("FBX Loader not implemented yet");
-        ImGui::Separator();
-        ImGui::TextWrapped("This feature requires:\n- FBX Loader implementation\n- USkeletalMesh class\n- USkeleton class");
-        if (ImGui::Button("Close"))
-        {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No meshes loaded");
     }
+    else
+    {
+        ImGui::Text("Loaded Meshes (%d):", LoadedMeshes.size());
+        ImGui::Spacing();
 
-    // TODO: Display loaded mesh list
-    // for (auto* Mesh : LoadedMeshes)
-    // {
-    //     ImGui::Selectable(Mesh->GetName().c_str());
-    // }
+        for (int32 i = 0; i < LoadedMeshes.size(); ++i)
+        {
+            USkeletalMesh* Mesh = LoadedMeshes[i];
+            if (!Mesh)
+                continue;
+
+            // Extract filename from path
+            FString FilePath = Mesh->GetFilePath();
+            size_t LastSlash = FilePath.find_last_of("/\\");
+            FString FileName = (LastSlash != FString::npos) ? FilePath.substr(LastSlash + 1) : FilePath;
+
+            // Highlight current mesh
+            bool bIsSelected = (i == CurrentMeshIndex);
+            ImVec4 TextColor = bIsSelected ? ImVec4(0.2f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+
+            ImGui::PushStyleColor(ImGuiCol_Text, TextColor);
+
+            // Selectable button
+            if (ImGui::Selectable(FileName.c_str(), bIsSelected))
+            {
+                SetCurrentMesh(i);
+            }
+
+            ImGui::PopStyleColor();
+
+            // Tooltip with full path
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::BeginTooltip();
+                ImGui::Text("Path: %s", FilePath.c_str());
+                if (Mesh->GetSkeleton())
+                {
+                    ImGui::Text("Bones: %d", Mesh->GetSkeleton()->Bones.Num());
+                }
+                ImGui::Text("Vertices: %d", Mesh->GetVertexCount());
+                ImGui::EndTooltip();
+            }
+        }
+    }
 
     ImGui::EndChild();
 }
@@ -748,7 +805,6 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
         {
             SkeletonEditor.GetSkeleton().Bones[SelectedBoneIndex].BindT = FVector(posArray[0], posArray[1], posArray[2]);
             UpdateBoneWorldMatrices();
-            // UpdateBoneWorldMatrices 내부에서 UpdateBoneActorTransforms()가 호출되어 본 액터 위치가 자동 업데이트됨
         }
 
         // Rotation (Quaternion → display as Euler Degrees)
@@ -1332,10 +1388,10 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                                 SelectedComponent->SetWorldScale(NewScale);
                             }
 
-                            // 드래그 중에도 본 데이터 동기화하여 스켈레톤 구조 실시간 갱신
                             if (SelectedBoneIndex >= 0)
                             {
                                 SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex);
+                                UpdateBoneWorldMatrices(SelectedBoneIndex);
                                 bBoneVisualizationDirty = true;
                             }
                         }
@@ -1530,10 +1586,60 @@ void USkeletalMeshViewerContentWidget::BuildSkeletonCache()
 
 void USkeletalMeshViewerContentWidget::UpdateBoneWorldMatrices(int32 StartBoneIndex)
 {
-    // Delegate to SkeletonEditor
     SkeletonEditor.UpdateBoneWorldMatrices(StartBoneIndex);
 
-    // 본이 변경되었으므로 시각화 업데이트 필요
+    if (!ViewerSkeletalMeshActor)
+    {
+        bBoneVisualizationDirty = true;
+        return;
+    }
+
+    USkeletalMeshComponent* SkeletalMeshComp = ViewerSkeletalMeshActor->GetSkeletalMeshComponent();
+    if (!SkeletalMeshComp)
+    {
+        bBoneVisualizationDirty = true;
+        return;
+    }
+
+    USkeletalMesh* SkeletalMesh = SkeletalMeshComp->GetSkeletalMesh();
+    if (!SkeletalMesh || !SkeletalMesh->GetSkeleton())
+    {
+        bBoneVisualizationDirty = true;
+        return;
+    }
+
+    const FSkeleton* Skeleton = SkeletalMesh->GetSkeleton();
+    const FSkeleton& EditorSkeleton = SkeletonEditor.GetSkeleton();
+
+    if (Skeleton->Bones.Num() == EditorSkeleton.Bones.Num())
+    {
+        TArray<FMatrix>& BoneMatrices = SkeletalMeshComp->GetBoneMatricesForEdit();
+        BoneMatrices.resize(Skeleton->Bones.Num());
+
+        for (int32 i = 0; i < Skeleton->Bones.Num(); ++i)
+        {
+            const FBone& EditorBone = EditorSkeleton.Bones[i];
+            FMatrix LocalMatrix = FMatrix::FromTRS(EditorBone.BindT, EditorBone.BindR, EditorBone.BindS);
+
+            if (EditorBone.ParentIndex >= 0)
+            {
+                BoneMatrices[i] = LocalMatrix * BoneMatrices[EditorBone.ParentIndex];
+            }
+            else
+            {
+                BoneMatrices[i] = LocalMatrix;
+            }
+        }
+
+        SkeletalMeshComp->PerformCPUSkinning();
+
+        ID3D11DeviceContext* Context = URenderManager::GetInstance().GetRenderer()->GetRHIDevice()->GetDeviceContext();
+        if (Context)
+        {
+            SkeletalMeshComp->UpdateDynamicMeshData(Context);
+        }
+    }
+
     bBoneVisualizationDirty = true;
 }
 
@@ -1701,4 +1807,142 @@ AActor* USkeletalMeshViewerContentWidget::PickBoneFromViewport(const FVector2D& 
 
     UE_LOG("PickBoneFromViewport: No bone picked, returning nullptr");
     return nullptr;
+}
+
+// ========================================
+// Skeletal Mesh Management
+// ========================================
+
+void USkeletalMeshViewerContentWidget::RefreshLoadedMeshList()
+{
+    LoadedMeshes.clear();
+    LoadedMeshes = UResourceManager::GetInstance().GetAll<USkeletalMesh>();
+
+    UE_LOG("SkeletalMeshViewerContentWidget: Refreshed mesh list - %d meshes loaded", LoadedMeshes.size());
+}
+
+void USkeletalMeshViewerContentWidget::LoadSkeletalMeshFromFile()
+{
+    OPENFILENAMEA ofn;
+    char szFile[260] = { 0 };
+
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = GEngine.GetHWND();
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = sizeof(szFile);
+    ofn.lpstrFilter = "FBX Files\0*.fbx\0All Files\0*.*\0";
+    ofn.nFilterIndex = 1;
+    ofn.lpstrFileTitle = NULL;
+    ofn.nMaxFileTitle = 0;
+    ofn.lpstrInitialDir = NULL;
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+    if (GetOpenFileNameA(&ofn) == TRUE)
+    {
+        FString FilePath = ofn.lpstrFile;
+        UE_LOG("SkeletalMeshViewerContentWidget: Loading FBX from %s", FilePath.c_str());
+
+        UResourceManager& ResourceManager = UResourceManager::GetInstance();
+
+        // Check if already loaded in ResourceManager
+        USkeletalMesh* ExistingMesh = ResourceManager.Get<USkeletalMesh>(FilePath);
+        if (ExistingMesh)
+        {
+            UE_LOG("SkeletalMeshViewerContentWidget: Mesh already loaded, using cached version");
+
+            // Refresh list
+            RefreshLoadedMeshList();
+
+            // Find and select this mesh
+            for (int32 i = 0; i < LoadedMeshes.size(); ++i)
+            {
+                if (LoadedMeshes[i] == ExistingMesh)
+                {
+                    SetCurrentMesh(i);
+                    break;
+                }
+            }
+            return;
+        }
+
+        // Load FBX data through FFbxManager (returns FSkeletalMesh*)
+        FSkeletalMesh* RawMeshData = FFbxManager::LoadSkeletalMeshAsset(FilePath);
+
+        if (RawMeshData)
+        {
+            // Create USkeletalMesh UObject and load the raw data into it
+            USkeletalMesh* SkeletalMesh = NewObject<USkeletalMesh>();
+            ID3D11Device* Device = ResourceManager.GetDevice();
+            SkeletalMesh->Load(RawMeshData, Device, EVertexLayoutType::PositionColorTextureNormal);
+            SkeletalMesh->SetFilePath(FilePath);
+
+            // Register in ResourceManager
+            ResourceManager.Add<USkeletalMesh>(FilePath, SkeletalMesh);
+
+            UE_LOG("SkeletalMeshViewerContentWidget: FBX loaded successfully and registered");
+
+            // Refresh list
+            RefreshLoadedMeshList();
+
+            // If this is the first mesh or no mesh is currently selected, set it as current
+            if (CurrentMeshIndex < 0 && !LoadedMeshes.empty())
+            {
+                SetCurrentMesh(0);
+            }
+        }
+        else
+        {
+            UE_LOG("SkeletalMeshViewerContentWidget: Failed to load FBX");
+        }
+    }
+}
+
+void USkeletalMeshViewerContentWidget::SetCurrentMesh(int32 MeshIndex)
+{
+    if (MeshIndex < 0 || MeshIndex >= LoadedMeshes.size())
+    {
+        UE_LOG("SkeletalMeshViewerContentWidget: Invalid mesh index %d", MeshIndex);
+        return;
+    }
+
+    if (!ViewerSkeletalMeshActor)
+    {
+        UE_LOG("SkeletalMeshViewerContentWidget: ViewerSkeletalMeshActor is null");
+        return;
+    }
+
+    CurrentMeshIndex = MeshIndex;
+    USkeletalMesh* NewMesh = LoadedMeshes[MeshIndex];
+
+    // Set mesh on component
+    USkeletalMeshComponent* Component = ViewerSkeletalMeshActor->GetSkeletalMeshComponent();
+    if (Component)
+    {
+        Component->SetSkeletalMesh(NewMesh);
+        UE_LOG("SkeletalMeshViewerContentWidget: Switched to mesh %d: %s",
+               MeshIndex, NewMesh->GetFilePath().c_str());
+
+        // Update SkeletonEditor with new skeleton
+        if (NewMesh->GetSkeleton())
+        {
+            SkeletonEditor.SetSkeleton(NewMesh->GetSkeleton());
+            SkeletonEditor.BuildCache(ViewerWorld);
+
+            // Update BoneHierarchyWidget
+            if (BoneHierarchyWidget)
+            {
+                BoneHierarchyWidget->BuildBoneTreeFromSkeleton(SkeletonEditor.GetSkeleton().Bones);
+            }
+
+            // Mark bone visualization as dirty
+            bBoneVisualizationDirty = true;
+
+            // Clear bone selection
+            SetSelectedBone(-1);
+
+            UE_LOG("SkeletalMeshViewerContentWidget: Skeleton updated - %d bones",
+                   SkeletonEditor.GetSkeleton().Bones.Num());
+        }
+    }
 }

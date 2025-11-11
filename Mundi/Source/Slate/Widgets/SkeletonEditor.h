@@ -37,6 +37,7 @@ public:
     // === Data Access ===
     FSkeleton& GetSkeleton() { return Skeleton; }
     const FSkeleton& GetSkeleton() const { return Skeleton; }
+    void SetSkeleton(const FSkeleton* InSkeleton);
 
     FViewerSkeletonCache& GetCache() { return Cache; }
     const FViewerSkeletonCache& GetCache() const { return Cache; }

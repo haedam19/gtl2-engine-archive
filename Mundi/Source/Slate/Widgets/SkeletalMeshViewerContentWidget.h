@@ -78,6 +78,11 @@ private:
     // Bone Selection
     int32 SelectedBoneIndex = -1;
 
+    // Skeletal Mesh Management
+    TArray<class USkeletalMesh*> LoadedMeshes;
+    class ASkeletalMeshActor* ViewerSkeletalMeshActor = nullptr;
+    int32 CurrentMeshIndex = -1;
+
     // Camera Input
     bool bIsViewerRightMouseDown = false;
     bool bEnableViewerCameraInput = false;
@@ -109,4 +114,9 @@ private:
     void UpdateBoneWorldMatrices(int32 StartBoneIndex = -1);  // Update bone transforms
     void RenderBones();               // Render bone visualization
     AActor* PickBoneFromViewport(const FVector2D& MousePos, const FVector2D& ViewportSize);  // Pick bone from viewport
+
+    // Skeletal Mesh Management
+    void RefreshLoadedMeshList();     // Refresh list from ResourceManager
+    void LoadSkeletalMeshFromFile();  // Open file dialog and load FBX
+    void SetCurrentMesh(int32 MeshIndex);  // Switch displayed mesh
 };

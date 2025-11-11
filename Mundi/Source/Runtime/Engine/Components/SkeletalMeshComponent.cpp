@@ -89,10 +89,7 @@ void USkeletalMeshComponent::TickComponent(float DeltaTime)
 
     if (!SkeletalMesh) return;
 
-    // 1. 애니메이션 업데이트
     UpdateAnimation(DeltaTime);
-
-    // 2. CPU 스키닝 수행
     PerformCPUSkinning();
 }
 
@@ -113,6 +110,7 @@ void USkeletalMeshComponent::PerformCPUSkinning()
     {
         SkinnedVertices.resize(SourceVertices.Num());
     }
+
     for (int32 i = 0; i < SourceVertices.Num(); ++i)
     {
         const FSkeletalVertex& SrcVertex = SourceVertices[i];
@@ -120,6 +118,8 @@ void USkeletalMeshComponent::PerformCPUSkinning()
 
         FVector SkinnedPos = FVector::Zero();
         FVector SkinnedNormal = FVector::Zero();
+
+        bool bVertexSkinned = false;
 
         for (int j = 0; j < 4; ++j)
         {
@@ -138,7 +138,14 @@ void USkeletalMeshComponent::PerformCPUSkinning()
 
                 SkinnedPos += (TransformedPos * Weight);
                 SkinnedNormal += (TransformedNormal * Weight);
+                bVertexSkinned = true;
             }
+        }
+
+        if (!bVertexSkinned)
+        {
+            SkinnedPos = SrcVertex.Position;
+            SkinnedNormal = SrcVertex.Normal;
         }
 
         DstVertex.Position = SkinnedPos;

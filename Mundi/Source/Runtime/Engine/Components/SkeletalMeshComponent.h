@@ -73,6 +73,35 @@ public:
 	 */
 	FAABB GetWorldAABB() const;
 
+	// === CPU Skinning ===
+	/**
+	* @brief CPU에서 스킨 정점 계산
+	*
+	* @details
+	* Pseudo code:
+	*   for each vertex:
+	*       SkinnedPosition = 0
+	*       SkinnedNormal = 0
+	*       for i = 0 to 3:
+	*           boneIndex = vertex.boneIndices[i]
+	*           weight = vertex.boneWeights[i]
+	*           if weight > 0:
+	*               skinningMatrix = InverseBindPose * BoneTransform
+	*               SkinnedPosition += skinningMatrix.TransformPosition(vertex.position) * weight
+	*               SkinnedNormal += skinningMatrix.TransformVector(vertex.normal) * weight
+	*/
+	void PerformCPUSkinning();
+
+	/**
+	* @brief 스킨된 정점을 UDynamicMesh에 업로드
+	* @param Context D3D11 Device Context
+	*
+	* @details
+	* - SkinnedVertices를 FMeshData로 변환
+	* - UDynamicMesh::UpdateData() 호출하여 GPU 버퍼 업데이트
+	*/
+	void UpdateDynamicMeshData(ID3D11DeviceContext* Context);
+
 private:
 	// ========== CPU Skinning 관련 ==========
 
@@ -112,24 +141,6 @@ private:
 	void UpdateAnimation(float DeltaTime);
 
 	/**
-	* @brief CPU에서 스킨 정점 계산 (Pseudo code 구현)
-	*
-	* @details
-	* Pseudo code:
-	*   for each vertex:
-	*       SkinnedPosition = 0
-	*       SkinnedNormal = 0
-	*       for i = 0 to 3:
-	*           boneIndex = vertex.boneIndices[i]
-	*           weight = vertex.boneWeights[i]
-	*           if weight > 0:
-	*               skinningMatrix = InverseBindPose * BoneTransform
-	*               SkinnedPosition += skinningMatrix.TransformPosition(vertex.position) * weight
-	*               SkinnedNormal += skinningMatrix.TransformVector(vertex.normal) * weight
-	*/
-	void PerformCPUSkinning();
-
-	/**
 	* @brief 애니메이션된 부모 본의 트랜스폼을 모든 자식 본에 재귀적으로 전파
 	* @param ParentBoneIndex 애니메이션이 적용된 부모 본의 인덱스
 	*
@@ -141,15 +152,5 @@ private:
 	*   3. 재귀적으로 손자 본들에게도 전파
 	*/
 	void UpdateChildBoneMatrices(int32 ParentBoneIndex);
-
-	/**
-	* @brief 스킨된 정점을 UDynamicMesh에 업로드
-	* @param Context D3D11 Device Context
-	*
-	* @details
-	* - SkinnedVertices를 FMeshData로 변환
-	* - UDynamicMesh::UpdateData() 호출하여 GPU 버퍼 업데이트
-	*/
-	void UpdateDynamicMeshData(ID3D11DeviceContext* Context);
 };
 
