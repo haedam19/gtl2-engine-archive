@@ -64,12 +64,6 @@ protected:
 	TArray<UMaterialInterface*> MaterialSlots;
 
 	/**
-	* @brief InverseBind 스케일 보정 필요 여부 (HOTFIX)
-	* - FBX 로더에서 InverseBind가 0.01 스케일을 가지면 true
-	*/
-	bool bNeedsInverseBindScaleCorrection = false;
-
-	/**
 	* @brief Reference Pose (T-Pose)로 본 행렬 초기화
 	* - 모든 본을 T-Pose 상태로 설정(초기 상태)
 	* - BoneMatrices를 스켈레톤 본 개수만큼 확보

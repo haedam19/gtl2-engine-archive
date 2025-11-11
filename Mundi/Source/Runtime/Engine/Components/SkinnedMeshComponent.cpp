@@ -61,63 +61,9 @@ void USkinnedMeshComponent::InitializeReferencePose()
 	// 본 개수만큼 행렬 배열 확보
 	BoneMatrices.resize(Skeleton->Bones.Num());
 
-	// 각 본의 트랜스폼을 재귀적으로 계산
 	for (int32 i = 0; i < Skeleton->Bones.Num(); ++i)
 	{
 		ComputeBoneMatrix(i);
-	}
-
-	// HOTFIX: FBX 센티미터 → 미터 변환 (100배 스케일)
-	// FBX 로더가 스케일 변환을 안 하면 BindS가 0.01이 되어 렌더링이 100배 작아짐
-	// TODO: FBX 로더에서 근본적으로 수정 필요
-	bool bNeedsScaleCorrection = false;
-	if (Skeleton->Bones.Num() > 0)
-	{
-		const FBone& RootBone = Skeleton->Bones[0];
-		// 루트 본의 스케일이 0.01 근처면 센티미터 단위로 판단
-		if (RootBone.BindS.X < 0.02f && RootBone.BindS.X > 0.005f)
-		{
-			bNeedsScaleCorrection = true;
-		}
-	}
-
-	if (bNeedsScaleCorrection)
-	{
-		UE_LOG("[SKELETAL] HOTFIX: Applying 100x scale correction for FBX centimeters->meters");
-		// 모든 본 행렬에 100배 스케일 적용
-		for (int32 i = 0; i < BoneMatrices.Num(); ++i)
-		{
-			BoneMatrices[i].M[0][0] *= 100.0f;
-			BoneMatrices[i].M[1][1] *= 100.0f;
-			BoneMatrices[i].M[2][2] *= 100.0f;
-			BoneMatrices[i].M[3][0] *= 100.0f;  // Translation X
-			BoneMatrices[i].M[3][1] *= 100.0f;  // Translation Y
-			BoneMatrices[i].M[3][2] *= 100.0f;  // Translation Z
-		}
-	}
-
-	// DEBUG: 첫 번째 본 정보 출력 & InverseBind 스케일 보정 체크
-	if (Skeleton->Bones.Num() > 0)
-	{
-		const FBone& RootBone = Skeleton->Bones[0];
-		UE_LOG("[SKELETAL] InitializeReferencePose: Root bone BindS=(%.3f, %.3f, %.3f)",
-		       RootBone.BindS.X, RootBone.BindS.Y, RootBone.BindS.Z);
-		UE_LOG("[SKELETAL] InitializeReferencePose: BoneMatrices[0] M[0][0]=%.3f, M[1][1]=%.3f, M[2][2]=%.3f",
-		       BoneMatrices[0].M[0][0], BoneMatrices[0].M[1][1], BoneMatrices[0].M[2][2]);
-
-		if (Skeleton->Bones.Num() > 0 && RootBone.InverseBind != FMatrix())
-		{
-			UE_LOG("[SKELETAL] InitializeReferencePose: InverseBind[0] M[0][0]=%.3f, M[1][1]=%.3f",
-			       RootBone.InverseBind.M[0][0], RootBone.InverseBind.M[1][1]);
-
-			// HOTFIX: InverseBind 스케일 보정 필요 여부 체크
-			float invBindScale = RootBone.InverseBind.M[0][0];
-			if (invBindScale < 0.02f && invBindScale > 0.005f)
-			{
-				bNeedsInverseBindScaleCorrection = true;
-				UE_LOG("[SKELETAL] HOTFIX: InverseBind has 0.01 scale, will apply 100x correction during skinning");
-			}
-		}
 	}
 }
 

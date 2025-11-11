@@ -20,22 +20,13 @@ void UDynamicMesh::Load(uint32 InMaxVertices, uint32 InMaxIndices, ID3D11Device*
 bool UDynamicMesh::Initialize(uint32 InMaxVertices, uint32 InMaxIndices, ID3D11Device* InDevice, EVertexLayoutType InVertexType)
 {
     if (!InDevice)
-    {
-        UE_LOG("[DynamicMesh] Initialize FAILED: Device is null!");
         return false;
-    }
 
     if (InMaxVertices == 0)
-    {
-        UE_LOG("[DynamicMesh] Initialize FAILED: MaxVertices is 0!");
         return false;
-    }
 
     if (InMaxIndices == 0)
-    {
-        UE_LOG("[DynamicMesh] Initialize FAILED: MaxIndices is 0!");
         return false;
-    }
 
     ReleaseResources();
 
@@ -45,8 +36,6 @@ bool UDynamicMesh::Initialize(uint32 InMaxVertices, uint32 InMaxIndices, ID3D11D
     VertexType = InVertexType;
 
     size_t vertexSize = GetVertexSize(InVertexType);
-
-    UE_LOG("[DynamicMesh] Initialize: MaxVertices=%d, MaxIndices=%d, VertexSize=%d", MaxVertices, MaxIndices, vertexSize);
 
     // Create dynamic vertex buffer
     D3D11_BUFFER_DESC vertexBufferDesc = {};
@@ -59,7 +48,6 @@ bool UDynamicMesh::Initialize(uint32 InMaxVertices, uint32 InMaxIndices, ID3D11D
     HRESULT hr = Device->CreateBuffer(&vertexBufferDesc, nullptr, &VertexBuffer);
     if (FAILED(hr))
     {
-        UE_LOG("[DynamicMesh] Initialize FAILED: CreateBuffer(VertexBuffer) failed! HRESULT=0x%08X", hr);
         ReleaseResources();
         return false;
     }
@@ -75,15 +63,12 @@ bool UDynamicMesh::Initialize(uint32 InMaxVertices, uint32 InMaxIndices, ID3D11D
     hr = Device->CreateBuffer(&indexBufferDesc, nullptr, &IndexBuffer);
     if (FAILED(hr))
     {
-        UE_LOG("[DynamicMesh] Initialize FAILED: CreateBuffer(IndexBuffer) failed! HRESULT=0x%08X", hr);
         ReleaseResources();
         return false;
     }
 
     bIsInitialized = true;
     Clear();
-
-    UE_LOG("[DynamicMesh] Initialize SUCCESS!");
     return true;
 }
 
