@@ -149,10 +149,27 @@ void USkinnedMeshComponent::Serialize(const bool bInIsLoading, JSON& InOutHandle
 {
 	Super::Serialize(bInIsLoading, InOutHandle);
 
+	const FString SkeletalMeshKey = "SkeletalMesh";
 	const FString MaterialSlotsKey = "MaterialSlots";
 
 	if (bInIsLoading) // --- 로드 ---
 	{
+		// 1. SkeletalMesh 경로 로드
+		FString SkeletalMeshPath;
+		if (FJsonSerializer::ReadString(InOutHandle, SkeletalMeshKey, SkeletalMeshPath, "", false))
+		{
+			if (!SkeletalMeshPath.empty())
+			{
+				SkeletalMesh = UResourceManager::GetInstance().Load<USkeletalMesh>(SkeletalMeshPath);
+				UE_LOG("[SkinnedMeshComponent] Loaded SkeletalMesh from path: '%s'", SkeletalMeshPath.c_str());
+			}
+			else
+			{
+				SkeletalMesh = nullptr;
+			}
+		}
+
+		// 2. MaterialSlots 로드
 		JSON SlotsArrayJson;
 		if (FJsonSerializer::ReadArray(InOutHandle, MaterialSlotsKey, SlotsArrayJson, JSON::Make(JSON::Class::Array), false))
 		{
@@ -191,6 +208,18 @@ void USkinnedMeshComponent::Serialize(const bool bInIsLoading, JSON& InOutHandle
 	}
 	else // --- 저장 ---
 	{
+		// 1. SkeletalMesh 경로 저장
+		if (SkeletalMesh)
+		{
+			InOutHandle[SkeletalMeshKey] = SkeletalMesh->GetFilePath();
+			UE_LOG("[SkinnedMeshComponent] Saving SkeletalMesh path: '%s'", SkeletalMesh->GetFilePath().c_str());
+		}
+		else
+		{
+			InOutHandle[SkeletalMeshKey] = "";
+		}
+
+		// 2. MaterialSlots 저장
 		JSON SlotsArrayJson = JSON::Make(JSON::Class::Array);
 		for (UMaterialInterface* Mtl : MaterialSlots)
 		{
