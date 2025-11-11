@@ -624,36 +624,82 @@ void USkeletalMeshViewerContentWidget::RenderToolbar()
         ImGui::SameLine();
 
         // View options
-        ImGui::Checkbox("Show Mesh", &bShowSkeletalMesh);
+        if (ImGui::Checkbox("Show Mesh", &bShowSkeletalMesh))
+        {
+            if (ViewerWorld)
+            {
+                auto& RenderSettings = ViewerWorld->GetRenderSettings();
+                if (bShowSkeletalMesh)
+                {
+                    RenderSettings.EnableShowFlag(EEngineShowFlags::SF_SkeletalMeshes);
+                    UE_LOG("SkeletalMeshViewerContentWidget: SkeletalMeshes ENABLED");
+                }
+                else
+                {
+                    RenderSettings.DisableShowFlag(EEngineShowFlags::SF_SkeletalMeshes);
+                    UE_LOG("SkeletalMeshViewerContentWidget: SkeletalMeshes DISABLED");
+                }
+            }
+        }
         ImGui::SameLine();
         if (ImGui::Checkbox("Show Bones", &bShowBones))
         {
             bBoneVisualizationDirty = true;  // 표시/숨김 상태 변경 시 업데이트
         }
         ImGui::SameLine();
-        ImGui::Checkbox("Bone Axes", &bShowBoneAxes);
-        ImGui::SameLine();
-        ImGui::Checkbox("Bone Names", &bShowBoneNames);
-        ImGui::SameLine();
-        ImGui::Checkbox("Gizmo", &bShowGizmo);
-
-        // Lighting toggle
-        ImGui::SameLine();
-        static bool bLit = true;
-        if (ImGui::Checkbox("Lit", &bLit))
+        if (ImGui::Checkbox("Show Grid", &bShowGrid))
         {
             if (ViewerWorld)
             {
                 auto& RenderSettings = ViewerWorld->GetRenderSettings();
-                if (bLit)
+                if (bShowGrid)
+                {
+                    RenderSettings.EnableShowFlag(EEngineShowFlags::SF_Grid);
+                    UE_LOG("SkeletalMeshViewerContentWidget: Grid ENABLED");
+                }
+                else
+                {
+                    RenderSettings.DisableShowFlag(EEngineShowFlags::SF_Grid);
+                    UE_LOG("SkeletalMeshViewerContentWidget: Grid DISABLED");
+                }
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Checkbox("Gizmo", &bShowGizmo))
+        {
+            // Gizmo visibility control
+            if (ViewerWorld)
+            {
+                if (AGizmoActor* GizmoActor = ViewerWorld->GetGizmoActor())
+                {
+                    GizmoActor->SetActorHiddenInGame(!bShowGizmo);
+                    GizmoActor->SetActorHiddenInEditor(!bShowGizmo);
+                    UE_LOG("SkeletalMeshViewerContentWidget: Gizmo %s", bShowGizmo ? "ENABLED" : "DISABLED");
+                }
+            }
+        }
+        ImGui::SameLine();
+        ImGui::Checkbox("Bone Axes", &bShowBoneAxes);
+        ImGui::SameLine();
+        ImGui::Checkbox("Bone Names", &bShowBoneNames);
+
+        // Lighting toggle
+        ImGui::SameLine();
+        if (ImGui::Checkbox("Lit", &bShowLit))
+        {
+            // Control SF_Lighting ShowFlag for runtime unlit mode
+            if (ViewerWorld)
+            {
+                auto& RenderSettings = ViewerWorld->GetRenderSettings();
+                if (bShowLit)
                 {
                     RenderSettings.EnableShowFlag(EEngineShowFlags::SF_Lighting);
-                    UE_LOG("SkeletalMeshViewerContentWidget: Lighting ENABLED");
+                    UE_LOG("SkeletalMeshViewerContentWidget: Lighting ENABLED (Lit mode)");
                 }
                 else
                 {
                     RenderSettings.DisableShowFlag(EEngineShowFlags::SF_Lighting);
-                    UE_LOG("SkeletalMeshViewerContentWidget: Lighting DISABLED (Unlit mode)");
+                    UE_LOG("SkeletalMeshViewerContentWidget: Lighting DISABLED (Unlit mode - base color only)");
                 }
             }
         }

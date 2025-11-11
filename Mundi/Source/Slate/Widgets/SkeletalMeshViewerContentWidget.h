@@ -66,6 +66,8 @@ private:
     bool bShowBoneAxes = false;
     bool bShowSkeletalMesh = true;
     bool bShowBones = true;  // Show bone visualization
+    bool bShowGrid = true;  // Show grid
+    bool bShowLit = true;  // Lighting enabled
     bool bBoneVisualizationDirty = true;  // Bone lines need update
     int32 VisualizationThrottleCounter = 0;  // Throttle visualization updates
 

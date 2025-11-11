@@ -1011,6 +1011,31 @@ void FSceneRenderer::RenderOpaquePass(EViewModeIndex InRenderViewMode)
 			BatchElement.InputLayout = ShaderVariant->InputLayout;
 		}
 	}
+	// --- Unlit Mode 셰이더 오버라이드 (SF_Lighting이 꺼져있을 때) ---
+	const bool bEnableLighting = World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Lighting);
+	if (!bEnableLighting)
+	{
+		// UNLIT_MODE variant 로드
+		TArray<FShaderMacro> UnlitMacros;
+		UnlitMacros.push_back(FShaderMacro{ "UNLIT_MODE", "1" });
+
+		std::string ShaderPath = "Shaders/Materials/UberLit.hlsl";
+		UShader* UberLitShader = UResourceManager::GetInstance().Load<UShader>(ShaderPath, UnlitMacros);
+		if (UberLitShader)
+		{
+			FShaderVariant* UnlitVariant = UberLitShader->GetOrCompileShaderVariant(RHIDevice->GetDevice(), UnlitMacros);
+			if (UnlitVariant)
+			{
+				// 모든 배치를 UNLIT_MODE variant로 교체
+				for (FMeshBatchElement& BatchElement : MeshBatchElements)
+				{
+					BatchElement.VertexShader = UnlitVariant->VertexShader;
+					BatchElement.PixelShader = UnlitVariant->PixelShader;
+					BatchElement.InputLayout = UnlitVariant->InputLayout;
+				}
+			}
+		}
+	}
 
 	for (UBillboardComponent* BillboardComponent : Proxies.Billboards)
 	{
