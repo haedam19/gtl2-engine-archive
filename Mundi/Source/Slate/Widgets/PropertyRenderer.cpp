@@ -1,4 +1,4 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "PropertyRenderer.h"
 #include "ImGui/imgui.h"
 #include "Vector.h"
@@ -207,7 +207,7 @@ void UPropertyRenderer::RenderAllPropertiesWithInheritance(UObject* Object)
 void UPropertyRenderer::CacheResources()
 {
 	// 매번 캐싱을 새로 하도록 변경, NOTE: 추후에 변경된 것만 추가하도록 변경 필요
-	//ClearResourcesCache();
+	// ClearResourcesCache();
 
 	UResourceManager& ResMgr = UResourceManager::GetInstance();
 
