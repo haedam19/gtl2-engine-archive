@@ -32,11 +32,26 @@ void USkinnedMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 		if (MeshData)
 		{
 			MaterialSlots.resize(MeshData->GroupInfos.Num());
+			UE_LOG("[SkinnedMeshComponent] SetSkeletalMesh: %d material slots", MaterialSlots.size());
 
 			// FBX/OBJ에서 로드된 머티리얼 이름으로 자동 로드
 			for (int32 i = 0; i < MeshData->GroupInfos.Num(); ++i)
 			{
-				SetMaterialByName(i, MeshData->GroupInfos[i].InitialMaterialName);
+				const FString& MatName = MeshData->GroupInfos[i].InitialMaterialName;
+				UE_LOG("[SkinnedMeshComponent] Section %d: InitialMaterialName = '%s'", i, MatName.c_str());
+
+				SetMaterialByName(i, MatName);
+
+				// 적용 확인
+				UMaterialInterface* Applied = GetMaterial(i);
+				if (Applied)
+				{
+					UE_LOG("[SkinnedMeshComponent] Section %d: Material APPLIED ('%s')", i, Applied->GetMaterialInfo().MaterialName.c_str());
+				}
+				else
+				{
+					UE_LOG("[SkinnedMeshComponent] Section %d: Material is NULL (failed to load)", i);
+				}
 			}
 		}
 	}

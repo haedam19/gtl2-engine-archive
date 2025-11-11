@@ -672,11 +672,16 @@ namespace
 			FbxSurfaceMaterial* FbxMaterial = MeshNode->GetMaterial(0);
 			if (FbxMaterial)
 			{
+				UE_LOG("ProcessMesh: Found FBX material '%s'", FbxMaterial->GetName());
+
 				// 머티리얼 정보 추출
 				FMaterialInfo MaterialInfo;
 				if (ExtractMaterialInfo(FbxMaterial, MaterialInfo))
 				{
 					Group.InitialMaterialName = MaterialInfo.MaterialName;
+					UE_LOG("ProcessMesh: Extracted material info - Name: '%s', Diffuse: '%s'",
+						MaterialInfo.MaterialName.c_str(),
+						MaterialInfo.DiffuseTextureFileName.c_str());
 
 					// 중복 체크: 같은 이름의 머티리얼이 이미 있는지 확인
 					bool bAlreadyExists = false;
@@ -692,13 +697,23 @@ namespace
 					if (!bAlreadyExists)
 					{
 						OutMaterialInfos.Add(MaterialInfo);
+						UE_LOG("ProcessMesh: Added material '%s' to list (total: %d)", MaterialInfo.MaterialName.c_str(), OutMaterialInfos.size());
 					}
+					else
+					{
+						UE_LOG("ProcessMesh: Material '%s' already in list (skipping duplicate)", MaterialInfo.MaterialName.c_str());
+					}
+				}
+				else
+				{
+					UE_LOG("ProcessMesh: WARNING - Failed to extract material info from '%s'", FbxMaterial->GetName());
 				}
 			}
 			OutMesh.bHasMaterial = true;
 		}
 		else
 		{
+			UE_LOG("ProcessMesh: No materials found on this mesh node");
 			OutMesh.bHasMaterial = false;
 		}
 
@@ -1081,8 +1096,13 @@ FFbxManager::FSkeletalMeshEntry* FFbxManager::ImportSkeletalMesh(const FString& 
 	}
 
 	// UMaterial 생성 및 ResourceManager 등록
+	UE_LOG("FFbxManager: Processing %d materials from FBX", MaterialInfos.size());
 	for (const FMaterialInfo& InMaterialInfo : MaterialInfos)
 	{
+		UE_LOG("FFbxManager: Material '%s' - Diffuse: '%s'",
+			InMaterialInfo.MaterialName.c_str(),
+			InMaterialInfo.DiffuseTextureFileName.c_str());
+
 		if (!UResourceManager::GetInstance().Get<UMaterial>(InMaterialInfo.MaterialName))
 		{
 			UMaterial* Material = NewObject<UMaterial>();
@@ -1096,6 +1116,11 @@ FFbxManager::FSkeletalMeshEntry* FFbxManager::ImportSkeletalMesh(const FString& 
 			}
 
 			UResourceManager::GetInstance().Add<UMaterial>(InMaterialInfo.MaterialName, Material);
+			UE_LOG("FFbxManager: Material '%s' REGISTERED to ResourceManager", InMaterialInfo.MaterialName.c_str());
+		}
+		else
+		{
+			UE_LOG("FFbxManager: Material '%s' already exists in ResourceManager", InMaterialInfo.MaterialName.c_str());
 		}
 	}
 
