@@ -487,6 +487,8 @@ namespace
 			return false;
 		}
 
+		// FIXED: 여러 메시를 병합하기 위해 Empty() 제거
+		// 대신 현재 크기를 저장하여 StartIndex 계산에 사용
 		const size_t InitialVertexCount = OutMesh.Vertices.size();
 		const size_t InitialIndexCount = OutMesh.Indices.size();
 
@@ -534,6 +536,8 @@ namespace
 			}
 		}
 
+		// 4. 머티리얼 그룹 정보 구성
+		// FIXED: StartIndex는 이 메시가 시작하는 인덱스 (이전 메시들의 끝)
 		const uint32 MeshStartIndex = static_cast<uint32>(InitialIndexCount);
 		const uint32 MeshIndexCount = static_cast<uint32>(OutMesh.Indices.size() - InitialIndexCount);
 
@@ -560,7 +564,7 @@ namespace
 		return !OutMesh.Vertices.empty() && !OutMesh.Indices.empty();
 	}
 
-	/** @brief 씬 그래프에서 모든 메시를 찾아 변환 */
+	/** @brief 씬 그래프에서 모든 메시를 찾아 변환 (FIXED: 첫 번째 메시만이 아닌 모든 메시 처리) */
 	bool ExtractSkeletalMesh(FbxScene* Scene, const FBoneIndexMap& NodeToBone, FSkeletalMesh& OutMesh)
 	{
 		if (!Scene)
@@ -574,6 +578,7 @@ namespace
 			return false;
 		}
 
+		// 0. 시작 시 한 번만 초기화 (ProcessMesh에서는 Empty() 호출 안 함)
 		OutMesh.Vertices.Empty();
 		OutMesh.Indices.Empty();
 		OutMesh.GroupInfos.Empty();
@@ -592,6 +597,7 @@ namespace
 			FbxNodeAttribute* Attribute = Node->GetNodeAttribute();
 			if (Attribute && Attribute->GetAttributeType() == FbxNodeAttribute::eMesh)
 			{
+				// 2. 메시를 찾으면 변환 시도 (FIXED: return하지 않고 계속 순회)
 				if (ProcessMesh(Node, Node->GetMesh(), NodeToBone, OutMesh))
 				{
 					bFoundAnyMesh = true;
