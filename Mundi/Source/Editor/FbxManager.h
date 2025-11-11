@@ -19,7 +19,7 @@ public:
     static void Preload();
 
     static FSkeletalMesh* LoadSkeletalMeshAsset(const FString& PathFileName);
-    static void GetMockUpSkeletalMesh(FSkeletalMesh& OutMesh, FSkeleton& OutSkeleton, const FString& MaterialName = "Default");
+    static void GetMockUpSkeletalMesh(FSkeletalMesh& OutMesh, FSkeleton& OutSkeleton, const FString& MaterialName = "");
 
 private:
 	struct FSkeletalMeshEntry

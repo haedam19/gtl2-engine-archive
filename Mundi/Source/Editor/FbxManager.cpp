@@ -1320,12 +1320,12 @@ void FFbxManager::GetMockUpSkeletalMesh(FSkeletalMesh& OutMesh, FSkeleton& OutSk
 	auto VertIndex = [](int Level, int Corner) { return static_cast<uint32>(Level * 4 + Corner); };
 
 	// Bottom cap
-	OutMesh.Indices.Add(VertIndex(0, 0)); OutMesh.Indices.Add(VertIndex(0, 1)); OutMesh.Indices.Add(VertIndex(0, 2));
-	OutMesh.Indices.Add(VertIndex(0, 0)); OutMesh.Indices.Add(VertIndex(0, 2)); OutMesh.Indices.Add(VertIndex(0, 3));
+	OutMesh.Indices.Add(VertIndex(0, 0)); OutMesh.Indices.Add(VertIndex(0, 2)); OutMesh.Indices.Add(VertIndex(0, 1));
+	OutMesh.Indices.Add(VertIndex(0, 0)); OutMesh.Indices.Add(VertIndex(0, 3)); OutMesh.Indices.Add(VertIndex(0, 2));
 
 	// Top cap
-	OutMesh.Indices.Add(VertIndex(2, 0)); OutMesh.Indices.Add(VertIndex(2, 2)); OutMesh.Indices.Add(VertIndex(2, 1));
-	OutMesh.Indices.Add(VertIndex(2, 0)); OutMesh.Indices.Add(VertIndex(2, 3)); OutMesh.Indices.Add(VertIndex(2, 2));
+	OutMesh.Indices.Add(VertIndex(2, 0)); OutMesh.Indices.Add(VertIndex(2, 1)); OutMesh.Indices.Add(VertIndex(2, 2));
+	OutMesh.Indices.Add(VertIndex(2, 0)); OutMesh.Indices.Add(VertIndex(2, 2)); OutMesh.Indices.Add(VertIndex(2, 3));
 
 	// Side quads between each level pair
 	for (int Level = 0; Level < 2; ++Level)
