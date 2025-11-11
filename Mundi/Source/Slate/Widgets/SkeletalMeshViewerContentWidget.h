@@ -66,6 +66,8 @@ private:
     bool bShowBoneAxes = false;
     bool bShowSkeletalMesh = true;
     bool bShowBones = true;  // Show bone visualization
+    bool bShowGrid = true;  // Show grid
+    bool bShowLit = true;  // Lighting enabled
     bool bBoneVisualizationDirty = true;  // Bone lines need update
     int32 VisualizationThrottleCounter = 0;  // Throttle visualization updates
 
@@ -82,6 +84,9 @@ private:
     TArray<class USkeletalMesh*> LoadedMeshes;
     class ASkeletalMeshActor* ViewerSkeletalMeshActor = nullptr;
     int32 CurrentMeshIndex = -1;
+    float MeshScale = 1.0f;           // Uniform scale for mesh
+    float BoneVisualizationScale = 1.0f;  // Uniform scale for bone visualization
+    bool bSyncScale = true;           // Sync mesh and bone visualization scales
 
     // Camera Input
     bool bIsViewerRightMouseDown = false;

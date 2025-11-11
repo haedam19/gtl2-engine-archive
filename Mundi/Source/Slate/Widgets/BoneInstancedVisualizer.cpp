@@ -162,7 +162,8 @@ bool FBoneInstancedVisualizer::Initialize(ID3D11Device* InDevice)
 void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
                                              const FViewerSkeletonCache& Cache,
                                              int32 SelectedBoneIndex,
-                                             TArray<FInstancedMeshBatchElement>& OutBatches)
+                                             TArray<FInstancedMeshBatchElement>& OutBatches,
+                                             float MeshScale)
 {
     if (Skeleton.Bones.Num() == 0 || !SphereMesh || !PyramidMesh || !BoneShader)
         return;
@@ -183,9 +184,13 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
         bool bIsSelected = (SelectedBoneIndex == i);
         const FVector4& JointColor = bIsSelected ? COLOR_JOINT_SELECTED : COLOR_JOINT_NORMAL;
 
-        // Scale matrix for sphere radius
-        FMatrix ScaleMatrix = FMatrix::MakeScale(FVector(JointRadius, JointRadius, JointRadius));
-        FMatrix TranslationMatrix = FMatrix::MakeTranslation(BonePos);
+        // Apply mesh scale to bone position
+        FVector ScaledBonePos = BonePos * MeshScale;
+
+        // Scale matrix for sphere radius (also scaled)
+        float ScaledRadius = JointRadius * MeshScale;
+        FMatrix ScaleMatrix = FMatrix::MakeScale(FVector(ScaledRadius, ScaledRadius, ScaledRadius));
+        FMatrix TranslationMatrix = FMatrix::MakeTranslation(ScaledBonePos);
         FMatrix WorldMatrix = ScaleMatrix * TranslationMatrix;
 
         FBoneInstanceData InstanceData;
@@ -206,6 +211,9 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
         bool bIsSelected = (SelectedBoneIndex == i);
         const FVector4& BoneColor = bIsSelected ? COLOR_BONE_SELECTED : COLOR_BONE_NORMAL;
 
+        // Apply mesh scale to bone position
+        FVector ScaledBonePos = BonePos * MeshScale;
+
         const TArray<int32>& ChildIndices = Cache.BoneChildIndices[i];
 
         if (!ChildIndices.empty())
@@ -217,9 +225,10 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
                     continue;
 
                 const FVector& ChildPos = Cache.BoneWorldPositions[ChildIdx];
+                FVector ScaledChildPos = ChildPos * MeshScale;
 
                 // Build transform matrix for pyramid
-                FVector Direction = ChildPos - BonePos;
+                FVector Direction = ScaledChildPos - ScaledBonePos;
                 float Length = Direction.Size();
                 if (Length < 0.001f)
                     continue;
@@ -240,8 +249,9 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
                 RotationMatrix.M[2][0] = Direction.X; RotationMatrix.M[2][1] = Direction.Y; RotationMatrix.M[2][2] = Direction.Z; RotationMatrix.M[2][3] = 0;
                 RotationMatrix.M[3][0] = 0;          RotationMatrix.M[3][1] = 0;          RotationMatrix.M[3][2] = 0;          RotationMatrix.M[3][3] = 1;
 
-                FMatrix ScaleMatrix = FMatrix::MakeScale(FVector(PyramidWidth, PyramidWidth, Length));
-                FMatrix TranslationMatrix = FMatrix::MakeTranslation(BonePos);
+                float ScaledWidth = PyramidWidth * MeshScale;
+                FMatrix ScaleMatrix = FMatrix::MakeScale(FVector(ScaledWidth, ScaledWidth, Length));
+                FMatrix TranslationMatrix = FMatrix::MakeTranslation(ScaledBonePos);
                 FMatrix WorldMatrix = ScaleMatrix * RotationMatrix * TranslationMatrix;
 
                 FBoneInstanceData InstanceData;
@@ -256,8 +266,9 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
             if (Bone.ParentIndex >= 0 && Bone.ParentIndex < Cache.BoneWorldPositions.Num())
             {
                 const FVector& ParentPos = Cache.BoneWorldPositions[Bone.ParentIndex];
+                FVector ScaledParentPos = ParentPos * MeshScale;
 
-                FVector Direction = BonePos - ParentPos;
+                FVector Direction = ScaledBonePos - ScaledParentPos;
                 float Length = Direction.Size();
                 if (Length > 0.001f)
                 {
@@ -277,8 +288,9 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
                     RotationMatrix.M[2][0] = Direction.X; RotationMatrix.M[2][1] = Direction.Y; RotationMatrix.M[2][2] = Direction.Z; RotationMatrix.M[2][3] = 0;
                     RotationMatrix.M[3][0] = 0;          RotationMatrix.M[3][1] = 0;          RotationMatrix.M[3][2] = 0;          RotationMatrix.M[3][3] = 1;
 
-                    FMatrix ScaleMatrix = FMatrix::MakeScale(FVector(LeafPyramidWidth, LeafPyramidWidth, LeafLength));
-                    FMatrix TranslationMatrix = FMatrix::MakeTranslation(BonePos);
+                    float ScaledLeafWidth = LeafPyramidWidth * MeshScale;
+                    FMatrix ScaleMatrix = FMatrix::MakeScale(FVector(ScaledLeafWidth, ScaledLeafWidth, LeafLength));
+                    FMatrix TranslationMatrix = FMatrix::MakeTranslation(ScaledBonePos);
                     FMatrix WorldMatrix = ScaleMatrix * RotationMatrix * TranslationMatrix;
 
                     FBoneInstanceData InstanceData;

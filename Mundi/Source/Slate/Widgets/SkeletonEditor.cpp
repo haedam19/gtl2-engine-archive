@@ -227,6 +227,7 @@ void FSkeletonEditor::BuildCache(UWorld* World)
     Cache.BoneWorldMatrices.clear();
     Cache.BoneWorldRotations.clear();
     Cache.BoneWorldPositions.clear();
+    Cache.BoneWorldScales.clear();
     Cache.BoneActors.clear();
     Cache.BoneChildIndices.clear();
 
@@ -236,6 +237,7 @@ void FSkeletonEditor::BuildCache(UWorld* World)
         Cache.BoneWorldMatrices.Add(FMatrix::Identity());
         Cache.BoneWorldRotations.Add(FQuat::Identity());
         Cache.BoneWorldPositions.Add(FVector(0, 0, 0));
+        Cache.BoneWorldScales.Add(FVector(1, 1, 1));
     }
 
     // Build child indices (must be before UpdateBoneWorldMatrices)
@@ -286,15 +288,17 @@ void FSkeletonEditor::CreateBoneActors(UWorld* World)
         AActor* BoneActor = World->SpawnActor<AActor>();
         if (BoneActor)
         {
-            // Initialize with cached world position
+            // Initialize with cached world transform (position + rotation + scale)
             BoneActor->SetActorLocation(Cache.BoneWorldPositions[i]);
+            BoneActor->SetActorRotation(Cache.BoneWorldRotations[i]);
+            BoneActor->SetActorScale(Cache.BoneWorldScales[i]);
         }
         Cache.BoneActors.Add(BoneActor);
     }
     UE_LOG("FSkeletonEditor::CreateBoneActors: Created %d bone actors", Cache.BoneActors.Num());
 }
 
-void FSkeletonEditor::UpdateBoneWorldMatrices(int32 StartBoneIndex)
+void FSkeletonEditor::UpdateBoneWorldMatrices(int32 StartBoneIndex, float BoneVisualizationScale)
 {
     if (Skeleton.Bones.Num() == 0)
         return;
@@ -310,13 +314,13 @@ void FSkeletonEditor::UpdateBoneWorldMatrices(int32 StartBoneIndex)
                 UpdateBoneWorldMatrixRecursive(i);
             }
         }
-        UpdateBoneActorTransforms();
+        UpdateBoneActorTransforms(-1, BoneVisualizationScale);
     }
     else
     {
         // 특정 본과 자식들만 업데이트 (최적화)
         UpdateBoneWorldMatrixRecursive(StartBoneIndex);
-        UpdateBoneActorTransforms(StartBoneIndex);
+        UpdateBoneActorTransforms(StartBoneIndex, BoneVisualizationScale);
     }
 
     // Notify transform changed
@@ -339,21 +343,31 @@ void FSkeletonEditor::UpdateBoneWorldMatrixRecursive(int32 BoneIndex)
     FMatrix LocalScale = FMatrix::MakeScale(Bone.BindS);
     FMatrix LocalMatrix = LocalScale * LocalRotation * LocalTranslation;
 
-    // Calculate world rotation (cached for performance)
+    // Calculate world rotation and scale (cached for performance)
     FQuat WorldRotation;
+    FVector WorldScale;
     if (Bone.ParentIndex >= 0 && Bone.ParentIndex < Cache.BoneWorldRotations.Num())
     {
         // World rotation = Parent world rotation * Local rotation
         WorldRotation = Cache.BoneWorldRotations[Bone.ParentIndex] * Bone.BindR;
+        // World scale = Parent world scale * Local scale (component-wise multiplication)
+        const FVector& ParentScale = Cache.BoneWorldScales[Bone.ParentIndex];
+        WorldScale = FVector(
+            ParentScale.X * Bone.BindS.X,
+            ParentScale.Y * Bone.BindS.Y,
+            ParentScale.Z * Bone.BindS.Z
+        );
         Cache.BoneWorldMatrices[BoneIndex] = LocalMatrix * Cache.BoneWorldMatrices[Bone.ParentIndex];
     }
     else
     {
-        // Root bone: world rotation = local rotation
+        // Root bone: world rotation = local rotation, world scale = local scale
         WorldRotation = Bone.BindR;
+        WorldScale = Bone.BindS;
         Cache.BoneWorldMatrices[BoneIndex] = LocalMatrix;
     }
     Cache.BoneWorldRotations[BoneIndex] = WorldRotation;
+    Cache.BoneWorldScales[BoneIndex] = WorldScale;
 
     // 월드 위치 캐싱 (행렬에서 추출하여 저장)
     Cache.BoneWorldPositions[BoneIndex] = FVector(
@@ -373,14 +387,17 @@ void FSkeletonEditor::UpdateBoneWorldMatrixRecursive(int32 BoneIndex)
     }
 }
 
-void FSkeletonEditor::UpdateBoneActorTransforms(int32 StartBoneIndex)
+void FSkeletonEditor::UpdateBoneActorTransforms(int32 StartBoneIndex, float BoneVisualizationScale)
 {
     for (int32 i = 0; i < Cache.BoneActors.Num(); ++i)
     {
         // StartBoneIndex가 -1이면 모든 본 업데이트
-        // 아니면 StartBoneIndex 본인이거나 그 자손만 업데이트
-        if (StartBoneIndex >= 0 && i != StartBoneIndex)
+        // 아니면 StartBoneIndex의 자손만 업데이트 (본인은 제외 - 드래그 중 순환 참조 방지)
+        if (StartBoneIndex >= 0)
         {
+            if (i == StartBoneIndex)
+                continue;  // 본인은 건너뛰기 (기즈모가 제어 중)
+
             // 간단한 자손 체크: ParentIndex 체인 순회
             bool bIsDescendant = false;
             int32 ParentIdx = Skeleton.Bones[i].ParentIndex;
@@ -400,16 +417,15 @@ void FSkeletonEditor::UpdateBoneActorTransforms(int32 StartBoneIndex)
 
         if (AActor* BoneActor = Cache.BoneActors[i])
         {
-            // 캐시된 본의 월드 위치 사용 (행렬에서 추출하지 않음 - 성능 최적화)
-            BoneActor->SetActorLocation(Cache.BoneWorldPositions[i]);
-
-            // 캐시된 본의 월드 회전 사용 (성능 최적화)
+            // 캐시된 본의 월드 Transform 사용하되 시각화 스케일 적용
+            BoneActor->SetActorLocation(Cache.BoneWorldPositions[i] * BoneVisualizationScale);
             BoneActor->SetActorRotation(Cache.BoneWorldRotations[i]);
+            BoneActor->SetActorScale(Cache.BoneWorldScales[i]);
         }
     }
 }
 
-void FSkeletonEditor::SyncBoneDataFromActor(int32 BoneIndex)
+void FSkeletonEditor::SyncBoneDataFromActor(int32 BoneIndex, float BoneVisualizationScale)
 {
     if (BoneIndex < 0 || BoneIndex >= Skeleton.Bones.Num())
         return;
@@ -421,51 +437,55 @@ void FSkeletonEditor::SyncBoneDataFromActor(int32 BoneIndex)
     FBone& Bone = Skeleton.Bones[BoneIndex];
 
     // 본 액터의 현재 월드 Transform 가져오기
-    FVector ActorWorldPos = BoneActor->GetActorLocation();
+    // 주의: BoneVisualizationScale이 적용된 위치이므로 원본 위치로 되돌려야 함
+    FVector ActorWorldPos = BoneActor->GetActorLocation() / BoneVisualizationScale;
     FQuat ActorWorldRot = BoneActor->GetActorRotation();
     FVector ActorWorldScale = BoneActor->GetActorScale();
 
     // 부모 본이 있으면 부모의 월드 Transform으로 역변환하여 로컬 Transform 계산
     if (Bone.ParentIndex >= 0 && Bone.ParentIndex < Skeleton.Bones.Num())
     {
-        // 부모 본의 월드 Transform 계산
+        // 부모 본의 캐시된 월드 Transform 사용
         AActor* ParentActor = GetBoneActor(Bone.ParentIndex);
         if (!ParentActor)
             return;
 
-        FVector ParentWorldPos = ParentActor->GetActorLocation();
+        // 부모 본 위치도 스케일 제거
+        FVector ParentWorldPos = ParentActor->GetActorLocation() / BoneVisualizationScale;
         FQuat ParentWorldRot = ParentActor->GetActorRotation();
         FVector ParentWorldScale = ParentActor->GetActorScale();
 
-        // 로컬 Position 계산
-        // LocalPos = Inverse(ParentRot) * (ChildPos - ParentPos) / ParentScale
-        FVector DeltaPos = ActorWorldPos - ParentWorldPos;
-        FVector RotatedDelta = ParentWorldRot.Inverse().RotateVector(DeltaPos);
-        FVector LocalPos(
-            RotatedDelta.X / ParentWorldScale.X,
-            RotatedDelta.Y / ParentWorldScale.Y,
-            RotatedDelta.Z / ParentWorldScale.Z
-        );
+        // Row-major 행렬 변환과 일치하도록 계산
+        // ChildWorld = LocalTranslation * LocalRotation * LocalScale * ParentWorld (행렬 곱셈)
+        // 이를 역변환하면:
 
-        // 로컬 Rotation 계산
-        // LocalRot = Inverse(ParentRot) * ChildRot
+        // 1. Rotation: LocalRot = Inv(ParentRot) * ChildRot
         FQuat LocalRot = ParentWorldRot.Inverse() * ActorWorldRot;
+        Bone.BindR = LocalRot;
 
-        // 로컬 Scale 계산
-        // LocalScale = ChildScale / ParentScale
+        // 2. Scale: LocalScale = ChildScale / ParentScale
         FVector LocalScale(
             ActorWorldScale.X / ParentWorldScale.X,
             ActorWorldScale.Y / ParentWorldScale.Y,
             ActorWorldScale.Z / ParentWorldScale.Z
         );
-
-        // 본 데이터 업데이트
-        Bone.BindT = LocalPos;
-        Bone.BindR = LocalRot;  // Quaternion을 직접 저장
         Bone.BindS = LocalScale;
 
+        // 3. Translation: Row-major 정방향 변환 역산
+        // Forward: WorldPos = ParentR.Rotate(BindT * ParentS) + ParentPos
+        // Inverse: BindT = Inv(ParentR).Rotate(WorldPos - ParentPos) / ParentS
+        // 중요: LocalRot/LocalScale이 아니라 ParentRot/ParentScale을 사용해야 함!
+        FVector DeltaPos = ActorWorldPos - ParentWorldPos;
+        FVector UnrotatedDelta = ParentWorldRot.Inverse().RotateVector(DeltaPos);
+        FVector LocalPos(
+            UnrotatedDelta.X / ParentWorldScale.X,
+            UnrotatedDelta.Y / ParentWorldScale.Y,
+            UnrotatedDelta.Z / ParentWorldScale.Z
+        );
+        Bone.BindT = LocalPos;
+
         UE_LOG("FSkeletonEditor: Calculated local transform from parent - LocalPos=(%.2f,%.2f,%.2f)",
-               LocalPos.X, LocalPos.Y, LocalPos.Z);
+               Bone.BindT.X, Bone.BindT.Y, Bone.BindT.Z);
     }
     else
     {
@@ -476,7 +496,7 @@ void FSkeletonEditor::SyncBoneDataFromActor(int32 BoneIndex)
     }
 
     // 월드 Transform 재계산 (이 본과 자식 본들만 - 최적화)
-    UpdateBoneWorldMatrices(BoneIndex);
+    UpdateBoneWorldMatrices(BoneIndex, BoneVisualizationScale);
 
     UE_LOG("FSkeletonEditor: Synced bone data from actor - BoneIndex=%d", BoneIndex);
 }

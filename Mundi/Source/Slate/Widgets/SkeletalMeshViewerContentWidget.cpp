@@ -192,6 +192,7 @@ void USkeletalMeshViewerContentWidget::Initialize()
         // ========================================
         auto& RenderSettings = ViewerWorld->GetRenderSettings();
         RenderSettings.EnableShowFlag(EEngineShowFlags::SF_StaticMeshes);
+        RenderSettings.EnableShowFlag(EEngineShowFlags::SF_SkeletalMeshes);
         RenderSettings.EnableShowFlag(EEngineShowFlags::SF_Lighting);
         RenderSettings.EnableShowFlag(EEngineShowFlags::SF_Grid);
 
@@ -204,24 +205,31 @@ void USkeletalMeshViewerContentWidget::Initialize()
         ViewerCamera = ViewerWorld->SpawnActor<ACameraActor>();
         if (ViewerCamera)
         {
-            // Camera 초기 위치 설정 (큰 Cube를 보도록)
+            // Camera 초기 위치 설정: 비스듬한 각도에서 원점을 바라봄
             // X forward, Z up 좌표계
-            // 뒤로 충분히 물러나서 전체를 볼 수 있도록
-            ViewerCamera->SetActorLocation(FVector(-20.0f, 0.0f, 0.0f));  // 더 멀리, 같은 높이
+            ViewerCamera->SetActorLocation(FVector(20.0f, 0.0f, 10.0f));  // +X, +Z 위치 (위에서 대각선으로)
 
-            // LookAt으로 Cube를 향하도록 설정
-            FVector CubePos(0.0f, 0.0f, 0.0f);  // 원점의 큐브
+            // LookAt으로 원점을 향하도록 설정
+            FVector CubePos(0.0f, 0.0f, 0.0f);  // 원점
             FVector CameraPos = ViewerCamera->GetActorLocation();
             FVector Direction = (CubePos - CameraPos).GetNormalized();
 
-            // Pitch 계산 (상하 회전, Y축)
-            float Pitch = RadiansToDegrees(std::asin(Direction.Z));
-            // Yaw 계산 (좌우 회전, Z축)
+            // X forward, Y right, Z up (LH) 좌표계
+            // Direction = (Dx, Dy, Dz)에서 Yaw/Pitch 추출
+
+            // Yaw: XY 평면에 투영한 방향의 각도 (Z축 회전)
             float Yaw = RadiansToDegrees(std::atan2(Direction.Y, Direction.X));
 
-            // FQuat::MakeFromEulerZYX는 (Roll, Pitch, Yaw) 순서로 해석
-            // Roll(X축)=0, Pitch(Y축), Yaw(Z축)
-            ViewerCamera->SetActorRotation(FVector(0.0f, Pitch, Yaw));
+            // Pitch: 수평면(XY)에서 위/아래로 얼마나 벗어났는지
+            // XY 평면 거리
+            float HorizontalDist = std::sqrt(Direction.X * Direction.X + Direction.Y * Direction.Y);
+            float Pitch = RadiansToDegrees(std::atan2(Direction.Z, HorizontalDist));
+
+            // Y축 회전의 방향이 반대이므로 Pitch 부호 반전
+            Pitch = -Pitch;
+
+            // CameraActor는 내부 Pitch/Yaw 상태를 관리하므로 SetAnglesImmediate 사용
+            ViewerCamera->SetAnglesImmediate(Pitch, Yaw);
 
             UE_LOG("SkeletalMeshViewerContentWidget: Camera LookAt - Direction:(%.2f,%.2f,%.2f), Pitch:%.1f, Yaw:%.1f",
                    Direction.X, Direction.Y, Direction.Z, Pitch, Yaw);
@@ -279,17 +287,20 @@ void USkeletalMeshViewerContentWidget::Initialize()
 
             // 에디터 전용 컴포넌트는 bSuppressEditorComponents 플래그로 애초에 생성되지 않음
 
-            // 목표: 좌상단(+X, +Y, +Z)에서 원점을 향해 빛이 비춤
+            // 목표: 위에서 아래로 비추되, XY 평면에서 180도 회전 (-X, 0, -Z)
             // 셰이더에서 lightDir = -Direction을 사용하므로
-            // 빛이 (-X, -Y, -Z) 방향에서 오려면 Direction = (+X, +Y, +Z)
-            // Y축이 반전되므로 입력은 -Y 사용
-            FVector TargetDirection(1.0f, 0.0f, 0.0f);
+            // 원하는 빛의 방향이 (-X, 0, -Z)면 Direction = (+X, 0, +Z) 필요
+            // 하지만 위에서 아래로 비추려면 Z가 음수여야 함
+            // 최종 목표: 빛이 (-X, 0, -Z) 방향으로 비춤 → Direction = (+X, 0, +Z)
+            // 아니면 빛이 위에서 아래로 (-Z 방향) + XY 평면에서 180도 회전
+            // 실제로는: Direction = (-1, 0, -1) normalized
+            FVector TargetDirection(-1.0f, 0.0f, -1.0f);
             TargetDirection = TargetDirection.GetNormalized();
 
             // XY 평면에서의 각도 (Yaw, Z축 회전) - 부호 반전
             float yaw = -RadiansToDegrees(std::atan2(TargetDirection.Y, TargetDirection.X));
 
-            // 수직 각도 (Pitch) - Z가 +이므로 위를 향함
+            // 수직 각도 (Pitch) - Z가 음수이므로 아래를 향함
             float xyLength = std::sqrt(TargetDirection.X * TargetDirection.X + TargetDirection.Y * TargetDirection.Y);
             float pitch = RadiansToDegrees(std::atan2(TargetDirection.Z, xyLength));
 
@@ -335,9 +346,7 @@ void USkeletalMeshViewerContentWidget::Initialize()
             };
         }
 
-        // ========================================
         // Create Skeletal Mesh Actor
-        // ========================================
         ViewerSkeletalMeshActor = ViewerWorld->SpawnActor<ASkeletalMeshActor>();
         if (ViewerSkeletalMeshActor)
         {
@@ -445,6 +454,25 @@ void USkeletalMeshViewerContentWidget::RenderWidget()
     // Tick ViewerWorld (고정 60 FPS 기준: 0.0166초)
     float DeltaTime = 0.0166f;
     ViewerWorld->Tick(DeltaTime);
+
+    // 카메라 회전 추적 로그 (1초마다 출력)
+    static float LogTimer = 0.0f;
+    LogTimer += DeltaTime;
+    if (LogTimer >= 1.0f && ViewerCamera)
+    {
+        LogTimer = 0.0f;
+        FVector CamPos = ViewerCamera->GetActorLocation();
+        FQuat CamRotQuat = ViewerCamera->GetActorRotation();
+        FVector CamRot = CamRotQuat.ToEulerZYXDeg(); // (Roll, Pitch, Yaw)
+        FVector CamForward = ViewerCamera->GetForward();
+
+        UE_LOG("===== CAMERA STATE =====");
+        UE_LOG("Position: (%.2f, %.2f, %.2f)", CamPos.X, CamPos.Y, CamPos.Z);
+        UE_LOG("Rotation: Roll=%.2f, Pitch=%.2f, Yaw=%.2f", CamRot.X, CamRot.Y, CamRot.Z);
+        UE_LOG("Forward: (%.3f, %.3f, %.3f)", CamForward.X, CamForward.Y, CamForward.Z);
+        UE_LOG("Internal: Pitch=%.2f, Yaw=%.2f", ViewerCamera->GetCameraPitch(), ViewerCamera->GetCameraYaw());
+        UE_LOG("========================");
+    }
 
     // 뷰어 카메라 입력 처리 (우클릭 + WASD/QE)
     if (bEnableViewerCameraInput && ViewerCamera)
@@ -593,6 +621,24 @@ void USkeletalMeshViewerContentWidget::RenderWidget()
 
         ImGui::SameLine();
 
+        // Splitter (draggable divider)
+        ImGui::Button("##splitter", ImVec2(4.0f, -1));
+        if (ImGui::IsItemActive())
+        {
+            float delta = ImGui::GetIO().MouseDelta.x;
+            SidebarWidth += delta;
+
+            // Clamp sidebar width between 200 and 600 pixels
+            if (SidebarWidth < 200.0f) SidebarWidth = 200.0f;
+            if (SidebarWidth > 600.0f) SidebarWidth = 600.0f;
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        }
+
+        ImGui::SameLine();
+
         // Right viewport area
         ImGui::BeginChild("Viewport", ImVec2(0, 0), true);
         {
@@ -625,18 +671,85 @@ void USkeletalMeshViewerContentWidget::RenderToolbar()
         ImGui::SameLine();
 
         // View options
-        ImGui::Checkbox("Show Mesh", &bShowSkeletalMesh);
+        if (ImGui::Checkbox("Show Mesh", &bShowSkeletalMesh))
+        {
+            if (ViewerWorld)
+            {
+                auto& RenderSettings = ViewerWorld->GetRenderSettings();
+                if (bShowSkeletalMesh)
+                {
+                    RenderSettings.EnableShowFlag(EEngineShowFlags::SF_SkeletalMeshes);
+                    UE_LOG("SkeletalMeshViewerContentWidget: SkeletalMeshes ENABLED");
+                }
+                else
+                {
+                    RenderSettings.DisableShowFlag(EEngineShowFlags::SF_SkeletalMeshes);
+                    UE_LOG("SkeletalMeshViewerContentWidget: SkeletalMeshes DISABLED");
+                }
+            }
+        }
         ImGui::SameLine();
         if (ImGui::Checkbox("Show Bones", &bShowBones))
         {
             bBoneVisualizationDirty = true;  // 표시/숨김 상태 변경 시 업데이트
         }
         ImGui::SameLine();
+        if (ImGui::Checkbox("Show Grid", &bShowGrid))
+        {
+            if (ViewerWorld)
+            {
+                auto& RenderSettings = ViewerWorld->GetRenderSettings();
+                if (bShowGrid)
+                {
+                    RenderSettings.EnableShowFlag(EEngineShowFlags::SF_Grid);
+                    UE_LOG("SkeletalMeshViewerContentWidget: Grid ENABLED");
+                }
+                else
+                {
+                    RenderSettings.DisableShowFlag(EEngineShowFlags::SF_Grid);
+                    UE_LOG("SkeletalMeshViewerContentWidget: Grid DISABLED");
+                }
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Checkbox("Gizmo", &bShowGizmo))
+        {
+            // Gizmo visibility control
+            if (ViewerWorld)
+            {
+                if (AGizmoActor* GizmoActor = ViewerWorld->GetGizmoActor())
+                {
+                    GizmoActor->SetActorHiddenInGame(!bShowGizmo);
+                    GizmoActor->SetActorHiddenInEditor(!bShowGizmo);
+                    UE_LOG("SkeletalMeshViewerContentWidget: Gizmo %s", bShowGizmo ? "ENABLED" : "DISABLED");
+                }
+            }
+        }
+        ImGui::SameLine();
         ImGui::Checkbox("Bone Axes", &bShowBoneAxes);
         ImGui::SameLine();
         ImGui::Checkbox("Bone Names", &bShowBoneNames);
+
+        // Lighting toggle
         ImGui::SameLine();
-        ImGui::Checkbox("Gizmo", &bShowGizmo);
+        if (ImGui::Checkbox("Lit", &bShowLit))
+        {
+            // Control SF_Lighting ShowFlag for runtime unlit mode
+            if (ViewerWorld)
+            {
+                auto& RenderSettings = ViewerWorld->GetRenderSettings();
+                if (bShowLit)
+                {
+                    RenderSettings.EnableShowFlag(EEngineShowFlags::SF_Lighting);
+                    UE_LOG("SkeletalMeshViewerContentWidget: Lighting ENABLED (Lit mode)");
+                }
+                else
+                {
+                    RenderSettings.DisableShowFlag(EEngineShowFlags::SF_Lighting);
+                    UE_LOG("SkeletalMeshViewerContentWidget: Lighting DISABLED (Unlit mode - base color only)");
+                }
+            }
+        }
     }
     ImGui::EndChild();
 }
@@ -682,12 +795,84 @@ void USkeletalMeshViewerContentWidget::RenderSidebar()
 
 void USkeletalMeshViewerContentWidget::RenderMeshList()
 {
-    ImGui::BeginChild("MeshListArea", ImVec2(0, 150), true);
+    // Fixed width for sliders to prevent stretching
+    float FixedWidth = 280.0f;
+    ImGui::PushItemWidth(FixedWidth);
+
+    ImGui::BeginChild("MeshListArea", ImVec2(0, 250), true);
 
     // Load FBX Button
     if (ImGui::Button("Load FBX...", ImVec2(-1, 0)))
     {
         LoadSkeletalMeshFromFile();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Sync Scale Checkbox
+    if (ImGui::Checkbox("Sync Scale", &bSyncScale))
+    {
+        // When enabling sync, match bone scale to mesh scale
+        if (bSyncScale)
+        {
+            BoneVisualizationScale = MeshScale;
+            bBoneVisualizationDirty = true;
+        }
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Synchronize mesh and bone visualization scales");
+    }
+
+    ImGui::Spacing();
+
+    // Mesh Scale
+    ImGui::Text("Mesh Scale");
+    ImGui::SetNextItemWidth(FixedWidth);
+    if (ImGui::DragFloat("##MeshScale", &MeshScale, 0.01f, 0.1f, 10.0f, "%.2f"))
+    {
+        if (ViewerSkeletalMeshActor)
+        {
+            ViewerSkeletalMeshActor->SetActorScale(FVector(MeshScale, MeshScale, MeshScale));
+
+            // Sync bone visualization scale if enabled
+            if (bSyncScale)
+            {
+                BoneVisualizationScale = MeshScale;
+            }
+
+            // Force bone visualization update
+            bBoneVisualizationDirty = true;
+        }
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Scale the skeletal mesh (double-click to input)");
+    }
+
+    // Bone Visualization Scale
+    ImGui::Text("Bone Scale");
+    ImGui::SetNextItemWidth(FixedWidth);
+    if (ImGui::DragFloat("##BoneScale", &BoneVisualizationScale, 0.01f, 0.1f, 10.0f, "%.2f"))
+    {
+        // Sync mesh scale if enabled
+        if (bSyncScale && ViewerSkeletalMeshActor)
+        {
+            MeshScale = BoneVisualizationScale;
+            ViewerSkeletalMeshActor->SetActorScale(FVector(MeshScale, MeshScale, MeshScale));
+        }
+
+        // Force bone visualization update
+        bBoneVisualizationDirty = true;
+
+        // Update all bone actor positions with new scale
+        UpdateBoneWorldMatrices();
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Scale the bone visualization (double-click to input)");
     }
 
     ImGui::Spacing();
@@ -745,10 +930,15 @@ void USkeletalMeshViewerContentWidget::RenderMeshList()
     }
 
     ImGui::EndChild();
+
+    ImGui::PopItemWidth();
 }
 
 void USkeletalMeshViewerContentWidget::RenderBoneHierarchy()
 {
+    // Use available width (-1) to stretch with splitter
+    ImGui::PushItemWidth(-1);
+
     ImGui::BeginChild("BoneHierarchyArea", ImVec2(0, 300), true);
 
     // Render BoneHierarchyWidget
@@ -762,10 +952,16 @@ void USkeletalMeshViewerContentWidget::RenderBoneHierarchy()
     }
 
     ImGui::EndChild();
+
+    ImGui::PopItemWidth();
 }
 
 void USkeletalMeshViewerContentWidget::RenderBoneProperties()
 {
+    // Fixed width for sliders
+    float FixedWidth = 280.0f;
+    ImGui::PushItemWidth(FixedWidth);
+
     ImGui::BeginChild("BonePropertiesArea", ImVec2(0, 0), true);
 
     // 선택된 본 정보 표시 (우선순위)
@@ -920,10 +1116,15 @@ void USkeletalMeshViewerContentWidget::RenderBoneProperties()
     }
 
     ImGui::EndChild();
+
+    ImGui::PopItemWidth();
 }
 
 void USkeletalMeshViewerContentWidget::RenderLightingControls()
 {
+    // Fixed width for sliders
+    float FixedWidth = 280.0f;
+
     ImGui::BeginChild("LightingControlsArea", ImVec2(0, 200), true);
 
     if (ViewerDirectionalLight)
@@ -940,20 +1141,23 @@ void USkeletalMeshViewerContentWidget::RenderLightingControls()
 
         bool bRotationChanged = false;
 
-        // Roll slider
-        if (ImGui::SliderFloat("Roll", &rotArray[0], -180.0f, 180.0f, "%.1f"))
+        // Roll
+        ImGui::SetNextItemWidth(FixedWidth);
+        if (ImGui::DragFloat("Roll", &rotArray[0], 0.5f, -180.0f, 180.0f, "%.1f"))
         {
             bRotationChanged = true;
         }
 
-        // Pitch slider
-        if (ImGui::SliderFloat("Pitch", &rotArray[1], -89.0f, 89.0f, "%.1f"))
+        // Pitch
+        ImGui::SetNextItemWidth(FixedWidth);
+        if (ImGui::DragFloat("Pitch", &rotArray[1], 0.5f, -89.0f, 89.0f, "%.1f"))
         {
             bRotationChanged = true;
         }
 
-        // Yaw slider
-        if (ImGui::SliderFloat("Yaw", &rotArray[2], -180.0f, 180.0f, "%.1f"))
+        // Yaw
+        ImGui::SetNextItemWidth(FixedWidth);
+        if (ImGui::DragFloat("Yaw", &rotArray[2], 0.5f, -180.0f, 180.0f, "%.1f"))
         {
             bRotationChanged = true;
         }
@@ -968,36 +1172,21 @@ void USkeletalMeshViewerContentWidget::RenderLightingControls()
         ImGui::Separator();
         ImGui::Spacing();
 
-        // Intensity slider
+        // Intensity
         if (UDirectionalLightComponent* LightComp = ViewerDirectionalLight->GetLightComponent())
         {
             ImGui::Text("Intensity");
             ImGui::Spacing();
 
             float currentIntensity = LightComp->GetIntensity();
-            if (ImGui::SliderFloat("##Intensity", &currentIntensity, 0.0f, 10.0f, "%.2f"))
+            ImGui::SetNextItemWidth(FixedWidth);
+            if (ImGui::DragFloat("##Intensity", &currentIntensity, 0.01f, 0.0f, 10.0f, "%.2f"))
             {
                 LightComp->SetIntensity(currentIntensity);
             }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-
-            // Shadow Bias slider
-            ImGui::Text("Shadow Bias");
-            ImGui::Spacing();
-
-            float currentBias = LightComp->GetShadowBias();
-            if (ImGui::SliderFloat("Bias##ShadowBias", &currentBias, 0.0f, 0.01f, "%.5f"))
+            if (ImGui::IsItemHovered())
             {
-                LightComp->SetShadowBias(currentBias);
-            }
-
-            float currentSlopeBias = LightComp->GetShadowSlopeBias();
-            if (ImGui::SliderFloat("Slope Bias##SlopeBias", &currentSlopeBias, 0.0f, 10.0f, "%.2f"))
-            {
-                LightComp->SetShadowSlopeBias(currentSlopeBias);
+                ImGui::SetTooltip("Light intensity (double-click to input)");
             }
 
             ImGui::Spacing();
@@ -1067,7 +1256,7 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
         {
             // ImGui::Image 렌더링
             ImVec2 imageTopLeft = ImGui::GetCursorScreenPos();
-            ImGui::Image((void*)srv, viewportSize);
+            ImGui::Image((void*)srv, viewportSize, ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(1, 1, 1, 1));
 
             // Image 위에 InvisibleButton을 겹쳐서 입력 가로채기
             ImGui::SetCursorScreenPos(imageTopLeft);  // 커서를 이미지 시작 위치로 되돌림
@@ -1388,11 +1577,53 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                                 SelectedComponent->SetWorldScale(NewScale);
                             }
 
+                            // 드래그 중에도 동기화하지만, 값이 실질적으로 변하지 않았으면 기존 값 유지
                             if (SelectedBoneIndex >= 0)
                             {
-                                SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex);
-                                UpdateBoneWorldMatrices(SelectedBoneIndex);
-                                bBoneVisualizationDirty = true;
+                                FSkeleton& Skeleton = SkeletonEditor.GetSkeleton();
+                                if (SelectedBoneIndex < Skeleton.Bones.Num())
+                                {
+                                    // 기존 본 데이터 저장
+                                    FVector OldBindT = Skeleton.Bones[SelectedBoneIndex].BindT;
+                                    FQuat OldBindR = Skeleton.Bones[SelectedBoneIndex].BindR;
+                                    FVector OldBindS = Skeleton.Bones[SelectedBoneIndex].BindS;
+
+                                    // Actor Transform 저장 (비교용)
+                                    AActor* BoneActor = SkeletonEditor.GetBoneActor(SelectedBoneIndex);
+                                    FVector OldActorPos = BoneActor ? BoneActor->GetActorLocation() : FVector::Zero();
+                                    FQuat OldActorRot = BoneActor ? BoneActor->GetActorRotation() : FQuat::Identity();
+
+                                    SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex, BoneVisualizationScale);
+
+                                    // 변화가 거의 없으면 원래 값 복원 (부동소수점 오차 누적 방지)
+                                    const float EPSILON_SQ = 1e-8f;
+                                    const float QUAT_DOT_THRESHOLD = 0.999999f;
+
+                                    FVector NewBindT = Skeleton.Bones[SelectedBoneIndex].BindT;
+                                    FQuat NewBindR = Skeleton.Bones[SelectedBoneIndex].BindR;
+                                    FVector NewBindS = Skeleton.Bones[SelectedBoneIndex].BindS;
+
+                                    float posDiff = (NewBindT - OldBindT).SizeSquared();
+                                    float rotDot = std::abs(FQuat::Dot(NewBindR, OldBindR));
+                                    float scaleDiff = (NewBindS - OldBindS).SizeSquared();
+
+                                    if (posDiff < EPSILON_SQ && rotDot > QUAT_DOT_THRESHOLD && scaleDiff < EPSILON_SQ)
+                                    {
+                                        // 값이 거의 같으면 기존 값 유지
+                                        Skeleton.Bones[SelectedBoneIndex].BindT = OldBindT;
+                                        Skeleton.Bones[SelectedBoneIndex].BindR = OldBindR;
+                                        Skeleton.Bones[SelectedBoneIndex].BindS = OldBindS;
+                                    }
+                                    else
+                                    {
+                                        // 드래그 중에도 자식 본들의 BoneActor 업데이트 필요 (기즈모 표시 위해)
+                                        // UpdateBoneActorTransforms에서 StartBoneIndex는 skip되므로
+                                        // 드래그 중인 본은 업데이트 안 되고, 자식들만 업데이트됨
+                                        // SyncBoneDataFromActor의 변환이 정확하면 drift 발생 안 함
+                                        UpdateBoneWorldMatrices(SelectedBoneIndex);
+                                        bBoneVisualizationDirty = true;
+                                    }
+                                }
                             }
                         }
                     }
@@ -1407,7 +1638,8 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
                         // 기즈모 드래그가 끝났을 때 본 액터의 Transform을 본 데이터로 동기화
                         if (SelectedBoneIndex >= 0)
                         {
-                            SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex);
+                            SkeletonEditor.SyncBoneDataFromActor(SelectedBoneIndex, BoneVisualizationScale);
+                            UpdateBoneWorldMatrices(SelectedBoneIndex);  // 자식 본들도 업데이트
                             bBoneVisualizationDirty = true;
                             UE_LOG("SkeletalMeshViewer: Synced bone data after gizmo drag");
                         }
@@ -1586,7 +1818,7 @@ void USkeletalMeshViewerContentWidget::BuildSkeletonCache()
 
 void USkeletalMeshViewerContentWidget::UpdateBoneWorldMatrices(int32 StartBoneIndex)
 {
-    SkeletonEditor.UpdateBoneWorldMatrices(StartBoneIndex);
+    SkeletonEditor.UpdateBoneWorldMatrices(StartBoneIndex, BoneVisualizationScale);
 
     if (!ViewerSkeletalMeshActor)
     {
@@ -1658,7 +1890,8 @@ void USkeletalMeshViewerContentWidget::RenderBones()
         SkeletonEditor.GetSkeleton(),
         SkeletonEditor.GetCache(),
         SelectedBoneIndex,
-        BoneInstancedBatches
+        BoneInstancedBatches,
+        BoneVisualizationScale  // Pass bone visualization scale
     );
 
     UE_LOG("RenderBones: Generated %d instanced batches", BoneInstancedBatches.size());
@@ -1723,9 +1956,18 @@ void USkeletalMeshViewerContentWidget::SetSelectedBone(int32 BoneIndex)
         AActor* BoneActor = SkeletonEditor.GetBoneActor(BoneIndex);
         if (BoneActor)
         {
+            // Apply bone visualization scale to bone actor position for gizmo
+            const FViewerSkeletonCache& CacheRef = SkeletonEditor.GetCache();
+            if (BoneIndex < CacheRef.BoneWorldPositions.Num())
+            {
+                FVector OriginalBonePos = CacheRef.BoneWorldPositions[BoneIndex];
+                FVector ScaledBonePos = OriginalBonePos * BoneVisualizationScale;
+                BoneActor->SetActorLocation(ScaledBonePos);
+            }
+
             BoneActor->SetIsPicked(true);
             ViewerWorld->GetSelectionManager()->SelectActor(BoneActor);
-            UE_LOG("SkeletalMeshViewerContentWidget: Bone actor selected for gizmo display");
+            UE_LOG("SkeletalMeshViewerContentWidget: Bone actor selected for gizmo display (scaled position)");
         }
     }
 
@@ -1789,8 +2031,8 @@ AActor* USkeletalMeshViewerContentWidget::PickBoneFromViewport(const FVector2D& 
     UE_LOG("PickBoneFromViewport: Ray - Origin=(%.2f, %.2f, %.2f), Dir=(%.3f, %.3f, %.3f)",
            Ray.Origin.X, Ray.Origin.Y, Ray.Origin.Z, Ray.Direction.X, Ray.Direction.Y, Ray.Direction.Z);
 
-    // Delegate to BonePicker
-    int32 ClosestBoneIndex = BonePicker.PickBone(SkeletonEditor.GetSkeleton(), SkeletonEditor.GetCache(), Ray);
+    // Delegate to BonePicker (with bone visualization scale)
+    int32 ClosestBoneIndex = BonePicker.PickBone(SkeletonEditor.GetSkeleton(), SkeletonEditor.GetCache(), Ray, BoneVisualizationScale);
 
     // 본을 찾았으면 선택
     if (ClosestBoneIndex >= 0)
@@ -1915,13 +2157,50 @@ void USkeletalMeshViewerContentWidget::SetCurrentMesh(int32 MeshIndex)
     CurrentMeshIndex = MeshIndex;
     USkeletalMesh* NewMesh = LoadedMeshes[MeshIndex];
 
+    // ========================================
+    // 머티리얼이 ResourceManager에 등록되어 있는지 확인하고 재등록
+    // ========================================
+    const FSkeletalMesh* MeshData = NewMesh->GetSkeletalMeshData();
+    if (MeshData && !MeshData->GroupInfos.empty())
+    {
+        UE_LOG("SkeletalMeshViewerContentWidget::SetCurrentMesh - Mesh has %d material groups", MeshData->GroupInfos.Num());
+        for (int32 i = 0; i < MeshData->GroupInfos.Num(); ++i)
+        {
+            const FString& MatName = MeshData->GroupInfos[i].InitialMaterialName;
+            UE_LOG("  Group %d: InitialMaterialName = '%s'", i, MatName.c_str());
+
+            if (!MatName.empty())
+            {
+                UMaterial* Mat = UResourceManager::GetInstance().Get<UMaterial>(MatName);
+                if (Mat)
+                {
+                    UE_LOG("    -> Found in ResourceManager!");
+                }
+                else
+                {
+                    UE_LOG("    -> NOT FOUND in ResourceManager! Will attempt to re-register...");
+                }
+            }
+        }
+    }
+
     // Set mesh on component
     USkeletalMeshComponent* Component = ViewerSkeletalMeshActor->GetSkeletalMeshComponent();
     if (Component)
     {
         Component->SetSkeletalMesh(NewMesh);
-        UE_LOG("SkeletalMeshViewerContentWidget: Switched to mesh %d: %s",
-               MeshIndex, NewMesh->GetFilePath().c_str());
+
+        // Apply current mesh scale
+        ViewerSkeletalMeshActor->SetActorScale(FVector(MeshScale, MeshScale, MeshScale));
+
+        // Sync bone visualization scale if enabled
+        if (bSyncScale)
+        {
+            BoneVisualizationScale = MeshScale;
+        }
+
+        UE_LOG("SkeletalMeshViewerContentWidget: Switched to mesh %d: %s (MeshScale: %.2f, BoneScale: %.2f)",
+               MeshIndex, NewMesh->GetFilePath().c_str(), MeshScale, BoneVisualizationScale);
 
         // Update SkeletonEditor with new skeleton
         if (NewMesh->GetSkeleton())
