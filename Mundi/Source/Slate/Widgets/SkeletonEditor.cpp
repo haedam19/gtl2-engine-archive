@@ -437,7 +437,7 @@ void FSkeletonEditor::SyncBoneDataFromActor(int32 BoneIndex, float BoneVisualiza
     FBone& Bone = Skeleton.Bones[BoneIndex];
 
     // 본 액터의 현재 월드 Transform 가져오기
-    // 주의: BoneVisualizationScale이 적용된 위치이므로 원본 위치로 되돌려야 함
+    // IMPORTANT: BoneVisualizationScale이 적용된 위치이므로 원본 위치로 되돌려야 함
     FVector ActorWorldPos = BoneActor->GetActorLocation() / BoneVisualizationScale;
     FQuat ActorWorldRot = BoneActor->GetActorRotation();
     FVector ActorWorldScale = BoneActor->GetActorScale();
@@ -445,15 +445,11 @@ void FSkeletonEditor::SyncBoneDataFromActor(int32 BoneIndex, float BoneVisualiza
     // 부모 본이 있으면 부모의 월드 Transform으로 역변환하여 로컬 Transform 계산
     if (Bone.ParentIndex >= 0 && Bone.ParentIndex < Skeleton.Bones.Num())
     {
-        // 부모 본의 캐시된 월드 Transform 사용
-        AActor* ParentActor = GetBoneActor(Bone.ParentIndex);
-        if (!ParentActor)
-            return;
-
-        // 부모 본 위치도 스케일 제거
-        FVector ParentWorldPos = ParentActor->GetActorLocation() / BoneVisualizationScale;
-        FQuat ParentWorldRot = ParentActor->GetActorRotation();
-        FVector ParentWorldScale = ParentActor->GetActorScale();
+        // IMPORTANT: Use cached parent world transform instead of ParentActor
+        // ParentActor may have outdated scale if it wasn't selected recently
+        FVector ParentWorldPos = Cache.BoneWorldPositions[Bone.ParentIndex];
+        FQuat ParentWorldRot = Cache.BoneWorldRotations[Bone.ParentIndex];
+        FVector ParentWorldScale = Cache.BoneWorldScales[Bone.ParentIndex];
 
         // Row-major 행렬 변환과 일치하도록 계산
         // ChildWorld = LocalTranslation * LocalRotation * LocalScale * ParentWorld (행렬 곱셈)
@@ -498,7 +494,7 @@ void FSkeletonEditor::SyncBoneDataFromActor(int32 BoneIndex, float BoneVisualiza
     // 월드 Transform 재계산 (이 본과 자식 본들만 - 최적화)
     UpdateBoneWorldMatrices(BoneIndex, BoneVisualizationScale);
 
-    UE_LOG("FSkeletonEditor: Synced bone data from actor - BoneIndex=%d", BoneIndex);
+    UE_LOG("FSkeletonEditor: Synced bone data from actor - BoneIndex=%d, BoneVisualizationScale=%.2f", BoneIndex, BoneVisualizationScale);
 }
 
 void FSkeletonEditor::RebuildCacheForBone(int32 BoneIndex)
