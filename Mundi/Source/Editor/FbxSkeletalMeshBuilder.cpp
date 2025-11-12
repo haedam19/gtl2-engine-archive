@@ -721,11 +721,18 @@ namespace
 		const size_t InitialVertexCount = OutMesh.Vertices.size();
 		const size_t InitialIndexCount = OutMesh.Indices.size();
 
-		// Use local arrays for deduplication within this mesh
-		TArray<FSkeletalVertex> LocalVertices;
-		TArray<uint32> LocalIndices;
-		LocalVertices.reserve(PolygonCount * 3);
-		LocalIndices.reserve(PolygonCount * 3);
+		// Material-based polygon grouping structure
+		struct FPolygonGroup
+		{
+			int32 MaterialIndex;
+			TArray<FSkeletalVertex> Vertices;
+			TArray<uint32> Indices;
+
+			FPolygonGroup() : MaterialIndex(-1) {}
+		};
+
+		// Group polygons by material index
+		TMap<int32, FPolygonGroup> MaterialGroups;
 
 		const FResolvedUVSets ResolvedUVSets = ResolveUVSets(Mesh, MeshNode);
 		FbxLayerElementMaterial* MaterialElement = (Mesh->GetElementMaterialCount() > 0) ? Mesh->GetElementMaterial(0) : nullptr;
@@ -741,7 +748,27 @@ namespace
 				continue;
 			}
 
-			const int32 PolygonMaterialIndex = GetPolygonMaterialIndex(MaterialElement, PolygonIndex);
+			// Get the material index for this polygon
+			int32 PolygonMaterialIndex = GetPolygonMaterialIndex(MaterialElement, PolygonIndex);
+
+			// Clamp material index to valid range or default to 0
+			if (PolygonMaterialIndex < 0 || PolygonMaterialIndex >= MeshNode->GetMaterialCount())
+			{
+				PolygonMaterialIndex = 0;
+			}
+
+			// Get or create the polygon group for this material
+			if (!MaterialGroups.Find(PolygonMaterialIndex))
+			{
+				FPolygonGroup NewGroup;
+				NewGroup.MaterialIndex = PolygonMaterialIndex;
+				NewGroup.Vertices.reserve(PolygonCount * 3);
+				NewGroup.Indices.reserve(PolygonCount * 3);
+				MaterialGroups[PolygonMaterialIndex] = NewGroup;
+			}
+
+			FPolygonGroup& CurrentGroup = MaterialGroups[PolygonMaterialIndex];
+
 			const FString& ActiveUVSetName = ResolvedUVSets.GetSetNameForMaterial(PolygonMaterialIndex);
 			const char* ActiveUVSet = ActiveUVSetName.empty() ? nullptr : ActiveUVSetName.c_str();
 			if (!ActiveUVSet && !bMissingUVSetLogged)
@@ -771,83 +798,100 @@ namespace
 					Vertex.Skin = SkinWeights[ControlPointIndex];
 				}
 
-				// Use deduplication: find existing or add new vertex
-				const uint32 LocalVertexIndex = FindOrAddVertex(LocalVertices, Vertex);
-				LocalIndices.push_back(LocalVertexIndex);
+				// Use deduplication within this material group
+				const uint32 LocalVertexIndex = FindOrAddVertex(CurrentGroup.Vertices, Vertex);
+				CurrentGroup.Indices.push_back(LocalVertexIndex);
 				++VertexCounter;
 			}
 		}
 
-		// Add local deduplicated vertices and indices to the output mesh
-		const uint32 BaseVertexIndex = static_cast<uint32>(OutMesh.Vertices.size());
-		for (uint32 LocalIndex : LocalIndices)
+		// Process each material group and create GroupInfo for each
+		bool bHasAnyMaterial = false;
+		for (auto& Pair : MaterialGroups)
 		{
-			OutMesh.Indices.push_back(BaseVertexIndex + LocalIndex);
-		}
-		for (const FSkeletalVertex& LocalVertex : LocalVertices)
-		{
-			OutMesh.Vertices.push_back(LocalVertex);
-		}
+			const int32 MaterialIndex = Pair.first;
+			FPolygonGroup& Group = Pair.second;
 
-		const uint32 MeshStartIndex = static_cast<uint32>(InitialIndexCount);
-		const uint32 MeshIndexCount = static_cast<uint32>(OutMesh.Indices.size() - InitialIndexCount);
-
-		FGroupInfo Group;
-		Group.StartIndex = MeshStartIndex;
-		Group.IndexCount = MeshIndexCount;
-		Group.InitialMaterialName = "";
-
-		if (MeshNode->GetMaterialCount() > 0)
-		{
-			FbxSurfaceMaterial* FbxMaterial = MeshNode->GetMaterial(0);
-			if (FbxMaterial)
+			if (Group.Indices.empty())
 			{
-				UE_LOG("ProcessMesh: Found FBX material '%s'", FbxMaterial->GetName());
+				continue;
+			}
 
-				FMaterialInfo MaterialInfo;
-				if (ExtractMaterialInfo(FbxMaterial, MaterialInfo))
+			// Add this group's vertices and indices to the output mesh
+			const uint32 BaseVertexIndex = static_cast<uint32>(OutMesh.Vertices.size());
+			const uint32 GroupStartIndex = static_cast<uint32>(OutMesh.Indices.size());
+
+			for (uint32 LocalIndex : Group.Indices)
+			{
+				OutMesh.Indices.push_back(BaseVertexIndex + LocalIndex);
+			}
+			for (const FSkeletalVertex& LocalVertex : Group.Vertices)
+			{
+				OutMesh.Vertices.push_back(LocalVertex);
+			}
+
+			const uint32 GroupIndexCount = static_cast<uint32>(Group.Indices.size());
+
+			// Create GroupInfo for this material group
+			FGroupInfo GroupInfo;
+			GroupInfo.StartIndex = GroupStartIndex;
+			GroupInfo.IndexCount = GroupIndexCount;
+			GroupInfo.InitialMaterialName = "";
+
+			// Use the correct material index instead of always using Material[0]
+			const int32 ActualMaterialIndex = (MaterialIndex >= 0 && MaterialIndex < MeshNode->GetMaterialCount())
+				? MaterialIndex
+				: 0;
+
+			if (MeshNode->GetMaterialCount() > 0)
+			{
+				FbxSurfaceMaterial* FbxMaterial = MeshNode->GetMaterial(ActualMaterialIndex);
+				if (FbxMaterial)
 				{
-					Group.InitialMaterialName = MaterialInfo.MaterialName;
-					UE_LOG("ProcessMesh: Extracted material info - Name: '%s', Diffuse: '%s'",
-						MaterialInfo.MaterialName.c_str(),
-						MaterialInfo.DiffuseTextureFileName.c_str());
-
-					bool bAlreadyExists = false;
-					for (const FMaterialInfo& Existing : OutMaterialInfos)
+					FMaterialInfo MaterialInfo;
+					if (ExtractMaterialInfo(FbxMaterial, MaterialInfo))
 					{
-						if (Existing.MaterialName == MaterialInfo.MaterialName)
-						{
-							bAlreadyExists = true;
-							break;
-						}
-					}
-
-					if (!bAlreadyExists)
-					{
-						OutMaterialInfos.Add(MaterialInfo);
-						UE_LOG("ProcessMesh: Added material '%s' to list (total: %d)",
+						GroupInfo.InitialMaterialName = MaterialInfo.MaterialName;
+						UE_LOG("ProcessMesh: Extracted material info - Name: '%s', Diffuse: '%s'",
 							MaterialInfo.MaterialName.c_str(),
-							OutMaterialInfos.size());
+							MaterialInfo.DiffuseTextureFileName.c_str());
+
+						// Check if this material already exists in the list
+						bool bAlreadyExists = false;
+						for (const FMaterialInfo& Existing : OutMaterialInfos)
+						{
+							if (Existing.MaterialName == MaterialInfo.MaterialName)
+							{
+								bAlreadyExists = true;
+								break;
+							}
+						}
+
+						if (!bAlreadyExists)
+						{
+							OutMaterialInfos.Add(MaterialInfo);
+							UE_LOG("ProcessMesh: Added material '%s' to list (total: %d)",
+								MaterialInfo.MaterialName.c_str(),
+								OutMaterialInfos.size());
+						}
+						else
+						{
+							UE_LOG("ProcessMesh: Material '%s' already in list (skipping duplicate)", MaterialInfo.MaterialName.c_str());
+						}
 					}
 					else
 					{
-						UE_LOG("ProcessMesh: Material '%s' already in list (skipping duplicate)", MaterialInfo.MaterialName.c_str());
+						UE_LOG("ProcessMesh: WARNING - Failed to extract material info from '%s'", FbxMaterial->GetName());
 					}
 				}
-				else
-				{
-					UE_LOG("ProcessMesh: WARNING - Failed to extract material info from '%s'", FbxMaterial->GetName());
-				}
+				bHasAnyMaterial = true;
 			}
-			OutMesh.bHasMaterial = true;
-		}
-		else
-		{
-			UE_LOG("ProcessMesh: No materials found on this mesh node");
-			OutMesh.bHasMaterial = false;
+
+			OutMesh.GroupInfos.Add(GroupInfo);
 		}
 
-		OutMesh.GroupInfos.Add(Group);
+		OutMesh.bHasMaterial = bHasAnyMaterial;
+
 		return !OutMesh.Vertices.empty() && !OutMesh.Indices.empty();
 	}
 
