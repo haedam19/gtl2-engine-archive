@@ -660,22 +660,6 @@ void USkeletalMeshViewerContentWidget::RenderToolbar()
     // Simple toolbar without MenuBar (to avoid layout issues)
     ImGui::BeginChild("Toolbar", ImVec2(0, 30), true, ImGuiWindowFlags_NoScrollbar);
     {
-        // File options
-        if (ImGui::Button("Open FBX"))
-        {
-            ImGui::OpenPopup("FBXNotImplemented");
-        }
-
-        if (ImGui::BeginPopup("FBXNotImplemented"))
-        {
-            ImGui::Text("FBX Loader not implemented yet");
-            if (ImGui::Button("Close"))
-                ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
-        }
-
-        ImGui::SameLine();
-
         // View options
         if (ImGui::Checkbox("Show Mesh", &bShowSkeletalMesh))
         {
