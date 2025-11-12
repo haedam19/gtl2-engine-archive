@@ -101,6 +101,15 @@ private:
 	TArray<FVertexDynamic> SkinnedVertices;
 
 	/**
+	* @brief 캐싱된 스킨 매트릭스 배열 (성능 최적화)
+	* - 크기: Skeleton->Bones.Num()
+	* - SkinningMatrix[i] = InverseBindPose[i] * BoneTransform[i]
+	* - PerformCPUSkinning() 시작 시 한 번만 계산하여 모든 정점에서 재사용
+	* - 정점당 4번의 행렬 곱셈을 본당 1번으로 줄임 (N*4 → BoneCount)
+	*/
+	TArray<FMatrix> CachedSkinningMatrices;
+
+	/**
 	* @brief Dynamic Mesh 리소스 (GPU 버퍼 관리)
 	* - D3D11_USAGE_DYNAMIC으로 매 프레임 업데이트 가능
 	* - UDynamicMesh가 내부적으로 VertexBuffer/IndexBuffer 관리

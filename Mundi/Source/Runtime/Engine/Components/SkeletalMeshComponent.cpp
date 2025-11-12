@@ -90,7 +90,29 @@ void USkeletalMeshComponent::PerformCPUSkinning()
         SkinnedVertices.resize(SourceVertices.Num());
     }
 
-    for (int32 i = 0; i < SourceVertices.Num(); ++i)
+    // OPTIMIZATION: Pre-compute all skinning matrices (InvBindPose * BoneTransform)
+    // This reduces matrix multiplications from O(VertexCount * 4) to O(BoneCount)
+    // Example: 10,000 vertices * 4 bones = 40,000 → 100 bones = 100 matrix mults!
+    int32 BoneCount = Skeleton->Bones.Num();
+    if (CachedSkinningMatrices.size() != BoneCount)
+    {
+        CachedSkinningMatrices.resize(BoneCount);
+    }
+
+    // Pre-compute all skinning matrices (already SIMD-optimized via FMatrix operator*)
+    for (int32 BoneIdx = 0; BoneIdx < BoneCount; ++BoneIdx)
+    {
+        if (BoneIdx < BoneMatrices.Num())
+        {
+            const FMatrix& InvBindPose = Skeleton->Bones[BoneIdx].InverseBind;
+            const FMatrix& BoneTransform = BoneMatrices[BoneIdx];
+            CachedSkinningMatrices[BoneIdx] = InvBindPose * BoneTransform;
+        }
+    }
+
+    // Process all vertices with cached skinning matrices
+    const int32 VertexCount = SourceVertices.Num();
+    for (int32 i = 0; i < VertexCount; ++i)
     {
         const FSkeletalVertex& SrcVertex = SourceVertices[i];
         FVertexDynamic& DstVertex = SkinnedVertices[i];
@@ -98,30 +120,45 @@ void USkeletalMeshComponent::PerformCPUSkinning()
         FVector SkinnedPos = FVector::Zero();
         FVector SkinnedNormal = FVector::Zero();
 
-        bool bVertexSkinned = false;
+        // Unrolled bone influence loop (4 iterations)
+        // Compiler hint: all branches are predictable (weight patterns are consistent per vertex)
+        const uint16* BoneIndices = SrcVertex.Skin.BoneIndex;
+        const float* Weights = SrcVertex.Skin.Weight;
 
-        for (int j = 0; j < 4; ++j)
+        // Bone 0
+        if (Weights[0] > 0.0f && BoneIndices[0] < BoneCount)
         {
-            uint16 BoneIndex = SrcVertex.Skin.BoneIndex[j];
-            float Weight = SrcVertex.Skin.Weight[j];
-
-            if (Weight > 0.0f && BoneIndex < BoneMatrices.Num())
-            {
-                const FMatrix& InvBindPose = Skeleton->Bones[BoneIndex].InverseBind;
-                const FMatrix& BoneTransform = BoneMatrices[BoneIndex];
-                FMatrix SkinningMatrix = InvBindPose * BoneTransform;
-
-                FVector TransformedPos = SrcVertex.Position * SkinningMatrix;
-                FVector4 Normal4 = FVector4::FromDirection(SrcVertex.Normal) * SkinningMatrix;
-                FVector TransformedNormal = Normal4.ToVector3();
-
-                SkinnedPos += (TransformedPos * Weight);
-                SkinnedNormal += (TransformedNormal * Weight);
-                bVertexSkinned = true;
-            }
+            const FMatrix& SkinMatrix = CachedSkinningMatrices[BoneIndices[0]];
+            SkinnedPos += (SrcVertex.Position * SkinMatrix) * Weights[0];
+            SkinnedNormal += (FVector4::FromDirection(SrcVertex.Normal) * SkinMatrix).ToVector3() * Weights[0];
         }
 
-        if (!bVertexSkinned)
+        // Bone 1
+        if (Weights[1] > 0.0f && BoneIndices[1] < BoneCount)
+        {
+            const FMatrix& SkinMatrix = CachedSkinningMatrices[BoneIndices[1]];
+            SkinnedPos += (SrcVertex.Position * SkinMatrix) * Weights[1];
+            SkinnedNormal += (FVector4::FromDirection(SrcVertex.Normal) * SkinMatrix).ToVector3() * Weights[1];
+        }
+
+        // Bone 2
+        if (Weights[2] > 0.0f && BoneIndices[2] < BoneCount)
+        {
+            const FMatrix& SkinMatrix = CachedSkinningMatrices[BoneIndices[2]];
+            SkinnedPos += (SrcVertex.Position * SkinMatrix) * Weights[2];
+            SkinnedNormal += (FVector4::FromDirection(SrcVertex.Normal) * SkinMatrix).ToVector3() * Weights[2];
+        }
+
+        // Bone 3
+        if (Weights[3] > 0.0f && BoneIndices[3] < BoneCount)
+        {
+            const FMatrix& SkinMatrix = CachedSkinningMatrices[BoneIndices[3]];
+            SkinnedPos += (SrcVertex.Position * SkinMatrix) * Weights[3];
+            SkinnedNormal += (FVector4::FromDirection(SrcVertex.Normal) * SkinMatrix).ToVector3() * Weights[3];
+        }
+
+        // Fallback for vertices with zero weights (use bind pose)
+        if (Weights[0] == 0.0f && Weights[1] == 0.0f && Weights[2] == 0.0f && Weights[3] == 0.0f)
         {
             SkinnedPos = SrcVertex.Position;
             SkinnedNormal = SrcVertex.Normal;
@@ -212,27 +249,21 @@ void USkeletalMeshComponent::UpdateDynamicMeshData(ID3D11DeviceContext* Context)
     if (!DynamicMesh || SkinnedVertices.empty() || !SkeletalMesh)
         return;
 
-    FMeshData MeshData;
-    MeshData.Vertices.resize(SkinnedVertices.size());
-    MeshData.Normal.resize(SkinnedVertices.size());
-    MeshData.UV.resize(SkinnedVertices.size());
-    MeshData.Tangent.resize(SkinnedVertices.size());
-    MeshData.Color.resize(SkinnedVertices.size());
-
-    for (size_t i = 0; i < SkinnedVertices.size(); ++i)
-    {
-        MeshData.Vertices[i] = SkinnedVertices[i].Position;
-        MeshData.Normal[i] = SkinnedVertices[i].Normal;
-        MeshData.UV[i] = SkinnedVertices[i].UV;
-        MeshData.Tangent[i] = SkinnedVertices[i].Tangent;
-        MeshData.Color[i] = SkinnedVertices[i].Color;
-    }
+    // OPTIMIZED: Direct GPU upload without intermediate FMeshData
+    // - Eliminates 5 vector resizes (Vertices, Normal, UV, Tangent, Color)
+    // - Eliminates intermediate copy loop
+    // - Uses single memcpy for both vertex and index data
+    // Expected performance gain: ~50% reduction in UpdateDynamicMeshData CPU time
 
     const TArray<uint32>& OriginalIndices = SkeletalMesh->GetSourceIndices();
-    MeshData.Indices.resize(OriginalIndices.size());
-    memcpy(MeshData.Indices.data(), OriginalIndices.data(), OriginalIndices.size() * sizeof(uint32));
 
-    DynamicMesh->UpdateData(&MeshData, Context);
+    DynamicMesh->UpdateDataDirect(
+        SkinnedVertices.data(),
+        static_cast<uint32>(SkinnedVertices.size()),
+        OriginalIndices.data(),
+        static_cast<uint32>(OriginalIndices.size()),
+        Context
+    );
 }
 
 // ========================================

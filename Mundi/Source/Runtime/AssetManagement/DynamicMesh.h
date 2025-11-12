@@ -18,7 +18,13 @@ public:
     
     // Update buffer data (call each frame)
     bool UpdateData(FMeshData* InData, ID3D11DeviceContext* InContext);
-    
+
+    // Update buffer data directly from vertex array (optimized, no intermediate FMeshData)
+    // More efficient than UpdateData - avoids vector resizing and intermediate copies
+    bool UpdateDataDirect(const void* VertexData, uint32 VertexCount,
+                         const uint32* IndexData, uint32 IndexCount,
+                         ID3D11DeviceContext* InContext);
+
     // Clear current data
     void Clear();
     

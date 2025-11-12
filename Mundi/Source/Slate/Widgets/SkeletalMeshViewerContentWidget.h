@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Widget.h"
 #include "SkeletalTypes.h"
 #include "SkeletonEditor.h"

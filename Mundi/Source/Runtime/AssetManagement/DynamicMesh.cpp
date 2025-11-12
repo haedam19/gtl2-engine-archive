@@ -140,6 +140,49 @@ bool UDynamicMesh::UpdateData(FMeshData* InData, ID3D11DeviceContext* InContext)
     return true;
 }
 
+bool UDynamicMesh::UpdateDataDirect(const void* VertexData, uint32 VertexCount,
+                                    const uint32* IndexData, uint32 IndexCount,
+                                    ID3D11DeviceContext* InContext)
+{
+    if (!bIsInitialized || !VertexData || !IndexData || !InContext)
+        return false;
+
+    // Validate bounds
+    if (VertexCount > MaxVertices || IndexCount > MaxIndices)
+        return false;
+
+    if (VertexCount == 0 || IndexCount == 0)
+        return true; // Nothing to update
+
+    CurrentVertexCount = VertexCount;
+    CurrentIndexCount = IndexCount;
+
+    size_t vertexSize = GetVertexSize(VertexType);
+    size_t totalVertexBytes = VertexCount * vertexSize;
+
+    // Map vertex buffer and directly copy data (no intermediate vectors)
+    D3D11_MAPPED_SUBRESOURCE mappedVertex;
+    HRESULT hr = InContext->Map(VertexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedVertex);
+    if (FAILED(hr))
+        return false;
+
+    // Direct memcpy - much faster than loop + vector operations
+    memcpy(mappedVertex.pData, VertexData, totalVertexBytes);
+    InContext->Unmap(VertexBuffer, 0);
+
+    // Map index buffer and directly copy data
+    D3D11_MAPPED_SUBRESOURCE mappedIndex;
+    hr = InContext->Map(IndexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedIndex);
+    if (FAILED(hr))
+        return false;
+
+    // Direct memcpy for indices
+    memcpy(mappedIndex.pData, IndexData, IndexCount * sizeof(uint32));
+    InContext->Unmap(IndexBuffer, 0);
+
+    return true;
+}
+
 void UDynamicMesh::Clear()
 {
     CurrentVertexCount = 0;
