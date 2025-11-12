@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "FbxManager.h"
 #include "FbxSkeletalMeshBuilder.h"
+#include "FbxStaticMeshBuilder.h"
 #include "PathUtils.h"
 #include "ResourceManager.h"
 #include "SkeletalMesh.h"
@@ -23,6 +24,7 @@ namespace fs = std::filesystem;
 FbxManager* FFbxManager::SdkManager = nullptr;
 FbxIOSettings* FFbxManager::IOSettings = nullptr;
 TMap<FString, FFbxManager::FSkeletalMeshEntry> FFbxManager::SkeletalMeshCache;
+TMap<FString, FStaticMesh> FFbxManager::FbxStaticMeshCache;
 
 // ====================================================================
 // Helper Utils
@@ -437,6 +439,7 @@ void FFbxManager::Clear()
 		ReleaseEntry(Pair.second);
 	}
 	SkeletalMeshCache.clear();
+	FbxStaticMeshCache.clear();
 }
 
 void FFbxManager::Preload()
@@ -509,7 +512,7 @@ void FFbxManager::Preload()
 			continue;
 		}
 
-		if (ResourceManager.Get<USkeletalMesh>(FilePath))
+		if (ResourceManager.Get<USkeletalMesh>(FilePath) || ResourceManager.Get<UStaticMesh>(FilePath))
 		{
 			continue;
 		}
@@ -555,9 +558,17 @@ void FFbxManager::Preload()
 			}
 			break;
 		case EFbxSceneClassification::Static:
-			++GStaticClassifications;
-			// TODO: Static Mesh 빌드
+		{
+			FStaticMesh* StaticMesh = ImportStaticMesh(
+				Scene,
+				FilePath);
+			Scene = nullptr;
+			if (StaticMesh)
+			{
+				ResourceManager.Load<UStaticMesh>(FilePath);
+			}
 			break;
+		}
 		}
 
 		if (Scene)
@@ -644,6 +655,51 @@ FSkeletalMesh* FFbxManager::LoadSkeletalMeshAsset(const FString& PathFileName)
 		CachePaths.MaterialBinPath,
 		bShouldRegenerate);
 	return Entry ? Entry->Mesh : nullptr;
+}
+
+FStaticMesh* FFbxManager::LoadStaticMeshAsset(const FString& PathFileName)
+{
+	const FString NormalizedPath = NormalizePath(PathFileName);
+
+	if (NormalizedPath.empty())
+	{
+		return nullptr;
+	}
+
+	if (ToLowerExt(NormalizedPath) != ".fbx")
+	{
+		UE_LOG("FFbxManager: Unsupported file type %s", NormalizedPath.c_str());
+		return nullptr;
+	}
+
+	if (FStaticMesh* Existing = FbxStaticMeshCache.Find(NormalizedPath))
+	{
+		return Existing;
+	}
+
+	if (!EnsureInitialized())
+	{
+		return nullptr;
+	}
+
+	FbxScene* Scene = LoadSceneFromFile(SdkManager, IOSettings, NormalizedPath);
+	if (!Scene)
+	{
+		return nullptr;
+	}
+
+	EFbxSceneClassification Classification = ClassifyFbxScene(Scene);
+	if (Classification != EFbxSceneClassification::Static)
+	{
+		UE_LOG("FFbxManager: Expected static FBX but classified as %d (%s)", static_cast<int>(Classification), NormalizedPath.c_str());
+		Scene->Destroy();
+		return nullptr;
+	}
+
+	FStaticMesh* StaticMesh = ImportStaticMesh(
+		Scene,
+		NormalizedPath);
+	return StaticMesh;
 }
 
 /** @brief 내부적으로 FBX Manager/IOSettings를 lazy init */
@@ -864,6 +920,57 @@ FFbxManager::FSkeletalMeshEntry* FFbxManager::ImportSkeletalMesh(
 	FSkeletalMeshEntry* CachedEntry = StoreEntry(NormalizedPath, Entry);
 	++GSkeletalClassifications;
 	return CachedEntry;
+}
+
+FStaticMesh* FFbxManager::ImportStaticMesh(
+	FbxScene* Scene,
+	const FString& NormalizedPath,
+	const FString& MeshCachePath,
+	const FString& MaterialCachePath,
+	bool bSaveCache)
+{
+	if (!EnsureInitialized())
+	{
+		return nullptr;
+	}
+
+	if (!Scene)
+	{
+		return nullptr;
+	}
+
+	FStaticMesh StaticMesh;
+	StaticMesh.PathFileName = NormalizedPath;
+	if (!MeshCachePath.empty())
+	{
+		StaticMesh.CacheFilePath = MeshCachePath;
+	}
+	else
+	{
+		StaticMesh.CacheFilePath = ConvertDataPathToCachePath(NormalizedPath);
+	}
+
+	TArray<FMaterialInfo> MaterialInfos;
+	if (!FFbxStaticMeshBuilder::Build(Scene, StaticMesh, MaterialInfos))
+	{
+		Scene->Destroy();
+		return nullptr;
+	}
+
+	Scene->Destroy();
+
+	PrepareAndRegisterMaterials(NormalizedPath, MaterialInfos);
+
+	auto InsertResult = FbxStaticMeshCache.emplace(NormalizedPath, FStaticMesh{});
+	FStaticMesh& CachedMesh = InsertResult.first->second;
+	CachedMesh = StaticMesh;
+
+	(void)MaterialCachePath;
+	(void)bSaveCache;
+
+	++GStaticClassifications;
+
+	return &CachedMesh;
 }
 
 // 높이 3, 가로/세로 1의 사각기둥 메시와 루트-중간-상단 3본을 생성하여
