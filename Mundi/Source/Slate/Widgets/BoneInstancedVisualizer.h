@@ -62,6 +62,9 @@ private:
     bool UpdateInstanceBuffer(ID3D11DeviceContext* InContext,
                              const TArray<FBoneInstanceData>& InstanceData);
 
+    // Helper function to collect all descendants of a bone
+    void CollectAllDescendants(int32 BoneIndex, const FViewerSkeletonCache& Cache, TArray<int32>& OutDescendants);
+
     // Mesh resources
     UDynamicMesh* SphereMesh = nullptr;
     UDynamicMesh* PyramidMesh = nullptr;
@@ -83,8 +86,12 @@ private:
     float LeafPyramidWidth = 0.06f;
 
     // Colors
-    static const FVector4 COLOR_BONE_SELECTED;
-    static const FVector4 COLOR_BONE_NORMAL;
-    static const FVector4 COLOR_JOINT_SELECTED;
+    static const FVector4 COLOR_BONE_NORMAL;           // Black (default)
+    static const FVector4 COLOR_BONE_SELECTED_PARENT;  // Beige (selected + parent)
+    static const FVector4 COLOR_BONE_DIRECT_CHILD;     // Light green (direct children)
+    static const FVector4 COLOR_BONE_DESCENDANT;       // White (descendants)
     static const FVector4 COLOR_JOINT_NORMAL;
+    static const FVector4 COLOR_JOINT_SELECTED_PARENT;
+    static const FVector4 COLOR_JOINT_DIRECT_CHILD;
+    static const FVector4 COLOR_JOINT_DESCENDANT;
 };
