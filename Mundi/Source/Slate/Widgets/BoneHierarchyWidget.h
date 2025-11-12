@@ -63,6 +63,9 @@ private:
     void BuildDummyBoneTree();  // 테스트용 더미 트리 (deprecated)
     void ClearBoneTree();
 
+    // 검색 헬퍼: 노드 또는 자식 중에 검색어와 매칭되는 것이 있는지 확인
+    bool NodeOrChildrenMatchSearch(FBoneTreeNode* Node, const FString& SearchTerm) const;
+
     // 본 트리 구축 헬퍼
     void BuildBoneTreeRecursive(const TArray<struct FBone>& Bones, int32 ParentIndex, FBoneTreeNode* ParentNode);
 

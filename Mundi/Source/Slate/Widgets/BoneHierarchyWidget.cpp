@@ -79,13 +79,24 @@ void UBoneHierarchyWidget::RenderBoneNode(FBoneTreeNode* Node, int32 Depth)
 {
     if (!Node) return;
 
-    // 검색 필터 적용
+    // 검색 필터 적용: 노드 또는 자식 중 하나라도 매칭되면 표시
     if (!SearchFilter.empty())
     {
-        if (Node->BoneName.find(SearchFilter) == FString::npos)
+        if (!NodeOrChildrenMatchSearch(Node, SearchFilter))
         {
-            return;
+            return;  // 노드와 모든 자식이 검색어와 매칭되지 않으면 스킵
         }
+    }
+
+    // 현재 노드가 검색어와 직접 매칭되는지 확인 (대소문자 구분 없이)
+    bool bCurrentNodeMatches = SearchFilter.empty();
+    if (!bCurrentNodeMatches)
+    {
+        FString NodeNameLower = Node->BoneName;
+        FString SearchTermLower = SearchFilter;
+        std::transform(NodeNameLower.begin(), NodeNameLower.end(), NodeNameLower.begin(), ::tolower);
+        std::transform(SearchTermLower.begin(), SearchTermLower.end(), SearchTermLower.begin(), ::tolower);
+        bCurrentNodeMatches = (NodeNameLower.find(SearchTermLower) != FString::npos);
     }
 
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow
@@ -104,19 +115,39 @@ void UBoneHierarchyWidget::RenderBoneNode(FBoneTreeNode* Node, int32 Depth)
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     }
 
-    // Expand 상태
-    if (Node->bIsExpanded)
+    // 검색 중이면 매칭되는 노드들 자동으로 펼치기
+    if (!SearchFilter.empty() && bCurrentNodeMatches)
+    {
+        ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+    }
+    else if (Node->bIsExpanded)
     {
         ImGui::SetNextItemOpen(true, ImGuiCond_Once);
     }
 
-    // 트리 노드 렌더링
-    bool bNodeOpen = ImGui::TreeNodeEx(
-        (void*)(intptr_t)Node,
-        flags,
-        "%s",
-        Node->BoneName.c_str()
-    );
+    // 트리 노드 렌더링 (매칭되는 노드는 하이라이트)
+    bool bNodeOpen = false;
+    if (bCurrentNodeMatches && !SearchFilter.empty())
+    {
+        // 검색어와 매칭되는 노드는 색상 강조
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.3f, 1.0f));
+        bNodeOpen = ImGui::TreeNodeEx(
+            (void*)(intptr_t)Node,
+            flags,
+            "%s",
+            Node->BoneName.c_str()
+        );
+        ImGui::PopStyleColor();
+    }
+    else
+    {
+        bNodeOpen = ImGui::TreeNodeEx(
+            (void*)(intptr_t)Node,
+            flags,
+            "%s",
+            Node->BoneName.c_str()
+        );
+    }
 
     // 클릭 감지
     if (ImGui::IsItemClicked())
@@ -453,4 +484,34 @@ void UBoneHierarchyWidget::SetSelectedBoneByIndex(int32 BoneIndex)
 int32 UBoneHierarchyWidget::GetSelectedBoneIndex() const
 {
     return SelectedNode ? SelectedNode->BoneIndex : -1;
+}
+
+// 검색 헬퍼: 노드 또는 자식 중 검색어와 매칭되는 것이 있는지 재귀적으로 확인
+bool UBoneHierarchyWidget::NodeOrChildrenMatchSearch(FBoneTreeNode* Node, const FString& SearchTerm) const
+{
+    if (!Node) return false;
+
+    // 현재 노드 이름이 검색어와 매칭되는지 확인 (대소문자 구분 없이)
+    FString NodeNameLower = Node->BoneName;
+    FString SearchTermLower = SearchTerm;
+
+    // 대소문자 구분 없이 검색하려면 소문자로 변환
+    std::transform(NodeNameLower.begin(), NodeNameLower.end(), NodeNameLower.begin(), ::tolower);
+    std::transform(SearchTermLower.begin(), SearchTermLower.end(), SearchTermLower.begin(), ::tolower);
+
+    if (NodeNameLower.find(SearchTermLower) != FString::npos)
+    {
+        return true;  // 현재 노드가 매칭됨
+    }
+
+    // 자식 노드 중 하나라도 매칭되는지 확인
+    for (auto* Child : Node->Children)
+    {
+        if (NodeOrChildrenMatchSearch(Child, SearchTerm))
+        {
+            return true;  // 자식 중 하나가 매칭됨
+        }
+    }
+
+    return false;  // 현재 노드도, 자식도 매칭되지 않음
 }
