@@ -46,5 +46,5 @@ private:
     // Configuration (must match BoneVisualizer for accurate picking)
     float SphereRadius = 0.2f;       // 4x original for easier picking
     float PyramidWidth = 0.09f;      // 3x original
-    float LeafPyramidWidth = 0.045f; // PyramidWidth * 0.5f
+    float LeafPyramidWidth = 0.06f;  // Match BoneVisualizer default
 };

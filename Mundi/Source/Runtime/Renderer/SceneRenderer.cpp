@@ -2038,7 +2038,7 @@ void FSceneRenderer::DrawInstancedMeshBatches(TArray<FInstancedMeshBatchElement>
 	UE_LOG("DrawInstancedMeshBatches: Sorting DISABLED for testing (batch count: %d)", InMeshBatches.size());
 
 	// Set render state
-	RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
+	RHIDevice->OMSetDepthStencilState(EComparisonFunc::Always);  // Bones always render on top
 	RHIDevice->RSSetState(ERasterizerMode::Wireframe);  // Bones are wireframe
 
 	// State cache

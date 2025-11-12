@@ -383,9 +383,9 @@ void USkeletalMeshViewerContentWidget::Initialize()
             BoneVisualizer = new FBoneInstancedVisualizer();
             if (BoneVisualizer->Initialize(RHIDevice->GetDevice()))
             {
-                BoneVisualizer->SetJointRadius(0.2f);       // 4x original
-                BoneVisualizer->SetPyramidWidth(0.09f);     // 3x original
-                BoneVisualizer->SetLeafPyramidWidth(0.06f); // 3x original
+                BoneVisualizer->SetJointRadius(0.2f * BoneRenderScale);
+                BoneVisualizer->SetPyramidWidth(0.09f * BoneRenderScale);
+                BoneVisualizer->SetLeafPyramidWidth(0.06f * BoneRenderScale);
                 UE_LOG("SkeletalMeshViewerContentWidget: *** GPU Instanced BoneVisualizer SUCCESSFULLY initialized! ***");
             }
             else
@@ -395,6 +395,12 @@ void USkeletalMeshViewerContentWidget::Initialize()
                 UE_LOG("SkeletalMeshViewerContentWidget: *** ERROR: Failed to initialize GPU Instanced BoneVisualizer! ***");
                 UE_LOG("SkeletalMeshViewerContentWidget: *** Check shader file: Shaders/UI/BoneInstancedShader.hlsl ***");
             }
+
+            // Initialize BonePicker with matching values
+            BonePicker.SetSphereRadius(0.2f * BoneRenderScale);
+            BonePicker.SetPyramidWidth(0.09f * BoneRenderScale);
+            BonePicker.SetLeafPyramidWidth(0.06f * BoneRenderScale);
+            UE_LOG("SkeletalMeshViewerContentWidget: BonePicker initialized with matching scale values");
 
             // Create Viewport (800x600 default size)
             Viewport = new FViewport();
@@ -748,6 +754,28 @@ void USkeletalMeshViewerContentWidget::RenderToolbar()
                     RenderSettings.DisableShowFlag(EEngineShowFlags::SF_Lighting);
                     UE_LOG("SkeletalMeshViewerContentWidget: Lighting DISABLED (Unlit mode - base color only)");
                 }
+            }
+        }
+
+        // Bone render scale control
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(150.0f);
+        if (ImGui::DragFloat("Bone Render Scale", &BoneRenderScale, 0.01f, 0.1f, 5.0f, "%.2f"))
+        {
+            if (BoneVisualizer)
+            {
+                // Update both joint and bone visualization
+                BoneVisualizer->SetJointRadius(0.2f * BoneRenderScale);
+                BoneVisualizer->SetPyramidWidth(0.09f * BoneRenderScale);
+                BoneVisualizer->SetLeafPyramidWidth(0.06f * BoneRenderScale);
+
+                // Update picker collision sizes
+                BonePicker.SetSphereRadius(0.2f * BoneRenderScale);
+                BonePicker.SetPyramidWidth(0.09f * BoneRenderScale);
+                BonePicker.SetLeafPyramidWidth(0.06f * BoneRenderScale);
+
+                bBoneVisualizationDirty = true;  // Trigger re-render
+                UE_LOG("SkeletalMeshViewerContentWidget: Bone Render Scale = %.2f", BoneRenderScale);
             }
         }
     }

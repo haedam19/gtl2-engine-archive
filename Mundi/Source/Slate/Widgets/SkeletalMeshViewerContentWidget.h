@@ -87,6 +87,7 @@ private:
     float MeshScale = 1.0f;           // Uniform scale for mesh
     float BoneVisualizationScale = 1.0f;  // Uniform scale for bone visualization
     bool bSyncScale = true;           // Sync mesh and bone visualization scales
+    float BoneRenderScale = 1.0f;     // Unified scale for bone rendering (joints and pyramids)
 
     // Camera Input
     bool bIsViewerRightMouseDown = false;
