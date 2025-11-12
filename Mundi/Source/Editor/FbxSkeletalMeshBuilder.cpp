@@ -1,6 +1,10 @@
-#include "pch.h"
+﻿#include "pch.h"
 
 #include "FbxSkeletalMeshBuilder.h"
+
+#include <unordered_map>
+#include <cctype>
+#include <cstring>
 
 using namespace fbxsdk;
 
@@ -43,6 +47,13 @@ namespace
 			static_cast<float>(C.mGreen),
 			static_cast<float>(C.mBlue),
 			static_cast<float>(C.mAlpha));
+	}
+
+	FString ToLowerCopy(FString Value)
+	{
+		std::transform(Value.begin(), Value.end(), Value.begin(),
+			[](unsigned char C) { return static_cast<char>(std::tolower(C)); });
+		return Value;
 	}
 
 	FQuat ToQuat(const FbxQuaternion& Q)
@@ -365,6 +376,159 @@ namespace
 		return "";
 	}
 
+	using FUVSetLookup = std::unordered_map<FString, FString>;
+
+	FUVSetLookup BuildAvailableUVSetLookup(FbxMesh* Mesh)
+	{
+		FUVSetLookup Lookup;
+		if (!Mesh)
+		{
+			return Lookup;
+		}
+
+		FbxStringList UVSets;
+		Mesh->GetUVSetNames(UVSets);
+		for (int32 SetIdx = 0; SetIdx < UVSets.GetCount(); ++SetIdx)
+		{
+			const char* RawName = UVSets.GetStringAt(SetIdx);
+			if (!RawName || RawName[0] == '\0')
+			{
+				continue;
+			}
+
+			FString Name = RawName;
+			Lookup.emplace(ToLowerCopy(Name), Name);
+		}
+		return Lookup;
+	}
+
+	FString ResolveUVSetFromMaterial(FbxSurfaceMaterial* Material, const FUVSetLookup& AvailableSets)
+	{
+		if (!Material)
+		{
+			return "";
+		}
+
+		FbxProperty Property = Material->GetFirstProperty();
+		while (Property.IsValid())
+		{
+			const int TextureCount = Property.GetSrcObjectCount<FbxTexture>();
+			for (int TextureIdx = 0; TextureIdx < TextureCount; ++TextureIdx)
+			{
+				if (FbxTexture* Texture = Property.GetSrcObject<FbxTexture>(TextureIdx))
+				{
+					const char* RawUVSet = Texture->UVSet.Get().Buffer();
+					if (!RawUVSet || RawUVSet[0] == '\0' || strcmp(RawUVSet, "default") == 0)
+					{
+						continue;
+					}
+
+					FString Lower = ToLowerCopy(FString(RawUVSet));
+					if (auto It = AvailableSets.find(Lower); It != AvailableSets.end())
+					{
+						return It->second;
+					}
+				}
+			}
+			Property = Material->GetNextProperty(Property);
+		}
+
+		return "";
+	}
+
+	struct FResolvedUVSets
+	{
+		FString DefaultSet;
+		TArray<FString> MaterialOverrides;
+		FString EmptySet;
+
+		const FString& GetSetNameForMaterial(int32 MaterialIndex) const
+		{
+			if (MaterialIndex >= 0 && MaterialIndex < MaterialOverrides.size())
+			{
+				const FString& Candidate = MaterialOverrides[MaterialIndex];
+				if (!Candidate.empty())
+				{
+					return Candidate;
+				}
+			}
+
+			if (!DefaultSet.empty())
+			{
+				return DefaultSet;
+			}
+			return EmptySet;
+		}
+	};
+
+	FResolvedUVSets ResolveUVSets(FbxMesh* Mesh, FbxNode* MeshNode)
+	{
+		FResolvedUVSets Result;
+		if (!Mesh)
+		{
+			return Result;
+		}
+
+		FbxStringList UVSetsRaw;
+		Mesh->GetUVSetNames(UVSetsRaw);
+		if (UVSetsRaw.GetCount() > 0)
+		{
+			Result.DefaultSet = UVSetsRaw.GetStringAt(0);
+		}
+
+		FUVSetLookup AvailableSets = BuildAvailableUVSetLookup(Mesh);
+		if (MeshNode)
+		{
+			const int MaterialCount = MeshNode->GetMaterialCount();
+			Result.MaterialOverrides.SetNum(MaterialCount);
+			for (int MatIdx = 0; MatIdx < MaterialCount; ++MatIdx)
+			{
+				FbxSurfaceMaterial* Material = MeshNode->GetMaterial(MatIdx);
+				FString Candidate = ResolveUVSetFromMaterial(Material, AvailableSets);
+				if (!Candidate.empty())
+				{
+					Result.MaterialOverrides[MatIdx] = Candidate;
+				}
+			}
+		}
+
+		return Result;
+	}
+
+	int32 GetPolygonMaterialIndex(FbxLayerElementMaterial* MaterialElement, int32 PolygonIndex)
+	{
+		if (!MaterialElement)
+		{
+			return -1;
+		}
+
+		const auto MappingMode = MaterialElement->GetMappingMode();
+		const auto ReferenceMode = MaterialElement->GetReferenceMode();
+		const auto& Indices = MaterialElement->GetIndexArray();
+
+		if (MappingMode == FbxLayerElement::eAllSame)
+		{
+			return (Indices.GetCount() > 0) ? Indices.GetAt(0) : -1;
+		}
+
+		if (MappingMode == FbxLayerElement::eByPolygon)
+		{
+			if (ReferenceMode == FbxLayerElement::eIndex || ReferenceMode == FbxLayerElement::eIndexToDirect)
+			{
+				if (PolygonIndex < Indices.GetCount())
+				{
+					return Indices.GetAt(PolygonIndex);
+				}
+			}
+			else if (ReferenceMode == FbxLayerElement::eDirect)
+			{
+				return PolygonIndex;
+			}
+		}
+
+		return -1;
+	}
+
 	bool ExtractMaterialInfo(FbxSurfaceMaterial* FbxMaterial, FMaterialInfo& OutInfo)
 	{
 		if (!FbxMaterial)
@@ -563,11 +727,11 @@ namespace
 		LocalVertices.reserve(PolygonCount * 3);
 		LocalIndices.reserve(PolygonCount * 3);
 
-		FbxStringList UVSets;
-		Mesh->GetUVSetNames(UVSets);
-		const char* ActiveUVSet = (UVSets.GetCount() > 0) ? UVSets.GetStringAt(0) : nullptr;
+		const FResolvedUVSets ResolvedUVSets = ResolveUVSets(Mesh, MeshNode);
+		FbxLayerElementMaterial* MaterialElement = (Mesh->GetElementMaterialCount() > 0) ? Mesh->GetElementMaterial(0) : nullptr;
 
 		int32 VertexCounter = 0;
+		bool bMissingUVSetLogged = false;
 		for (int PolygonIndex = 0; PolygonIndex < PolygonCount; ++PolygonIndex)
 		{
 			const int PolygonSize = Mesh->GetPolygonSize(PolygonIndex);
@@ -575,6 +739,17 @@ namespace
 			{
 				VertexCounter += PolygonSize;
 				continue;
+			}
+
+			const int32 PolygonMaterialIndex = GetPolygonMaterialIndex(MaterialElement, PolygonIndex);
+			const FString& ActiveUVSetName = ResolvedUVSets.GetSetNameForMaterial(PolygonMaterialIndex);
+			const char* ActiveUVSet = ActiveUVSetName.empty() ? nullptr : ActiveUVSetName.c_str();
+			if (!ActiveUVSet && !bMissingUVSetLogged)
+			{
+				UE_LOG("ProcessMesh: Mesh '%s' has no UV set for material index %d. UVs default to zero.",
+					MeshNode->GetName(),
+					PolygonMaterialIndex);
+				bMissingUVSetLogged = true;
 			}
 
 			for (int PolyVertex = 0; PolyVertex < PolygonSize; ++PolyVertex)
