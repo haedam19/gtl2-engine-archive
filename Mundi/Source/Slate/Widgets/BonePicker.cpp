@@ -34,9 +34,14 @@ int32 FBonePicker::PickBone(const FSkeleton& Skeleton,
         const FBone& Bone = Skeleton.Bones[i];
         const FVector BonePos = Cache.BoneWorldPositions[i] * BoneScale;
 
+        // Apply scale to picking radius/width (must match visualization)
+        float ScaledSphereRadius = SphereRadius * BoneScale;
+        float ScaledPyramidWidth = PyramidWidth * BoneScale;
+        float ScaledLeafPyramidWidth = LeafPyramidWidth * BoneScale;
+
         // 1. Joint (sphere) picking
         float sphereT = 0.0f;
-        if (IntersectRaySphere(Ray, BonePos, SphereRadius, sphereT))
+        if (IntersectRaySphere(Ray, BonePos, ScaledSphereRadius, sphereT))
         {
             SphereIntersectionCount++;
 
@@ -68,17 +73,17 @@ int32 FBonePicker::PickBone(const FSkeleton& Skeleton,
 
                 Direction = Direction / FullLength;
 
-                // Adjust for sphere surfaces
-                float AdjustedLength = FullLength - (SphereRadius * 2.0f);
+                // Adjust for sphere surfaces (use scaled radius)
+                float AdjustedLength = FullLength - (ScaledSphereRadius * 2.0f);
                 if (AdjustedLength < 0.001f)
                     continue;  // Spheres overlap
 
                 // Pyramid start/end positions at sphere surfaces
-                FVector PyramidStart = ChildPos + Direction * SphereRadius;
-                FVector PyramidEnd = BonePos - Direction * SphereRadius;
+                FVector PyramidStart = ChildPos + Direction * ScaledSphereRadius;
+                FVector PyramidEnd = BonePos - Direction * ScaledSphereRadius;
 
                 float pyramidT = 0.0f;
-                if (IntersectRayPyramid(Ray, PyramidStart, PyramidEnd, PyramidWidth, pyramidT))
+                if (IntersectRayPyramid(Ray, PyramidStart, PyramidEnd, ScaledPyramidWidth, pyramidT))
                 {
                     PyramidIntersectionCount++;
 
@@ -104,17 +109,17 @@ int32 FBonePicker::PickBone(const FSkeleton& Skeleton,
                 {
                     Direction = Direction / FullLength;
 
-                    // Adjust for sphere surfaces
-                    float AdjustedLength = (FullLength - (SphereRadius * 2.0f)) * 0.2f;
+                    // Adjust for sphere surfaces (use scaled radius)
+                    float AdjustedLength = (FullLength - (ScaledSphereRadius * 2.0f)) * 0.2f;
 
                     if (AdjustedLength > 0.001f)
                     {
                         // Pyramid start at leaf sphere surface
-                        FVector PyramidStart = BonePos + Direction * SphereRadius;
+                        FVector PyramidStart = BonePos + Direction * ScaledSphereRadius;
                         FVector PyramidEnd = PyramidStart + Direction * AdjustedLength;
 
                         float pyramidT = 0.0f;
-                        if (IntersectRayPyramid(Ray, PyramidStart, PyramidEnd, LeafPyramidWidth, pyramidT))
+                        if (IntersectRayPyramid(Ray, PyramidStart, PyramidEnd, ScaledLeafPyramidWidth, pyramidT))
                         {
                             PyramidIntersectionCount++;
 
