@@ -44,6 +44,10 @@
 #include "ShadowSystem.h"
 #include "WorldPhysics.h"
 #include "PlayerCameraManager.h"
+#include "SkinnedMeshComponent.h"
+#include "SkeletalMesh.h"
+#include "Widgets/SkeletonEditor.h"
+#include "Widgets/BoneInstancedVisualizer.h"
 
 FSceneRenderer::FSceneRenderer(UWorld* InWorld, FSceneView* InView, URenderer* InOwnerRenderer, FViewport* InViewport)
 	: World(InWorld)
@@ -1554,30 +1558,163 @@ void FSceneRenderer::RenderDebugPass()
 
 void FSceneRenderer::RenderCustomInstancedBatchesPass()
 {
-	// Check if Viewport has custom instanced batches
-	if (!Viewport || !Viewport->GetCustomInstancedBatches())
-		return;
-
-	const TArray<FInstancedMeshBatchElement>* CustomBatches = Viewport->GetCustomInstancedBatches();
-	if (CustomBatches->IsEmpty())
-		return;
-
-	// Viewport RenderTarget이 있으면 다시 바인딩
-	if (Viewport->HasRenderTarget())
+	// 1. Render viewport-specific custom instanced batches
+	if (Viewport && Viewport->GetCustomInstancedBatches())
 	{
-		ID3D11DeviceContext* Context = RHIDevice->GetDeviceContext();
-		ID3D11RenderTargetView* RTV = Viewport->GetRenderTargetView();
-		ID3D11DepthStencilView* DSV = Viewport->GetDepthStencilView();
-		Context->OMSetRenderTargets(1, &RTV, DSV);
+		const TArray<FInstancedMeshBatchElement>* CustomBatches = Viewport->GetCustomInstancedBatches();
+		if (!CustomBatches->IsEmpty())
+		{
+			// Viewport RenderTarget이 있으면 다시 바인딩
+			if (Viewport->HasRenderTarget())
+			{
+				ID3D11DeviceContext* Context = RHIDevice->GetDeviceContext();
+				ID3D11RenderTargetView* RTV = Viewport->GetRenderTargetView();
+				ID3D11DepthStencilView* DSV = Viewport->GetDepthStencilView();
+				Context->OMSetRenderTargets(1, &RTV, DSV);
+			}
+
+			// Create a mutable copy to pass to DrawInstancedMeshBatches
+			TArray<FInstancedMeshBatchElement> BatchesCopy = *CustomBatches;
+
+			// Render the instanced batches
+			DrawInstancedMeshBatches(BatchesCopy, false);
+
+			UE_LOG("FSceneRenderer::RenderCustomInstancedBatches - Rendered %d instanced batches", CustomBatches->size());
+		}
 	}
 
-	// Create a mutable copy to pass to DrawInstancedMeshBatches
-	TArray<FInstancedMeshBatchElement> BatchesCopy = *CustomBatches;
+	// 2. Render world-level skeleton visualization (SF_Skeleton flag)
+	// NOTE: Skeleton visualization requires SkeletalMeshes flag to be enabled (editor world only)
+	if (World &&
+	    World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_Skeleton) &&
+	    World->GetRenderSettings().IsShowFlagEnabled(EEngineShowFlags::SF_SkeletalMeshes))
+	{
+		// Viewport RenderTarget이 있으면 다시 바인딩
+		if (Viewport && Viewport->HasRenderTarget())
+		{
+			ID3D11DeviceContext* Context = RHIDevice->GetDeviceContext();
+			ID3D11RenderTargetView* RTV = Viewport->GetRenderTargetView();
+			ID3D11DepthStencilView* DSV = Viewport->GetDepthStencilView();
+			Context->OMSetRenderTargets(1, &RTV, DSV);
+		}
 
-	// Render the instanced batches
-	DrawInstancedMeshBatches(BatchesCopy, false);
+		// Get BoneVisualizer from World
+		FBoneInstancedVisualizer* BoneVisualizer = World->GetBoneVisualizer();
+		if (!BoneVisualizer)
+			return;
 
-	UE_LOG("FSceneRenderer::RenderCustomInstancedBatches - Rendered %d instanced batches", CustomBatches->size());
+		// Lazy initialization: Initialize BoneVisualizer if not already initialized
+		if (!BoneVisualizer->IsInitialized())
+		{
+			if (!BoneVisualizer->Initialize(RHIDevice->GetDevice()))
+			{
+				UE_LOG("FSceneRenderer: Failed to initialize BoneVisualizer");
+				return;
+			}
+
+			// Configure for editor world: 1/10 size
+			BoneVisualizer->SetJointRadius(0.02f);      // 1/10 of original (0.2f)
+			BoneVisualizer->SetPyramidWidth(0.009f);    // 1/10 of original (0.09f)
+			BoneVisualizer->SetLeafPyramidWidth(0.006f); // 1/10 of original (0.06f)
+
+			UE_LOG("FSceneRenderer: BoneVisualizer initialized for editor world (1/10 scale)");
+		}
+
+		// Iterate through all actors in the world to find SkeletalMeshComponents
+		const TArray<AActor*>& Actors = World->GetActors();
+		int32 SkeletonVisualizationCount = 0;
+
+		for (AActor* Actor : Actors)
+		{
+			if (!Actor)
+				continue;
+
+			// Find all SkinnedMeshComponents (base class of SkeletalMeshComponent)
+			const TSet<UActorComponent*>& Components = Actor->GetOwnedComponents();
+			for (UActorComponent* Component : Components)
+			{
+				if (USkinnedMeshComponent* SkinnedComp = Cast<USkinnedMeshComponent>(Component))
+				{
+					// Get SkeletalMesh and then Skeleton
+					USkeletalMesh* SkeletalMesh = SkinnedComp->GetSkeletalMesh();
+					if (!SkeletalMesh)
+						continue;
+
+					const FSkeleton* Skeleton = SkeletalMesh->GetSkeleton();
+					if (!Skeleton || Skeleton->Bones.IsEmpty())
+						continue;
+
+					SkeletonVisualizationCount++;
+
+					// Get bone matrices (model space) and component's world transform
+					const TArray<FMatrix>& BoneMatrices = SkinnedComp->GetBoneMatrices();
+					if (BoneMatrices.IsEmpty())
+						continue;
+
+					// Get component's world transform to convert bone matrices from model space to world space
+					FTransform ComponentWorldTransform = SkinnedComp->GetWorldTransform();
+					FMatrix ComponentWorldMatrix = ComponentWorldTransform.ToMatrix();
+
+					// Build FViewerSkeletonCache for rendering
+					FViewerSkeletonCache Cache;
+					Cache.BoneWorldMatrices.Reserve(BoneMatrices.Num());
+					Cache.BoneWorldPositions.Reserve(BoneMatrices.Num());
+					Cache.BoneWorldRotations.Reserve(BoneMatrices.Num());
+					Cache.BoneWorldScales.Reserve(BoneMatrices.Num());
+					Cache.BoneChildIndices.SetNum(Skeleton->Bones.Num());
+
+					// Transform bone matrices from model space to world space
+					for (const FMatrix& BoneModelMatrix : BoneMatrices)
+					{
+						// Convert model space bone matrix to world space
+						FMatrix BoneWorldMatrix = BoneModelMatrix * ComponentWorldMatrix;
+						Cache.BoneWorldMatrices.Add(BoneWorldMatrix);
+
+						// Extract world position from world matrix
+						// FMatrix stores translation in last row: M[3][0], M[3][1], M[3][2]
+						Cache.BoneWorldPositions.Add(FVector(BoneWorldMatrix.M[3][0], BoneWorldMatrix.M[3][1], BoneWorldMatrix.M[3][2]));
+
+						// For now, use identity rotation and unit scale (simplified)
+						Cache.BoneWorldRotations.Add(FQuat::Identity());
+						Cache.BoneWorldScales.Add(FVector(1, 1, 1));
+					}
+
+					// Build child indices for rendering connections
+					for (int32 i = 0; i < Skeleton->Bones.Num(); ++i)
+					{
+						const FBone& Bone = Skeleton->Bones[i];
+						if (Bone.ParentIndex >= 0 && Bone.ParentIndex < Skeleton->Bones.Num())
+						{
+							Cache.BoneChildIndices[Bone.ParentIndex].Add(i);
+						}
+					}
+
+					// Render the skeleton (no selected bone for world rendering, magenta color)
+					TArray<FInstancedMeshBatchElement> SkeletonBatches;
+					FVector4 MagentaColor(1.0f, 0.0f, 1.0f, 1.0f);  // Magenta for editor world
+					BoneVisualizer->RenderSkeleton(
+						*Skeleton,
+						Cache,
+						-1,  // No selected bone
+						SkeletonBatches,
+						1.0f,  // MeshScale = 1.0 (original size, no scaling)
+						&MagentaColor  // Use magenta color for editor world
+					);
+
+					// Draw the skeleton batches
+					if (!SkeletonBatches.IsEmpty())
+					{
+						DrawInstancedMeshBatches(SkeletonBatches, false);
+					}
+				}
+			}
+		}
+
+		if (SkeletonVisualizationCount > 0)
+		{
+			UE_LOG("FSceneRenderer: Rendered %d skeleton visualizations", SkeletonVisualizationCount);
+		}
+	}
 }
 
 void FSceneRenderer::RenderOverayEditorPrimitivesPass()

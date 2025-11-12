@@ -1595,6 +1595,12 @@ void SViewportWindow::RenderShowFlagDropdownMenu()
 		if (ImGui::Checkbox("##SkeletalMesh", &bSkeletalMesh))
 		{
 			RenderSettings.ToggleShowFlag(EEngineShowFlags::SF_SkeletalMeshes);
+
+			// If SkeletalMesh is turned OFF, also turn OFF Skeleton
+			if (!bSkeletalMesh && RenderSettings.IsShowFlagEnabled(EEngineShowFlags::SF_Skeleton))
+			{
+				RenderSettings.ToggleShowFlag(EEngineShowFlags::SF_Skeleton);
+			}
 		}
 		ImGui::SameLine();
 		if (IconStaticMesh && IconStaticMesh->GetShaderResourceView())
@@ -1606,6 +1612,47 @@ void SViewportWindow::RenderShowFlagDropdownMenu()
 		if (ImGui::IsItemHovered())
 		{
 			ImGui::SetTooltip("스켈레탈 메시 렌더링을 표시합니다.");
+		}
+
+		// Skeleton (disabled if SkeletalMesh is OFF)
+		bool bSkeletonCheckboxEnabled = RenderSettings.IsShowFlagEnabled(EEngineShowFlags::SF_SkeletalMeshes);
+		if (!bSkeletonCheckboxEnabled)
+		{
+			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+		}
+
+		bool bSkeleton = RenderSettings.IsShowFlagEnabled(EEngineShowFlags::SF_Skeleton);
+		if (ImGui::Checkbox("##Skeleton", &bSkeleton))
+		{
+			// Only allow toggling if SkeletalMesh is enabled
+			if (bSkeletonCheckboxEnabled)
+			{
+				RenderSettings.ToggleShowFlag(EEngineShowFlags::SF_Skeleton);
+			}
+		}
+		ImGui::SameLine();
+		if (IconStaticMesh && IconStaticMesh->GetShaderResourceView())
+		{
+			ImGui::Image((void*)IconStaticMesh->GetShaderResourceView(), IconSize);
+			ImGui::SameLine(0, 4);
+		}
+		ImGui::Text(" 스켈레톤 본");
+
+		if (!bSkeletonCheckboxEnabled)
+		{
+			ImGui::PopStyleVar();
+		}
+
+		if (ImGui::IsItemHovered())
+		{
+			if (bSkeletonCheckboxEnabled)
+			{
+				ImGui::SetTooltip("스켈레탈 메시의 본(Bone) 구조를 시각화합니다.");
+			}
+			else
+			{
+				ImGui::SetTooltip("스켈레탈 메시가 꺼져있으면 본 시각화를 사용할 수 없습니다.");
+			}
 		}
 
 		// Billboard

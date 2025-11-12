@@ -35,17 +35,25 @@ public:
     bool Initialize(ID3D11Device* InDevice);
 
     /**
+     * @brief 초기화 여부 확인
+     */
+    bool IsInitialized() const { return Device != nullptr && SphereMesh != nullptr && PyramidMesh != nullptr; }
+
+    /**
      * @brief 스켈레톤 렌더링
      * @param Skeleton 스켈레톤 데이터
      * @param Cache 캐시된 본 Transform
      * @param SelectedBoneIndex 선택된 본 인덱스
      * @param OutBatches 출력 렌더링 배치
+     * @param MeshScale 메시 스케일
+     * @param ColorOverride 색상 오버라이드 (nullptr이면 기본 색상 사용)
      */
     void RenderSkeleton(const FSkeleton& Skeleton,
                        const FViewerSkeletonCache& Cache,
                        int32 SelectedBoneIndex,
                        TArray<struct FInstancedMeshBatchElement>& OutBatches,
-                       float MeshScale = 1.0f);
+                       float MeshScale = 1.0f,
+                       const FVector4* ColorOverride = nullptr);
 
     // Configuration
     void SetJointRadius(float Radius) { JointRadius = Radius; }

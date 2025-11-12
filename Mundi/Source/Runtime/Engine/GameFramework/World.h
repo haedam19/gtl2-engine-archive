@@ -33,6 +33,7 @@ class UStaticMesh;
 class FOcclusionCullingManagerCPU;
 struct Frustum;
 struct FCandidateDrawable;
+class FBoneInstancedVisualizer;
 
 class UWorld final : public UObject
 {
@@ -105,6 +106,9 @@ public:
     UWorldPhysics* GetWorldPhysics() const { return Physics.get(); }
     APlayerController* GetPlayerController() const { return PlayerController.get(); }
 
+    // Bone Visualizer accessor
+    FBoneInstancedVisualizer* GetBoneVisualizer() const { return BoneVisualizer.get(); }
+
     // Per-world render settings
     URenderSettings& GetRenderSettings() { return RenderSettings; }
     const URenderSettings& GetRenderSettings() const { return RenderSettings; }
@@ -141,6 +145,10 @@ private:
 
     /** === 라이트 매니저 ===*/
     std::unique_ptr<FLightManager> LightManager;
+
+    /** === 본 비주얼라이저 ===*/
+    std::unique_ptr<FBoneInstancedVisualizer> BoneVisualizer;
+
     // Object naming system
     TMap<FString, int32> ObjectTypeCounts;
 

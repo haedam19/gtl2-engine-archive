@@ -35,6 +35,8 @@
 #include "PlayerController.h"
 #include "PlayerCameraManager.h"
 #include "CameraShakeModifier.h"
+#include "Widgets/BoneInstancedVisualizer.h"
+#include "SkinnedMeshComponent.h"
 
 #include "ShapeComponent.h"
 #include "BoxComponent.h"
@@ -51,6 +53,7 @@ UWorld::UWorld()
 	//PIE의 경우 Initalize 없이 빈 Level 생성만 해야함
 	Level = std::make_unique<ULevel>();
 	LightManager = std::make_unique<FLightManager>();
+	BoneVisualizer = std::make_unique<FBoneInstancedVisualizer>();
 
 }
 

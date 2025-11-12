@@ -396,32 +396,32 @@ enum class EEngineShowFlags : uint64
     SF_Primitives = 1ull << 0,    // Show/hide all primitive geometry
     SF_StaticMeshes = 1ull << 1,  // Show/hide static mesh actors
     SF_SkeletalMeshes = 1ull << 2,  // Show/hide skeletal mesh actors
+    SF_Skeleton = 1ull << 3,       // Show/hide skeletal mesh bone visualization
 
     // Debug features
-    SF_BillboardText = 1ull << 3, // Show/hide UUID text above objects
-    SF_BoundingBoxes = 1ull << 4, // Show/hide collision bounds
-    SF_Grid = 1ull << 5,          // Show/hide world grid
+    SF_BillboardText = 1ull << 4, // Show/hide UUID text above objects
+    SF_BoundingBoxes = 1ull << 5, // Show/hide collision bounds
+    SF_Grid = 1ull << 6,          // Show/hide world grid
 
     // Lighting
-    SF_Lighting = 1ull << 6,      // Enable/disable lighting
+    SF_Lighting = 1ull << 7,      // Enable/disable lighting
+    SF_OctreeDebug = 1ull << 8,  // Show/hide octree debug bounds
+    SF_BVHDebug = 1ull << 9,  // Show/hide BVH debug bounds
+    SF_Culling = 1ull << 10,          // Show/hide world grid
 
-    SF_OctreeDebug = 1ull << 7,  // Show/hide octree debug bounds
-    SF_BVHDebug = 1ull << 8,  // Show/hide BVH debug bounds
-    SF_Culling = 1ull << 9,          // Show/hide world grid
+    SF_Decals = 1ull << 11,
+    SF_Fog = 1ull << 12,
 
-    SF_Decals = 1ull << 10,
-    SF_Fog = 1ull << 11,
+    SF_FXAA = 1ull << 13,
 
-    SF_FXAA = 1ull << 12,
+    SF_TileCulling = 1ull << 14,      // Enable/disable tile-based light culling
+    SF_TileCullingDebug = 1ull << 15, // Show/hide tile culling debug visualization
 
-    SF_TileCulling = 1ull << 13,      // Enable/disable tile-based light culling
-    SF_TileCullingDebug = 1ull << 14, // Show/hide tile culling debug visualization
+    SF_Billboard = 1ull << 16,
 
-    SF_Billboard = 1ull << 15,
+	SF_Shadows = 1ull << 17,
 
-	SF_Shadows = 1ull << 16,
-
-    SF_GammaCorrection = 1ull << 17,
+    SF_GammaCorrection = 1ull << 18,
 
     // Default enabled flags
     SF_DefaultEnabled = SF_Primitives | SF_StaticMeshes | SF_SkeletalMeshes | SF_Grid | SF_Lighting | SF_Decals | SF_Fog | SF_FXAA | SF_Billboard | SF_Shadows | SF_GammaCorrection,
