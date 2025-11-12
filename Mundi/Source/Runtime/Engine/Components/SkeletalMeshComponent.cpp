@@ -40,8 +40,12 @@ void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 {
     Super::SetSkeletalMesh(InSkeletalMesh);
 
-    if (bRegistered && SkeletalMesh)
+    if (SkeletalMesh)
     {
+        // 기존 DynamicMesh 정리 (GC가 회수하도록)
+        DynamicMesh = nullptr;
+
+        // 새로운 DynamicMesh 생성 및 초기화
         DynamicMesh = NewObject<UDynamicMesh>();
 
         ID3D11Device* Device = URenderManager::GetInstance().GetRenderer()->GetRHIDevice()->GetDevice();
@@ -57,31 +61,6 @@ void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 // ========================================
 // 생명주기
 // ========================================
-
-void USkeletalMeshComponent::OnRegister(UWorld* InWorld)
-{
-    Super::OnRegister(InWorld);
-
-    if (SkeletalMesh)
-    {
-        DynamicMesh = NewObject<UDynamicMesh>();
-
-        ID3D11Device* Device = URenderManager::GetInstance().GetRenderer()->GetRHIDevice()->GetDevice();
-        uint32 MaxVertexCount = SkeletalMesh->GetVertexCount();
-        uint32 MaxIndexCount = SkeletalMesh->GetIndexCount();
-        EVertexLayoutType VertexType = EVertexLayoutType::PositionColorTextureNormal;
-
-        DynamicMesh->Initialize(MaxVertexCount, MaxIndexCount, Device, VertexType);
-        PerformCPUSkinning();
-    }
-}
-
-void USkeletalMeshComponent::OnUnregister()
-{
-    // DynamicMesh는 UObject이므로 GC가 처리
-    DynamicMesh = nullptr;
-    Super::OnUnregister();
-}
 
 void USkeletalMeshComponent::TickComponent(float DeltaTime)
 {
@@ -360,8 +339,8 @@ void USkeletalMeshComponent::OnSerialized()
 {
     Super::OnSerialized();
 
-    // 로드 후 DynamicMesh 재생성 (이미 등록된 경우에만)
-    if (bRegistered && SkeletalMesh && !DynamicMesh)
+    // 로드 후 DynamicMesh 재생성
+    if (SkeletalMesh && !DynamicMesh)
     {
         DynamicMesh = NewObject<UDynamicMesh>();
 
@@ -378,4 +357,9 @@ void USkeletalMeshComponent::OnSerialized()
 void USkeletalMeshComponent::DuplicateSubObjects()
 {
     Super::DuplicateSubObjects();
+
+    // 복사본은 자신만의 DynamicMesh를 생성해야 함
+    // 원본의 DynamicMesh 포인터를 공유하지 않도록 nullptr로 설정
+    // SetSkeletalMesh() 또는 OnSerialized()에서 재생성됨
+    DynamicMesh = nullptr;
 }
