@@ -49,6 +49,10 @@ namespace
 		return Ext;
 	}
 
+	// ===================================================================
+	// FBX Scene Load Utils
+	// ===================================================================
+
 	void ConvertSceneAxisAndUnit(FbxScene* Scene)
 	{
 		if (!Scene)
@@ -177,6 +181,10 @@ namespace
 		return Scene;
 	}
 
+	// ===================================================================
+	// FBX Mesh/Skeleton Utils
+	// ===================================================================
+
 	bool HasSkinDeformerWithWeights(FbxMesh* Mesh)
 	{
 		if (!Mesh)
@@ -285,47 +293,9 @@ namespace
 		return false;
 	}
 
-	struct FSkeletalCachePaths
-	{
-		FString MeshBinPath;
-		FString MaterialBinPath;
-	};
-
-	FSkeletalCachePaths GetSkeletalCachePaths(const FString& NormalizedPath)
-	{
-		const FString CacheBase = ConvertDataPathToCachePath(NormalizedPath);
-		return FSkeletalCachePaths{
-			CacheBase + ".skelmesh.bin",
-			CacheBase + ".skelmat.bin"
-		};
-	}
-
-	bool ShouldRegenerateFbxCache(const FString& FbxPath, const FSkeletalCachePaths& CachePaths)
-	{
-		if (!fs::exists(CachePaths.MeshBinPath) || !fs::exists(CachePaths.MaterialBinPath))
-		{
-			return true;
-		}
-
-		try
-		{
-			const auto MeshTimestamp = fs::last_write_time(CachePaths.MeshBinPath);
-			const auto MatTimestamp = fs::last_write_time(CachePaths.MaterialBinPath);
-			const auto CacheTimestamp = std::min(MeshTimestamp, MatTimestamp);
-
-			if (fs::last_write_time(FbxPath) > CacheTimestamp)
-			{
-				return true;
-			}
-		}
-		catch (const fs::filesystem_error& Error)
-		{
-			UE_LOG("FFbxManager: Cache validation failed for %s (%s). Forcing regeneration.", FbxPath.c_str(), Error.what());
-			return true;
-		}
-
-		return false;
-	}
+	// ===================================================================
+	// Material Utils
+	// ===================================================================
 
 	void PrepareAndRegisterMaterials(const FString& NormalizedPath, TArray<FMaterialInfo>& MaterialInfos)
 	{
@@ -402,7 +372,96 @@ namespace
 		}
 	}
 
+	// ===================================================================
+	// FBX Cache Utils
+	// ===================================================================
+
+	struct FSkeletalCachePaths
+	{
+		FString MeshBinPath;
+		FString MaterialBinPath;
+	};
+
+	FSkeletalCachePaths GetSkeletalCachePaths(const FString& NormalizedPath)
+	{
+		const FString CacheBase = ConvertDataPathToCachePath(NormalizedPath);
+		return FSkeletalCachePaths{
+			CacheBase + ".skelmesh.bin",
+			CacheBase + ".skelmat.bin"
+		};
+	}
+
+	struct FStaticCachePaths
+	{
+		FString MeshBinPath;
+		FString MaterialBinPath;
+	};
+
+	FStaticCachePaths GetStaticCachePaths(const FString& NormalizedPath)
+	{
+		const FString CacheBase = ConvertDataPathToCachePath(NormalizedPath);
+		return FStaticCachePaths{
+			CacheBase + ".statmesh.bin",
+			CacheBase + ".statmat.bin"
+		};
+	}
+
+	bool ShouldRegenerateFbxCache(const FString& FbxPath, const FSkeletalCachePaths& CachePaths)
+	{
+		if (!fs::exists(CachePaths.MeshBinPath) || !fs::exists(CachePaths.MaterialBinPath))
+		{
+			return true;
+		}
+
+		try
+		{
+			const auto MeshTimestamp = fs::last_write_time(CachePaths.MeshBinPath);
+			const auto MatTimestamp = fs::last_write_time(CachePaths.MaterialBinPath);
+			const auto CacheTimestamp = std::min(MeshTimestamp, MatTimestamp);
+
+			if (fs::last_write_time(FbxPath) > CacheTimestamp)
+			{
+				return true;
+			}
+		}
+		catch (const fs::filesystem_error& Error)
+		{
+			UE_LOG("FFbxManager: Cache validation failed for %s (%s). Forcing regeneration.", FbxPath.c_str(), Error.what());
+			return true;
+		}
+
+		return false;
+	}
+
+	bool ShouldRegenerateStaticCache(const FString& FbxPath, const FStaticCachePaths& CachePaths)
+	{
+		if (!fs::exists(CachePaths.MeshBinPath) || !fs::exists(CachePaths.MaterialBinPath))
+		{
+			return true;
+		}
+
+		try
+		{
+			const auto MeshTimestamp = fs::last_write_time(CachePaths.MeshBinPath);
+			const auto MatTimestamp = fs::last_write_time(CachePaths.MaterialBinPath);
+			const auto CacheTimestamp = std::min(MeshTimestamp, MatTimestamp);
+
+			if (fs::last_write_time(FbxPath) > CacheTimestamp)
+			{
+				return true;
+			}
+		}
+		catch (const fs::filesystem_error& Error)
+		{
+			UE_LOG("FFbxManager: Static cache validation failed for %s (%s). Forcing regeneration.", FbxPath.c_str(), Error.what());
+			return true;
+		}
+
+		return false;
+	}
+
 }
+
 // ====================================================================
 // FFbxManager Member Methods
 //=====================================================================
@@ -518,18 +577,34 @@ void FFbxManager::Preload()
 		}
 
 		FSkeletalMeshEntry* SkeletalEntry = nullptr;
-		const FSkeletalCachePaths CachePaths = GetSkeletalCachePaths(FilePath);
-		bool bShouldRegenerate = ShouldRegenerateFbxCache(FilePath, CachePaths);
+		FStaticMesh* StaticEntry = nullptr;
 
-		if (!bShouldRegenerate)
+		const FSkeletalCachePaths SkeletalCachePaths = GetSkeletalCachePaths(FilePath);
+		const FStaticCachePaths StaticCachePaths = GetStaticCachePaths(FilePath);
+
+		bool bShouldRegenerateSkeletal = ShouldRegenerateFbxCache(FilePath, SkeletalCachePaths);
+		bool bShouldRegenerateStatic = ShouldRegenerateStaticCache(FilePath, StaticCachePaths);
+
+		if (!bShouldRegenerateSkeletal)
 		{
-			if (LoadSkeletalMeshFromCache(FilePath, CachePaths.MeshBinPath, CachePaths.MaterialBinPath, SkeletalEntry))
+			if (LoadSkeletalMeshFromCache(FilePath, SkeletalCachePaths.MeshBinPath, SkeletalCachePaths.MaterialBinPath, SkeletalEntry))
 			{
 				++GSkeletalClassifications;
 				RegisterEntry(FilePath, SkeletalEntry);
 				continue;
 			}
-			bShouldRegenerate = true;
+			bShouldRegenerateSkeletal = true;
+		}
+
+		if (!bShouldRegenerateStatic)
+		{
+			if (LoadStaticMeshFromCache(FilePath, StaticCachePaths.MeshBinPath, StaticCachePaths.MaterialBinPath, StaticEntry))
+			{
+				++GStaticClassifications;
+				ResourceManager.Load<UStaticMesh>(FilePath);
+				continue;
+			}
+			bShouldRegenerateStatic = true;
 		}
 
 		FbxScene* Scene = LoadSceneFromFile(SdkManager, IOSettings, FilePath);
@@ -548,9 +623,9 @@ void FFbxManager::Preload()
 			SkeletalEntry = ImportSkeletalMesh(
 				Scene,
 				FilePath,
-				CachePaths.MeshBinPath,
-				CachePaths.MaterialBinPath,
-				bShouldRegenerate);
+				SkeletalCachePaths.MeshBinPath,
+				SkeletalCachePaths.MaterialBinPath,
+				bShouldRegenerateSkeletal);
 			Scene = nullptr; // Import 함수에서 Scene 파괴
 			if (SkeletalEntry)
 			{
@@ -561,7 +636,10 @@ void FFbxManager::Preload()
 		{
 			FStaticMesh* StaticMesh = ImportStaticMesh(
 				Scene,
-				FilePath);
+				FilePath,
+				StaticCachePaths.MeshBinPath,
+				StaticCachePaths.MaterialBinPath,
+				bShouldRegenerateStatic);
 			Scene = nullptr;
 			if (StaticMesh)
 			{
@@ -682,6 +760,19 @@ FStaticMesh* FFbxManager::LoadStaticMeshAsset(const FString& PathFileName)
 		return nullptr;
 	}
 
+	const FStaticCachePaths CachePaths = GetStaticCachePaths(NormalizedPath);
+	bool bShouldRegenerate = ShouldRegenerateStaticCache(NormalizedPath, CachePaths);
+
+	if (!bShouldRegenerate)
+	{
+		FStaticMesh* CachedMesh = nullptr;
+		if (LoadStaticMeshFromCache(NormalizedPath, CachePaths.MeshBinPath, CachePaths.MaterialBinPath, CachedMesh))
+		{
+			return CachedMesh;
+		}
+		bShouldRegenerate = true;
+	}
+
 	FbxScene* Scene = LoadSceneFromFile(SdkManager, IOSettings, NormalizedPath);
 	if (!Scene)
 	{
@@ -698,7 +789,10 @@ FStaticMesh* FFbxManager::LoadStaticMeshAsset(const FString& PathFileName)
 
 	FStaticMesh* StaticMesh = ImportStaticMesh(
 		Scene,
-		NormalizedPath);
+		NormalizedPath,
+		CachePaths.MeshBinPath,
+		CachePaths.MaterialBinPath,
+		bShouldRegenerate);
 	return StaticMesh;
 }
 
@@ -853,6 +947,98 @@ bool FFbxManager::LoadSkeletalMeshFromCache(
 	}
 }
 
+bool FFbxManager::SaveStaticMeshCache(
+	const FStaticMesh& Mesh,
+	const FString& MeshCachePath,
+	const FString& MaterialCachePath,
+	const TArray<FMaterialInfo>& MaterialInfos)
+{
+	try
+	{
+		fs::path MeshPath(MeshCachePath);
+		if (MeshPath.has_parent_path())
+		{
+			std::error_code DirEc;
+			fs::create_directories(MeshPath.parent_path(), DirEc);
+		}
+
+		fs::path MatPath(MaterialCachePath);
+		if (MatPath.has_parent_path())
+		{
+			std::error_code DirEc;
+			fs::create_directories(MatPath.parent_path(), DirEc);
+		}
+
+		FStaticMesh MeshCopy = Mesh;
+		FWindowsBinWriter MeshWriter(MeshCachePath);
+		MeshWriter << MeshCopy;
+		MeshWriter.Close();
+
+		FWindowsBinWriter MatWriter(MaterialCachePath);
+		Serialization::WriteArray(MatWriter, MaterialInfos);
+		MatWriter.Close();
+
+		return true;
+	}
+	catch (const std::exception& Error)
+	{
+		UE_LOG("FFbxManager: Failed to write static mesh cache '%s' (%s)", MeshCachePath.c_str(), Error.what());
+		return false;
+	}
+}
+
+bool FFbxManager::LoadStaticMeshFromCache(
+	const FString& NormalizedPath,
+	const FString& MeshCachePath,
+	const FString& MaterialCachePath,
+	FStaticMesh*& OutMesh)
+{
+	if (!fs::exists(MeshCachePath) || !fs::exists(MaterialCachePath))
+	{
+		return false;
+	}
+
+	try
+	{
+		FStaticMesh TempMesh;
+
+		FWindowsBinReader MeshReader(MeshCachePath);
+		if (!MeshReader.IsOpen())
+		{
+			throw std::runtime_error("Failed to open static mesh cache file.");
+		}
+		MeshReader << TempMesh;
+		MeshReader.Close();
+
+		TempMesh.CacheFilePath = MeshCachePath;
+		TempMesh.PathFileName = NormalizedPath;
+
+		FWindowsBinReader MatReader(MaterialCachePath);
+		if (!MatReader.IsOpen())
+		{
+			throw std::runtime_error("Failed to open static material cache file.");
+		}
+		TArray<FMaterialInfo> MaterialInfos;
+		Serialization::ReadArray(MatReader, MaterialInfos);
+		MatReader.Close();
+
+		PrepareAndRegisterMaterials(NormalizedPath, MaterialInfos);
+
+		auto InsertResult = FbxStaticMeshCache.emplace(NormalizedPath, FStaticMesh{});
+		FStaticMesh& CachedMesh = InsertResult.first->second;
+		CachedMesh = TempMesh;
+
+		OutMesh = &CachedMesh;
+		return true;
+	}
+	catch (const std::exception& Error)
+	{
+		UE_LOG("FFbxManager: Failed to load static cache for '%s' (%s)", NormalizedPath.c_str(), Error.what());
+		FbxStaticMeshCache.Remove(NormalizedPath);
+		return false;
+	}
+}
+
 EFbxSceneClassification FFbxManager::ClassifyFbxScene(FbxScene* Scene)
 {
 	if (!Scene)
@@ -961,12 +1147,14 @@ FStaticMesh* FFbxManager::ImportStaticMesh(
 
 	PrepareAndRegisterMaterials(NormalizedPath, MaterialInfos);
 
+	if (bSaveCache && !MeshCachePath.empty() && !MaterialCachePath.empty())
+	{
+		SaveStaticMeshCache(StaticMesh, MeshCachePath, MaterialCachePath, MaterialInfos);
+	}
+
 	auto InsertResult = FbxStaticMeshCache.emplace(NormalizedPath, FStaticMesh{});
 	FStaticMesh& CachedMesh = InsertResult.first->second;
 	CachedMesh = StaticMesh;
-
-	(void)MaterialCachePath;
-	(void)bSaveCache;
 
 	++GStaticClassifications;
 

@@ -77,6 +77,18 @@ private:
 		const FString& MaterialCachePath,
 		FSkeletalMeshEntry*& OutEntry);
 
+	static bool SaveStaticMeshCache(
+		const FStaticMesh& Mesh,
+		const FString& MeshCachePath,
+		const FString& MaterialCachePath,
+		const TArray<FMaterialInfo>& MaterialInfos);
+
+	static bool LoadStaticMeshFromCache(
+		const FString& NormalizedPath,
+		const FString& MeshCachePath,
+		const FString& MaterialCachePath,
+		FStaticMesh*& OutMesh);
+
 	static TMap<FString, FSkeletalMeshEntry> SkeletalMeshCache;
 	static TMap<FString, FStaticMesh> FbxStaticMeshCache; // Obj로부터 만들어진 애셋 캐시와 별개로 존재함에 유의
 	static FbxManager* SdkManager;
