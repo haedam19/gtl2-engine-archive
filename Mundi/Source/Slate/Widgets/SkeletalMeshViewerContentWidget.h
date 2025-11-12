@@ -61,7 +61,6 @@ private:
     class ADirectionalLightActor* ViewerDirectionalLight = nullptr;  // Viewer World의 DirectionalLight
 
     // UI State
-    bool bShowGizmo = true;
     bool bShowBoneNames = true;
     bool bShowSkeletalMesh = true;
     bool bShowBones = true;  // Show bone visualization
@@ -119,6 +118,8 @@ private:
     void UpdateBoneWorldMatrices(int32 StartBoneIndex = -1);  // Update bone transforms
     void RenderBones();               // Render bone visualization
     AActor* PickBoneFromViewport(const FVector2D& MousePos, const FVector2D& ViewportSize);  // Pick bone from viewport
+    void RenderBoneNames(const ImVec2& ViewportTopLeft, const ImVec2& ViewportSize);  // Render bone names overlay
+    bool WorldToScreen(const FVector& WorldPos, FVector2D& OutScreenPos, const ImVec2& ViewportSize) const;  // World to screen projection
 
     // Skeletal Mesh Management
     void RefreshLoadedMeshList();     // Refresh list from ResourceManager

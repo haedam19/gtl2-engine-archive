@@ -702,20 +702,6 @@ void USkeletalMeshViewerContentWidget::RenderToolbar()
             }
         }
         ImGui::SameLine();
-        if (ImGui::Checkbox("Gizmo", &bShowGizmo))
-        {
-            // Gizmo visibility control
-            if (ViewerWorld)
-            {
-                if (AGizmoActor* GizmoActor = ViewerWorld->GetGizmoActor())
-                {
-                    GizmoActor->SetActorHiddenInGame(!bShowGizmo);
-                    GizmoActor->SetActorHiddenInEditor(!bShowGizmo);
-                    UE_LOG("SkeletalMeshViewerContentWidget: Gizmo %s", bShowGizmo ? "ENABLED" : "DISABLED");
-                }
-            }
-        }
-        ImGui::SameLine();
         ImGui::Checkbox("Bone Names", &bShowBoneNames);
 
         // Lighting toggle
@@ -829,6 +815,22 @@ void USkeletalMeshViewerContentWidget::RenderMeshList()
         {
             BoneVisualizationScale = MeshScale;
             bBoneVisualizationDirty = true;
+
+            // Update selected bone actor position with new scale
+            if (SelectedBoneIndex >= 0)
+            {
+                AActor* BoneActor = SkeletonEditor.GetBoneActor(SelectedBoneIndex);
+                if (BoneActor)
+                {
+                    const FViewerSkeletonCache& Cache = SkeletonEditor.GetCache();
+                    if (SelectedBoneIndex < Cache.BoneWorldPositions.Num())
+                    {
+                        FVector ScaledPos = Cache.BoneWorldPositions[SelectedBoneIndex] * BoneVisualizationScale;
+                        BoneActor->SetActorLocation(ScaledPos);
+                        UE_LOG("SkeletalMeshViewerContentWidget: Updated selected bone actor position after scale sync");
+                    }
+                }
+            }
         }
     }
     if (ImGui::IsItemHovered())
@@ -851,6 +853,22 @@ void USkeletalMeshViewerContentWidget::RenderMeshList()
             if (bSyncScale)
             {
                 BoneVisualizationScale = MeshScale;
+
+                // Update selected bone actor position with new scale
+                if (SelectedBoneIndex >= 0)
+                {
+                    AActor* BoneActor = SkeletonEditor.GetBoneActor(SelectedBoneIndex);
+                    if (BoneActor)
+                    {
+                        const FViewerSkeletonCache& Cache = SkeletonEditor.GetCache();
+                        if (SelectedBoneIndex < Cache.BoneWorldPositions.Num())
+                        {
+                            FVector ScaledPos = Cache.BoneWorldPositions[SelectedBoneIndex] * BoneVisualizationScale;
+                            BoneActor->SetActorLocation(ScaledPos);
+                            UE_LOG("SkeletalMeshViewerContentWidget: Updated selected bone actor position after mesh scale change");
+                        }
+                    }
+                }
             }
 
             // Force bone visualization update
@@ -1267,6 +1285,12 @@ void USkeletalMeshViewerContentWidget::RenderViewport()
             // ImGui::Image 렌더링
             ImVec2 imageTopLeft = ImGui::GetCursorScreenPos();
             ImGui::Image((void*)srv, viewportSize, ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(1, 1, 1, 1));
+
+            // Bone names overlay (ImGui DrawList를 사용해서 3D 텍스트 렌더링)
+            if (bShowBoneNames)
+            {
+                RenderBoneNames(imageTopLeft, viewportSize);
+            }
 
             // Image 위에 InvisibleButton을 겹쳐서 입력 가로채기
             ImGui::SetCursorScreenPos(imageTopLeft);  // 커서를 이미지 시작 위치로 되돌림
@@ -2232,6 +2256,112 @@ void USkeletalMeshViewerContentWidget::SetCurrentMesh(int32 MeshIndex)
 
             UE_LOG("SkeletalMeshViewerContentWidget: Skeleton updated - %d bones",
                    SkeletonEditor.GetSkeleton().Bones.Num());
+        }
+    }
+}
+
+// ========================================
+// World to Screen Projection
+// ========================================
+bool USkeletalMeshViewerContentWidget::WorldToScreen(const FVector& WorldPos, FVector2D& OutScreenPos, const ImVec2& ViewportSize) const
+{
+    if (!ViewerCamera)
+        return false;
+
+    UCameraComponent* CameraComp = ViewerCamera->GetCameraComponent();
+    if (!CameraComp)
+        return false;
+
+    // Get view and projection matrices
+    FMatrix ViewMatrix = CameraComp->GetViewMatrix();
+    float AspectRatio = ViewportSize.x / ViewportSize.y;
+    FMatrix ProjMatrix = CameraComp->GetProjectionMatrix(AspectRatio);
+    FMatrix ViewProjMatrix = ViewMatrix * ProjMatrix;
+
+    // Transform world position to clip space
+    FVector ClipPos = WorldPos * ViewProjMatrix;
+
+    // Check if point is behind camera (negative W)
+    if (ClipPos.Z <= 0.0f)
+        return false;
+
+    // Perspective divide to get NDC (-1 to 1)
+    FVector2D NDC;
+    NDC.X = ClipPos.X / ClipPos.Z;
+    NDC.Y = ClipPos.Y / ClipPos.Z;
+
+    // Check if point is outside NDC bounds
+    if (NDC.X < -1.0f || NDC.X > 1.0f || NDC.Y < -1.0f || NDC.Y > 1.0f)
+        return false;
+
+    // Convert NDC to screen coordinates
+    // NDC: X[-1,1], Y[-1,1] -> Screen: X[0,W], Y[0,H]
+    OutScreenPos.X = (NDC.X + 1.0f) * 0.5f * ViewportSize.x;
+    OutScreenPos.Y = (1.0f - NDC.Y) * 0.5f * ViewportSize.y;  // Flip Y for screen space
+
+    return true;
+}
+
+// ========================================
+// Render Bone Names Overlay
+// ========================================
+void USkeletalMeshViewerContentWidget::RenderBoneNames(const ImVec2& ViewportTopLeft, const ImVec2& ViewportSize)
+{
+    if (!ViewerSkeletalMeshActor)
+        return;
+
+    USkeletalMeshComponent* SkeletalComp = ViewerSkeletalMeshActor->GetSkeletalMeshComponent();
+    if (!SkeletalComp)
+        return;
+
+    USkeletalMesh* Mesh = SkeletalComp->GetSkeletalMesh();
+    if (!Mesh)
+        return;
+
+    const FSkeleton* Skeleton = Mesh->GetSkeleton();
+    if (!Skeleton)
+        return;
+
+    const TArray<FBone>& Bones = Skeleton->Bones;
+    const TArray<FMatrix>& BoneMatrices = SkeletalComp->GetBoneMatrices();
+
+    // Get ImGui draw list for overlay rendering
+    ImDrawList* DrawList = ImGui::GetWindowDrawList();
+
+    // Get actor's world transform
+    FTransform ActorTransform = ViewerSkeletalMeshActor->GetActorTransform();
+
+    // Render each bone name
+    for (int32 i = 0; i < Bones.Num(); ++i)
+    {
+        if (i >= BoneMatrices.Num())
+            break;
+
+        // Get bone world position (bone matrix is in model space, transform to world)
+        // Extract position from matrix (translation is in M[3][0..2])
+        FVector BoneModelPos(
+            BoneMatrices[i].M[3][0],
+            BoneMatrices[i].M[3][1],
+            BoneMatrices[i].M[3][2]
+        );
+        FVector BoneWorldPos = ActorTransform.TransformPosition(BoneModelPos);
+
+        // Project to screen
+        FVector2D ScreenPos;
+        if (WorldToScreen(BoneWorldPos, ScreenPos, ViewportSize))
+        {
+            // Calculate absolute screen position (viewport top-left + relative position)
+            ImVec2 TextPos(ViewportTopLeft.x + ScreenPos.X, ViewportTopLeft.y + ScreenPos.Y);
+
+            // Determine text color based on selection
+            ImU32 TextColor = (i == SelectedBoneIndex)
+                ? IM_COL32(255, 255, 0, 255)    // Yellow for selected bone
+                : IM_COL32(255, 255, 255, 200);  // White with slight transparency
+
+            // Draw bone name with shadow for better readability
+            ImVec2 ShadowPos(TextPos.x + 1.0f, TextPos.y + 1.0f);
+            DrawList->AddText(ShadowPos, IM_COL32(0, 0, 0, 180), Bones[i].Name.c_str());
+            DrawList->AddText(TextPos, TextColor, Bones[i].Name.c_str());
         }
     }
 }
