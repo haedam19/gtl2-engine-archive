@@ -62,6 +62,15 @@ void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InSkeletalMesh)
 // 생명주기
 // ========================================
 
+void USkeletalMeshComponent::BeginPlay()
+{
+    Super::BeginPlay();
+
+    // 로드 후 틱 플래그 재설정 (직렬화 시스템에 의해 덮어써질 수 있으므로)
+    bCanEverTick = true;
+    bTickEnabled = true;
+}
+
 void USkeletalMeshComponent::TickComponent(float DeltaTime)
 {
     Super::TickComponent(DeltaTime);
@@ -349,6 +358,10 @@ FAABB USkeletalMeshComponent::GetWorldAABB() const
 void USkeletalMeshComponent::OnSerialized()
 {
     Super::OnSerialized();
+
+    // 틱 플래그 명시적 재설정 (직렬화 시스템에 의해 덮어써질 수 있으므로)
+    bCanEverTick = true;
+    bTickEnabled = true;
 
     // 로드 후 DynamicMesh 재생성
     if (SkeletalMesh && !DynamicMesh)

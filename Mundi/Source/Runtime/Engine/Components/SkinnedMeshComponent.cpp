@@ -205,6 +205,12 @@ void USkinnedMeshComponent::Serialize(const bool bInIsLoading, JSON& InOutHandle
 				MaterialSlots[i] = LoadedMaterial;
 			}
 		}
+
+		// 3. 로드 완료 후 BoneMatrices 초기화 (OnSerialized보다 늦게 실행됨)
+		if (SkeletalMesh)
+		{
+			InitializeReferencePose();
+		}
 	}
 	else // --- 저장 ---
 	{

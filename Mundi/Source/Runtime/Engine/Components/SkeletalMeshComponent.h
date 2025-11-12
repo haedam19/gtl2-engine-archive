@@ -24,7 +24,12 @@ public:
 	 * - DynamicMesh 생성 및 초기화
 	 * - 초기 CPU 스킨 계산 (Reference Pose)
 	 */
-	void SetSkeletalMesh(USkeletalMesh* InSkeletalMesh) override;    
+	void SetSkeletalMesh(USkeletalMesh* InSkeletalMesh) override;
+
+	/**
+	 * @brief 게임 시작 시 호출 (틱 플래그 재설정)
+	 */
+	void BeginPlay() override;
 
 	/**
 	* @brief 매 프레임 호출
