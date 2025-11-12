@@ -597,6 +597,7 @@ FSkeletalMesh* FFbxManager::LoadSkeletalMeshAsset(const FString& PathFileName)
 		return nullptr;
 	}
 
+	// 1차: FBX 매니저에 로드되어 있는 메모리 캐시 조회
 	if (FSkeletalMeshEntry* Existing = SkeletalMeshCache.Find(NormalizedPath))
 	{
 		return Existing->Mesh;
@@ -607,6 +608,7 @@ FSkeletalMesh* FFbxManager::LoadSkeletalMeshAsset(const FString& PathFileName)
 		return nullptr;
 	}
 
+	// 2차: 디스크 바이너리 캐시 조회
 	FSkeletalMeshEntry* Entry = nullptr;
 	const FSkeletalCachePaths CachePaths = GetSkeletalCachePaths(NormalizedPath);
 	bool bShouldRegenerate = ShouldRegenerateFbxCache(NormalizedPath, CachePaths);
@@ -621,6 +623,7 @@ FSkeletalMesh* FFbxManager::LoadSkeletalMeshAsset(const FString& PathFileName)
 		bShouldRegenerate = true;
 	}
 
+	// 3차(최종): FBX 파일로부터 직접 로드
 	FbxScene* Scene = LoadSceneFromFile(SdkManager, IOSettings, NormalizedPath);
 	if (!Scene)
 	{

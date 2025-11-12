@@ -549,6 +549,9 @@
     <ClCompile Include="FbxSkeletalMeshBuilder.cpp">
       <Filter>Source\Editor</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\FbxStaticMeshBuilder.cpp">
+      <Filter>Source\Editor</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Runtime\Core\Misc\DelegateBinding.h">
@@ -1130,6 +1133,9 @@
     </ClInclude>
     <ClInclude Include="Source\Runtime\Engine\GameFramework\SkeletalMeshActor.h" />
     <ClInclude Include="FbxSkeletalMeshBuilder.h">
+      <Filter>Source\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\FbxStaticMeshBuilder.h">
       <Filter>Source\Editor</Filter>
     </ClInclude>
   </ItemGroup>

@@ -53,6 +53,9 @@ private:
 
 	static FSkeletalMeshEntry* StoreEntry(const FString& NormalizedPath, FSkeletalMeshEntry& Entry);
 
+	// ================================================================
+	// 캐시 입출력
+	// ================================================================
 	static bool SaveSkeletalMeshCache(
 		const FSkeletalMeshEntry& Entry,
 		const FString& MeshCachePath,
