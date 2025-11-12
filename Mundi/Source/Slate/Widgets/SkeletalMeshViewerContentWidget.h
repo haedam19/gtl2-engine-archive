@@ -63,7 +63,6 @@ private:
     // UI State
     bool bShowGizmo = true;
     bool bShowBoneNames = true;
-    bool bShowBoneAxes = false;
     bool bShowSkeletalMesh = true;
     bool bShowBones = true;  // Show bone visualization
     bool bShowGrid = true;  // Show grid

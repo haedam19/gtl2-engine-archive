@@ -732,8 +732,6 @@ void USkeletalMeshViewerContentWidget::RenderToolbar()
             }
         }
         ImGui::SameLine();
-        ImGui::Checkbox("Bone Axes", &bShowBoneAxes);
-        ImGui::SameLine();
         ImGui::Checkbox("Bone Names", &bShowBoneNames);
 
         // Lighting toggle

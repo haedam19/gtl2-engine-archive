@@ -8,10 +8,14 @@
 #include "Enums.h"
 
 // Static color constants
-const FVector4 FBoneInstancedVisualizer::COLOR_BONE_SELECTED(1.0f, 1.0f, 0.0f, 1.0f);
-const FVector4 FBoneInstancedVisualizer::COLOR_BONE_NORMAL(0.8f, 0.8f, 0.8f, 1.0f);
-const FVector4 FBoneInstancedVisualizer::COLOR_JOINT_SELECTED(1.0f, 0.8f, 0.0f, 1.0f);
-const FVector4 FBoneInstancedVisualizer::COLOR_JOINT_NORMAL(0.5f, 0.7f, 1.0f, 1.0f);
+const FVector4 FBoneInstancedVisualizer::COLOR_BONE_NORMAL(0.0f, 0.0f, 0.0f, 1.0f);              // Black
+const FVector4 FBoneInstancedVisualizer::COLOR_BONE_SELECTED_PARENT(0.96f, 0.87f, 0.70f, 1.0f);  // Beige
+const FVector4 FBoneInstancedVisualizer::COLOR_BONE_DIRECT_CHILD(0.56f, 0.93f, 0.56f, 1.0f);     // Light green
+const FVector4 FBoneInstancedVisualizer::COLOR_BONE_DESCENDANT(1.0f, 1.0f, 1.0f, 1.0f);          // White
+const FVector4 FBoneInstancedVisualizer::COLOR_JOINT_NORMAL(0.0f, 0.0f, 0.0f, 1.0f);             // Black
+const FVector4 FBoneInstancedVisualizer::COLOR_JOINT_SELECTED_PARENT(0.96f, 0.87f, 0.70f, 1.0f); // Beige
+const FVector4 FBoneInstancedVisualizer::COLOR_JOINT_DIRECT_CHILD(0.56f, 0.93f, 0.56f, 1.0f);    // Light green
+const FVector4 FBoneInstancedVisualizer::COLOR_JOINT_DESCENDANT(1.0f, 1.0f, 1.0f, 1.0f);         // White
 
 FBoneInstancedVisualizer::FBoneInstancedVisualizer()
 {
@@ -173,6 +177,26 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
     if (!Context)
         return;
 
+    // Collect bone relationships if a bone is selected
+    int32 ParentBoneIndex = -1;
+    TArray<int32> DirectChildren;
+    TArray<int32> AllDescendants;
+
+    if (SelectedBoneIndex >= 0 && SelectedBoneIndex < Skeleton.Bones.Num())
+    {
+        // Get parent
+        ParentBoneIndex = Skeleton.Bones[SelectedBoneIndex].ParentIndex;
+
+        // Get direct children
+        if (SelectedBoneIndex < Cache.BoneChildIndices.Num())
+        {
+            DirectChildren = Cache.BoneChildIndices[SelectedBoneIndex];
+        }
+
+        // Get all descendants (excluding direct children)
+        CollectAllDescendants(SelectedBoneIndex, Cache, AllDescendants);
+    }
+
     // Prepare instance data for spheres (joints)
     TArray<FBoneInstanceData> SphereInstances;
     for (int32 i = 0; i < Skeleton.Bones.Num(); ++i)
@@ -181,8 +205,23 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
             continue;
 
         const FVector& BonePos = Cache.BoneWorldPositions[i];
-        bool bIsSelected = (SelectedBoneIndex == i);
-        const FVector4& JointColor = bIsSelected ? COLOR_JOINT_SELECTED : COLOR_JOINT_NORMAL;
+
+        // Determine bone color based on hierarchy
+        FVector4 JointColor = COLOR_JOINT_NORMAL;  // Default: black
+        if (SelectedBoneIndex >= 0)
+        {
+            if (i == SelectedBoneIndex)
+            {
+                // Selected bone: light green
+                JointColor = COLOR_JOINT_DIRECT_CHILD;
+            }
+            else if (DirectChildren.Contains(i) || AllDescendants.Contains(i))
+            {
+                // Direct children and descendants: white
+                JointColor = COLOR_JOINT_DESCENDANT;
+            }
+            // Parent stays black (default)
+        }
 
         // Apply mesh scale to bone position
         FVector ScaledBonePos = BonePos * MeshScale;
@@ -208,8 +247,23 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
 
         const FBone& Bone = Skeleton.Bones[i];
         const FVector& BonePos = Cache.BoneWorldPositions[i];
-        bool bIsSelected = (SelectedBoneIndex == i);
-        const FVector4& BoneColor = bIsSelected ? COLOR_BONE_SELECTED : COLOR_BONE_NORMAL;
+
+        // Determine bone color based on hierarchy
+        FVector4 BoneColor = COLOR_BONE_NORMAL;  // Default: black
+        if (SelectedBoneIndex >= 0)
+        {
+            if (i == SelectedBoneIndex)
+            {
+                // Selected bone: light green
+                BoneColor = COLOR_BONE_DIRECT_CHILD;
+            }
+            else if (DirectChildren.Contains(i) || AllDescendants.Contains(i))
+            {
+                // Direct children and descendants: white
+                BoneColor = COLOR_BONE_DESCENDANT;
+            }
+            // Parent stays black (default)
+        }
 
         // Apply mesh scale to bone position
         FVector ScaledBonePos = BonePos * MeshScale;
@@ -263,62 +317,35 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
                 FMatrix TranslationMatrix = FMatrix::MakeTranslation(PyramidStart);
                 FMatrix WorldMatrix = ScaleMatrix * RotationMatrix * TranslationMatrix;
 
+                // Determine pyramid color based on connection meaning
+                // Pyramid connects: ChildIdx (child) → i (parent)
+                FVector4 PyramidColor = COLOR_BONE_NORMAL;
+                if (SelectedBoneIndex >= 0)
+                {
+                    if (ChildIdx == SelectedBoneIndex && i == ParentBoneIndex)
+                    {
+                        // Parent→Selected connection: beige
+                        PyramidColor = COLOR_BONE_SELECTED_PARENT;
+                    }
+                    else if (i == SelectedBoneIndex && DirectChildren.Contains(ChildIdx))
+                    {
+                        // Selected→Child connection: green
+                        PyramidColor = COLOR_BONE_DIRECT_CHILD;
+                    }
+                    else if (DirectChildren.Contains(ChildIdx) || AllDescendants.Contains(ChildIdx))
+                    {
+                        // Child/Descendant connections: white
+                        PyramidColor = COLOR_BONE_DESCENDANT;
+                    }
+                }
+
                 FBoneInstanceData InstanceData;
                 InstanceData.WorldMatrix = WorldMatrix;
-                InstanceData.Color = BoneColor;
+                InstanceData.Color = PyramidColor;  // Use pyramid connection color
                 PyramidInstances.Add(InstanceData);
             }
         }
-        else
-        {
-            // Leaf bone: draw small pyramid from leaf to parent (Unreal style)
-            if (Bone.ParentIndex >= 0 && Bone.ParentIndex < Cache.BoneWorldPositions.Num())
-            {
-                const FVector& ParentPos = Cache.BoneWorldPositions[Bone.ParentIndex];
-                FVector ScaledParentPos = ParentPos * MeshScale;
-
-                // Direction from leaf to parent
-                FVector Direction = ScaledParentPos - ScaledBonePos;
-                float FullLength = Direction.Size();
-                if (FullLength > 0.001f)
-                {
-                    Direction = Direction / FullLength;
-
-                    // Adjust for sphere surfaces
-                    float ScaledRadius = JointRadius * MeshScale;
-                    float LeafLength = (FullLength - (ScaledRadius * 2.0f)) * 0.2f;
-
-                    if (LeafLength > 0.001f)
-                    {
-                        // Start position: leaf sphere surface
-                        FVector PyramidStart = ScaledBonePos + Direction * ScaledRadius;
-
-                        // Build rotation matrix
-                        FVector Up = std::abs(Direction.Z) < 0.99f ? FVector(0, 0, 1) : FVector(1, 0, 0);
-                        FVector Right = FVector::Cross(Direction, Up);
-                        Right = Right / Right.Size();
-                        Up = FVector::Cross(Right, Direction);
-                        Up = Up / Up.Size();
-
-                        FMatrix RotationMatrix;
-                        RotationMatrix.M[0][0] = Right.X;    RotationMatrix.M[0][1] = Right.Y;    RotationMatrix.M[0][2] = Right.Z;    RotationMatrix.M[0][3] = 0;
-                        RotationMatrix.M[1][0] = Up.X;       RotationMatrix.M[1][1] = Up.Y;       RotationMatrix.M[1][2] = Up.Z;       RotationMatrix.M[1][3] = 0;
-                        RotationMatrix.M[2][0] = Direction.X; RotationMatrix.M[2][1] = Direction.Y; RotationMatrix.M[2][2] = Direction.Z; RotationMatrix.M[2][3] = 0;
-                        RotationMatrix.M[3][0] = 0;          RotationMatrix.M[3][1] = 0;          RotationMatrix.M[3][2] = 0;          RotationMatrix.M[3][3] = 1;
-
-                        float ScaledLeafWidth = LeafPyramidWidth * MeshScale;
-                        FMatrix ScaleMatrix = FMatrix::MakeScale(FVector(ScaledLeafWidth, ScaledLeafWidth, LeafLength));
-                        FMatrix TranslationMatrix = FMatrix::MakeTranslation(PyramidStart);
-                        FMatrix WorldMatrix = ScaleMatrix * RotationMatrix * TranslationMatrix;
-
-                        FBoneInstanceData InstanceData;
-                        InstanceData.WorldMatrix = WorldMatrix;
-                        InstanceData.Color = BoneColor;
-                        PyramidInstances.Add(InstanceData);
-                    }
-                }
-            }
-        }
+        // No else needed - leaf bones (no children) only render joints, no pyramids
     }
 
     // Combine all instances into one buffer to avoid overwriting
@@ -548,4 +575,18 @@ void FBoneInstancedVisualizer::ReleaseResources()
     BoneShader = nullptr;
 
     Device = nullptr;
+}
+
+void FBoneInstancedVisualizer::CollectAllDescendants(int32 BoneIndex, const FViewerSkeletonCache& Cache, TArray<int32>& OutDescendants)
+{
+    if (BoneIndex < 0 || BoneIndex >= Cache.BoneChildIndices.Num())
+        return;
+
+    const TArray<int32>& ChildIndices = Cache.BoneChildIndices[BoneIndex];
+    for (int32 ChildIdx : ChildIndices)
+    {
+        OutDescendants.Add(ChildIdx);
+        // Recursively collect descendants
+        CollectAllDescendants(ChildIdx, Cache, OutDescendants);
+    }
 }
