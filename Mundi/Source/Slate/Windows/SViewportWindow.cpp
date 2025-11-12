@@ -1590,6 +1590,24 @@ void SViewportWindow::RenderShowFlagDropdownMenu()
 			ImGui::SetTooltip("스태틱 메시 렌더링을 표시합니다.");
 		}
 
+		// Skeletal Mesh
+		bool bSkeletalMesh = RenderSettings.IsShowFlagEnabled(EEngineShowFlags::SF_SkeletalMeshes);
+		if (ImGui::Checkbox("##SkeletalMesh", &bSkeletalMesh))
+		{
+			RenderSettings.ToggleShowFlag(EEngineShowFlags::SF_SkeletalMeshes);
+		}
+		ImGui::SameLine();
+		if (IconStaticMesh && IconStaticMesh->GetShaderResourceView())
+		{
+			ImGui::Image((void*)IconStaticMesh->GetShaderResourceView(), IconSize);
+			ImGui::SameLine(0, 4);
+		}
+		ImGui::Text(" 스켈레탈 메시");
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("스켈레탈 메시 렌더링을 표시합니다.");
+		}
+
 		// Billboard
 		bool bBillboard = RenderSettings.IsShowFlagEnabled(EEngineShowFlags::SF_Billboard);
 		if (ImGui::Checkbox("##Billboard", &bBillboard))
