@@ -21,27 +21,10 @@ public:
 	 *
 	 * @details
 	 * - 부모 클래스의 SetSkeletalMesh() 호출 (본 행렬 초기화, 머티리얼 슬롯 설정)
-	 * - 이미 등록된 상태(bRegistered)라면 DynamicMesh 재생성
-	 */
-	void SetSkeletalMesh(USkeletalMesh* InSkeletalMesh) override;
-
-	/**
-	 * @brief 컴포넌트가 월드에 등록될 때 호출
-	 * @param InWorld 등록될 월드
-	 *
-	 * @details
-	 * - UDynamicMesh 생성 및 초기화
+	 * - DynamicMesh 생성 및 초기화
 	 * - 초기 CPU 스킨 계산 (Reference Pose)
 	 */
-	void OnRegister(UWorld* InWorld) override;
-
-	/**
-	 * @brief 컴포넌트가 월드에서 제거될 때 호출
-	 *
-	 * @details
-	 * - UDynamicMesh 리소스 해제
-	 */
-	void OnUnregister() override;    
+	void SetSkeletalMesh(USkeletalMesh* InSkeletalMesh) override;    
 
 	/**
 	* @brief 매 프레임 호출

@@ -26,6 +26,7 @@ public:
     static void Preload();
 
     static FSkeletalMesh* LoadSkeletalMeshAsset(const FString& PathFileName);
+    static FStaticMesh* LoadStaticMeshAsset(const FString& PathFileName);
     static void GetMockUpSkeletalMesh(FSkeletalMesh& OutMesh, FSkeleton& OutSkeleton, const FString& MaterialName = "");
 
 private:
@@ -51,8 +52,19 @@ private:
 		const FString& MaterialCachePath = "",
 		bool bSaveCache = false);
 
+	/** @brief FBX Scene으로부터 정적 메시를 생성 후 캐시에 저장 */
+	static FStaticMesh* ImportStaticMesh(
+		FbxScene* Scene,
+		const FString& NormalizedPath,
+		const FString& MeshCachePath = "",
+		const FString& MaterialCachePath = "",
+		bool bSaveCache = false);
+
 	static FSkeletalMeshEntry* StoreEntry(const FString& NormalizedPath, FSkeletalMeshEntry& Entry);
 
+	// ================================================================
+	// 캐시 입출력
+	// ================================================================
 	static bool SaveSkeletalMeshCache(
 		const FSkeletalMeshEntry& Entry,
 		const FString& MeshCachePath,
@@ -65,7 +77,20 @@ private:
 		const FString& MaterialCachePath,
 		FSkeletalMeshEntry*& OutEntry);
 
+	static bool SaveStaticMeshCache(
+		const FStaticMesh& Mesh,
+		const FString& MeshCachePath,
+		const FString& MaterialCachePath,
+		const TArray<FMaterialInfo>& MaterialInfos);
+
+	static bool LoadStaticMeshFromCache(
+		const FString& NormalizedPath,
+		const FString& MeshCachePath,
+		const FString& MaterialCachePath,
+		FStaticMesh*& OutMesh);
+
 	static TMap<FString, FSkeletalMeshEntry> SkeletalMeshCache;
+	static TMap<FString, FStaticMesh> FbxStaticMeshCache; // Obj로부터 만들어진 애셋 캐시와 별개로 존재함에 유의
 	static FbxManager* SdkManager;
 	static FbxIOSettings* IOSettings;
 };

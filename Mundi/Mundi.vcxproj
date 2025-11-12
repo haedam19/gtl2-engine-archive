@@ -290,7 +290,6 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="FbxSkeletalMeshBuilder.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
@@ -301,6 +300,8 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     </ClCompile>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Source\Editor\FbxManager.cpp" />
+    <ClCompile Include="Source\Editor\FbxSkeletalMeshBuilder.cpp" />
+    <ClCompile Include="Source\Editor\FbxStaticMeshBuilder.cpp" />
     <ClCompile Include="Source\Runtime\AssetManagement\SkeletalMesh.cpp" />
     <ClCompile Include="Source\Runtime\Engine\Components\SkeletalMeshComponent.cpp" />
     <ClCompile Include="Source\Runtime\Engine\Components\SkinnedMeshComponent.cpp" />
@@ -653,9 +654,10 @@ xcopy /Y /D "$(ProjectDir)Scripts\*.*" "$(OutDir)Scripts\"</Command>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="FbxSkeletalMeshBuilder.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Source\Editor\FbxManager.h" />
+    <ClInclude Include="Source\Editor\FbxSkeletalMeshBuilder.h" />
+    <ClInclude Include="Source\Editor\FbxStaticMeshBuilder.h" />
     <ClInclude Include="Source\Runtime\AssetManagement\SkeletalMesh.h" />
     <ClInclude Include="Source\Runtime\Core\Misc\SkeletalTypes.h" />
     <ClInclude Include="Source\Runtime\Engine\Components\SkeletalMeshComponent.h" />
