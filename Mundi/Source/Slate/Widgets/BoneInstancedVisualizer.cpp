@@ -218,7 +218,7 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
 
         if (!ChildIndices.empty())
         {
-            // Bone has children: draw pyramid to each child
+            // Bone has children: draw pyramid from child to parent (Unreal style)
             for (int32 ChildIdx : ChildIndices)
             {
                 if (ChildIdx >= Cache.BoneWorldPositions.Num())
@@ -227,13 +227,22 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
                 const FVector& ChildPos = Cache.BoneWorldPositions[ChildIdx];
                 FVector ScaledChildPos = ChildPos * MeshScale;
 
-                // Build transform matrix for pyramid
-                FVector Direction = ScaledChildPos - ScaledBonePos;
-                float Length = Direction.Size();
-                if (Length < 0.001f)
+                // Direction from child to parent (reversed from original)
+                FVector Direction = ScaledBonePos - ScaledChildPos;
+                float FullLength = Direction.Size();
+                if (FullLength < 0.001f)
                     continue;
 
-                Direction = Direction / Length;
+                Direction = Direction / FullLength;
+
+                // Adjust pyramid to start/end at sphere surfaces
+                float ScaledRadius = JointRadius * MeshScale;
+                float AdjustedLength = FullLength - (ScaledRadius * 2.0f);
+                if (AdjustedLength < 0.001f)
+                    continue;  // Spheres overlap, skip pyramid
+
+                // Start position: child sphere surface
+                FVector PyramidStart = ScaledChildPos + Direction * ScaledRadius;
 
                 // Build rotation matrix to point pyramid in direction
                 FVector Up = std::abs(Direction.Z) < 0.99f ? FVector(0, 0, 1) : FVector(1, 0, 0);
@@ -242,7 +251,7 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
                 Up = FVector::Cross(Right, Direction);
                 Up = Up / Up.Size();
 
-                // Build transform: Scale(Width, Width, Length) * Rotation * Translation
+                // Build transform: Scale(Width, Width, AdjustedLength) * Rotation * Translation
                 FMatrix RotationMatrix;
                 RotationMatrix.M[0][0] = Right.X;    RotationMatrix.M[0][1] = Right.Y;    RotationMatrix.M[0][2] = Right.Z;    RotationMatrix.M[0][3] = 0;
                 RotationMatrix.M[1][0] = Up.X;       RotationMatrix.M[1][1] = Up.Y;       RotationMatrix.M[1][2] = Up.Z;       RotationMatrix.M[1][3] = 0;
@@ -250,8 +259,8 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
                 RotationMatrix.M[3][0] = 0;          RotationMatrix.M[3][1] = 0;          RotationMatrix.M[3][2] = 0;          RotationMatrix.M[3][3] = 1;
 
                 float ScaledWidth = PyramidWidth * MeshScale;
-                FMatrix ScaleMatrix = FMatrix::MakeScale(FVector(ScaledWidth, ScaledWidth, Length));
-                FMatrix TranslationMatrix = FMatrix::MakeTranslation(ScaledBonePos);
+                FMatrix ScaleMatrix = FMatrix::MakeScale(FVector(ScaledWidth, ScaledWidth, AdjustedLength));
+                FMatrix TranslationMatrix = FMatrix::MakeTranslation(PyramidStart);
                 FMatrix WorldMatrix = ScaleMatrix * RotationMatrix * TranslationMatrix;
 
                 FBoneInstanceData InstanceData;
@@ -262,41 +271,51 @@ void FBoneInstancedVisualizer::RenderSkeleton(const FSkeleton& Skeleton,
         }
         else
         {
-            // Leaf bone: draw small pyramid
+            // Leaf bone: draw small pyramid from leaf to parent (Unreal style)
             if (Bone.ParentIndex >= 0 && Bone.ParentIndex < Cache.BoneWorldPositions.Num())
             {
                 const FVector& ParentPos = Cache.BoneWorldPositions[Bone.ParentIndex];
                 FVector ScaledParentPos = ParentPos * MeshScale;
 
-                FVector Direction = ScaledBonePos - ScaledParentPos;
-                float Length = Direction.Size();
-                if (Length > 0.001f)
+                // Direction from leaf to parent
+                FVector Direction = ScaledParentPos - ScaledBonePos;
+                float FullLength = Direction.Size();
+                if (FullLength > 0.001f)
                 {
-                    Direction = Direction / Length;
-                    float LeafLength = Length * 0.2f;
+                    Direction = Direction / FullLength;
 
-                    // Build rotation matrix
-                    FVector Up = std::abs(Direction.Z) < 0.99f ? FVector(0, 0, 1) : FVector(1, 0, 0);
-                    FVector Right = FVector::Cross(Direction, Up);
-                    Right = Right / Right.Size();
-                    Up = FVector::Cross(Right, Direction);
-                    Up = Up / Up.Size();
+                    // Adjust for sphere surfaces
+                    float ScaledRadius = JointRadius * MeshScale;
+                    float LeafLength = (FullLength - (ScaledRadius * 2.0f)) * 0.2f;
 
-                    FMatrix RotationMatrix;
-                    RotationMatrix.M[0][0] = Right.X;    RotationMatrix.M[0][1] = Right.Y;    RotationMatrix.M[0][2] = Right.Z;    RotationMatrix.M[0][3] = 0;
-                    RotationMatrix.M[1][0] = Up.X;       RotationMatrix.M[1][1] = Up.Y;       RotationMatrix.M[1][2] = Up.Z;       RotationMatrix.M[1][3] = 0;
-                    RotationMatrix.M[2][0] = Direction.X; RotationMatrix.M[2][1] = Direction.Y; RotationMatrix.M[2][2] = Direction.Z; RotationMatrix.M[2][3] = 0;
-                    RotationMatrix.M[3][0] = 0;          RotationMatrix.M[3][1] = 0;          RotationMatrix.M[3][2] = 0;          RotationMatrix.M[3][3] = 1;
+                    if (LeafLength > 0.001f)
+                    {
+                        // Start position: leaf sphere surface
+                        FVector PyramidStart = ScaledBonePos + Direction * ScaledRadius;
 
-                    float ScaledLeafWidth = LeafPyramidWidth * MeshScale;
-                    FMatrix ScaleMatrix = FMatrix::MakeScale(FVector(ScaledLeafWidth, ScaledLeafWidth, LeafLength));
-                    FMatrix TranslationMatrix = FMatrix::MakeTranslation(ScaledBonePos);
-                    FMatrix WorldMatrix = ScaleMatrix * RotationMatrix * TranslationMatrix;
+                        // Build rotation matrix
+                        FVector Up = std::abs(Direction.Z) < 0.99f ? FVector(0, 0, 1) : FVector(1, 0, 0);
+                        FVector Right = FVector::Cross(Direction, Up);
+                        Right = Right / Right.Size();
+                        Up = FVector::Cross(Right, Direction);
+                        Up = Up / Up.Size();
 
-                    FBoneInstanceData InstanceData;
-                    InstanceData.WorldMatrix = WorldMatrix;
-                    InstanceData.Color = BoneColor;
-                    PyramidInstances.Add(InstanceData);
+                        FMatrix RotationMatrix;
+                        RotationMatrix.M[0][0] = Right.X;    RotationMatrix.M[0][1] = Right.Y;    RotationMatrix.M[0][2] = Right.Z;    RotationMatrix.M[0][3] = 0;
+                        RotationMatrix.M[1][0] = Up.X;       RotationMatrix.M[1][1] = Up.Y;       RotationMatrix.M[1][2] = Up.Z;       RotationMatrix.M[1][3] = 0;
+                        RotationMatrix.M[2][0] = Direction.X; RotationMatrix.M[2][1] = Direction.Y; RotationMatrix.M[2][2] = Direction.Z; RotationMatrix.M[2][3] = 0;
+                        RotationMatrix.M[3][0] = 0;          RotationMatrix.M[3][1] = 0;          RotationMatrix.M[3][2] = 0;          RotationMatrix.M[3][3] = 1;
+
+                        float ScaledLeafWidth = LeafPyramidWidth * MeshScale;
+                        FMatrix ScaleMatrix = FMatrix::MakeScale(FVector(ScaledLeafWidth, ScaledLeafWidth, LeafLength));
+                        FMatrix TranslationMatrix = FMatrix::MakeTranslation(PyramidStart);
+                        FMatrix WorldMatrix = ScaleMatrix * RotationMatrix * TranslationMatrix;
+
+                        FBoneInstanceData InstanceData;
+                        InstanceData.WorldMatrix = WorldMatrix;
+                        InstanceData.Color = BoneColor;
+                        PyramidInstances.Add(InstanceData);
+                    }
                 }
             }
         }

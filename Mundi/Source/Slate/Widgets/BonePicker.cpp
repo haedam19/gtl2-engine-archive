@@ -52,7 +52,7 @@ int32 FBonePicker::PickBone(const FSkeleton& Skeleton,
 
         if (!ChildIndices.empty())
         {
-            // Bone has children: test pyramid to each child
+            // Bone has children: test pyramid from child to parent (Unreal style)
             for (int32 ChildIdx : ChildIndices)
             {
                 if (ChildIdx >= Cache.BoneWorldPositions.Num())
@@ -60,8 +60,25 @@ int32 FBonePicker::PickBone(const FSkeleton& Skeleton,
 
                 const FVector ChildPos = Cache.BoneWorldPositions[ChildIdx] * BoneScale;
 
+                // Direction from child to parent
+                FVector Direction = BonePos - ChildPos;
+                float FullLength = Direction.Size();
+                if (FullLength < 0.001f)
+                    continue;
+
+                Direction = Direction / FullLength;
+
+                // Adjust for sphere surfaces
+                float AdjustedLength = FullLength - (SphereRadius * 2.0f);
+                if (AdjustedLength < 0.001f)
+                    continue;  // Spheres overlap
+
+                // Pyramid start/end positions at sphere surfaces
+                FVector PyramidStart = ChildPos + Direction * SphereRadius;
+                FVector PyramidEnd = BonePos - Direction * SphereRadius;
+
                 float pyramidT = 0.0f;
-                if (IntersectRayPyramid(Ray, BonePos, ChildPos, PyramidWidth, pyramidT))
+                if (IntersectRayPyramid(Ray, PyramidStart, PyramidEnd, PyramidWidth, pyramidT))
                 {
                     PyramidIntersectionCount++;
 
@@ -75,27 +92,37 @@ int32 FBonePicker::PickBone(const FSkeleton& Skeleton,
         }
         else
         {
-            // Leaf bone (no children): test small pyramid
+            // Leaf bone: test small pyramid from leaf to parent (Unreal style)
             if (Bone.ParentIndex >= 0 && Bone.ParentIndex < Cache.BoneWorldPositions.Num())
             {
                 const FVector ParentPos = Cache.BoneWorldPositions[Bone.ParentIndex] * BoneScale;
 
-                FVector Direction = BonePos - ParentPos;
-                float Length = Direction.Size();
-                if (Length > 0.001f)
+                // Direction from leaf to parent
+                FVector Direction = ParentPos - BonePos;
+                float FullLength = Direction.Size();
+                if (FullLength > 0.001f)
                 {
-                    Direction = Direction / Length;
-                    FVector LeafEnd = BonePos + Direction * (Length * 0.2f);
+                    Direction = Direction / FullLength;
 
-                    float pyramidT = 0.0f;
-                    if (IntersectRayPyramid(Ray, BonePos, LeafEnd, LeafPyramidWidth, pyramidT))
+                    // Adjust for sphere surfaces
+                    float AdjustedLength = (FullLength - (SphereRadius * 2.0f)) * 0.2f;
+
+                    if (AdjustedLength > 0.001f)
                     {
-                        PyramidIntersectionCount++;
+                        // Pyramid start at leaf sphere surface
+                        FVector PyramidStart = BonePos + Direction * SphereRadius;
+                        FVector PyramidEnd = PyramidStart + Direction * AdjustedLength;
 
-                        if (pyramidT < MinDistance)
+                        float pyramidT = 0.0f;
+                        if (IntersectRayPyramid(Ray, PyramidStart, PyramidEnd, LeafPyramidWidth, pyramidT))
                         {
-                            MinDistance = pyramidT;
-                            ClosestBoneIndex = i;
+                            PyramidIntersectionCount++;
+
+                            if (pyramidT < MinDistance)
+                            {
+                                MinDistance = pyramidT;
+                                ClosestBoneIndex = i;
+                            }
                         }
                     }
                 }
