@@ -246,8 +246,19 @@ void USkeletalMeshComponent::CollectMeshBatches(
     if (!SkeletalMesh)
         return;
 
+    // Lazy Initialization: DynamicMesh가 없으면 생성 (씬 로드 시 안전장치)
     if (!DynamicMesh)
-        return;
+    {
+        DynamicMesh = NewObject<UDynamicMesh>();
+
+        ID3D11Device* Device = URenderManager::GetInstance().GetRenderer()->GetRHIDevice()->GetDevice();
+        uint32 MaxVertexCount = SkeletalMesh->GetVertexCount();
+        uint32 MaxIndexCount = SkeletalMesh->GetIndexCount();
+        EVertexLayoutType VertexType = EVertexLayoutType::PositionColorTextureNormal;
+
+        DynamicMesh->Initialize(MaxVertexCount, MaxIndexCount, Device, VertexType);
+        PerformCPUSkinning();
+    }
 
     if (!DynamicMesh->IsInitialized())
         return;
