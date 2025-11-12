@@ -546,10 +546,10 @@
       <Filter>Source\Slate\Widgets</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\Engine\GameFramework\SkeletalMeshActor.cpp" />
-    <ClCompile Include="FbxSkeletalMeshBuilder.cpp">
+    <ClCompile Include="Source\Editor\FbxStaticMeshBuilder.cpp">
       <Filter>Source\Editor</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Editor\FbxStaticMeshBuilder.cpp">
+    <ClCompile Include="Source\Editor\FbxSkeletalMeshBuilder.cpp">
       <Filter>Source\Editor</Filter>
     </ClCompile>
   </ItemGroup>
@@ -1132,10 +1132,10 @@
       <Filter>Source\Slate\Widgets</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\Engine\GameFramework\SkeletalMeshActor.h" />
-    <ClInclude Include="FbxSkeletalMeshBuilder.h">
+    <ClInclude Include="Source\Editor\FbxStaticMeshBuilder.h">
       <Filter>Source\Editor</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\FbxStaticMeshBuilder.h">
+    <ClInclude Include="Source\Editor\FbxSkeletalMeshBuilder.h">
       <Filter>Source\Editor</Filter>
     </ClInclude>
   </ItemGroup>
