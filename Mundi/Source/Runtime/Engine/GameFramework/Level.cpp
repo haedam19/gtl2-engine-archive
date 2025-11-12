@@ -2,6 +2,7 @@
 #include "Level.h"
 #include "StaticMeshActor.h"
 #include "StaticMeshComponent.h"
+#include "SkeletalMeshComponent.h"
 #include "StaticMesh.h"
 #include "PrimitiveComponent.h"
 #include "CameraActor.h"
@@ -61,11 +62,25 @@ void ULevel::UpdateSceneAABB()
                 {
                     continue;
                 }
-                if (UStaticMeshComponent* MeshComponent = Cast<UStaticMeshComponent>(Component))
-                {
-                    FAABB MeshAABB = MeshComponent->GetWorldAABB();
-                    SceneAABB.Union(MeshAABB);
 
+                // ⚠️ FIX: StaticMeshComponent와 SkeletalMeshComponent 모두 포함
+                FAABB MeshAABB;
+                bool bHasAABB = false;
+
+                if (UStaticMeshComponent* StaticMeshComp = Cast<UStaticMeshComponent>(Component))
+                {
+                    MeshAABB = StaticMeshComp->GetWorldAABB();
+                    bHasAABB = true;
+                }
+                else if (USkeletalMeshComponent* SkeletalMeshComp = Cast<USkeletalMeshComponent>(Component))
+                {
+                    MeshAABB = SkeletalMeshComp->GetWorldAABB();
+                    bHasAABB = true;
+                }
+
+                if (bHasAABB)
+                {
+                    SceneAABB.Union(MeshAABB);
                 }
             }
         }

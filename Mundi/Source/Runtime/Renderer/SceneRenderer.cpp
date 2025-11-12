@@ -510,6 +510,11 @@ void FSceneRenderer::RenderDirectionalCSMShadowMap(FCSM* CSMSystem)
 	}
 
 	CSMSystem->UpdateMatrices(DirectionalLight->GetLightInfo().Direction, View, World);
+
+	// ⚠️ FIX: Depth Stencil State를 명시적으로 설정 (이전 프레임의 상태가 유지될 수 있음)
+	// Shadow map 렌더링에는 Depth Test와 Depth Write가 모두 활성화되어야 함
+	RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
+
 	for(int idx = 0; idx < NumLights; idx++)
 	{
 		//// ShadowViewports의 index는 FShadowBufferType.ShadowInfoList의 index와 매칭됨.
@@ -620,6 +625,11 @@ void FSceneRenderer::RenderShadowMap(FShadowSystem* InShadowSystem)
 		MeshComponent->CollectMeshBatches(MeshBatchElements, View);
 	}
 	MeshBatchElements.Sort();
+
+	// ⚠️ FIX: Depth Stencil State를 명시적으로 설정 (이전 프레임의 상태가 유지될 수 있음)
+	// Shadow map 렌더링에는 Depth Test와 Depth Write가 모두 활성화되어야 함
+	RHIDevice->OMSetDepthStencilState(EComparisonFunc::LessEqual);
+
 	// --- 렌더링: depth map에 쓰기 ---
 	ID3D11Buffer* CurrentVertexBuffer = nullptr;
 	ID3D11Buffer* CurrentIndexBuffer = nullptr;
@@ -2013,8 +2023,14 @@ void FSceneRenderer::DrawMeshBatches(TArray<FMeshBatchElement>& InMeshBatches, b
 
 	RHIDevice->GetDeviceContext()->PSSetShaderResources(0, 3, nullSRVs);
 	RHIDevice->GetDeviceContext()->PSSetSamplers(0, 3, nullSamplers);
-	ID3D11ShaderResourceView* Null[]{ nullptr, nullptr, nullptr };
-	RHIDevice->GetDeviceContext()->PSSetShaderResources(5, 3, Null );
+
+	// ⚠️ FIX: 섀도우 SRV(슬롯 5-7)를 언바인딩하지 않음
+	// - Slot 5: CSM SRV
+	// - Slot 6: Point Shadow SRV
+	// - Slot 7: Directional Shadow SRV
+	// 이 SRV들은 프레임 전체에서 유지되어야 하므로 클리어하지 않음
+	// ID3D11ShaderResourceView* Null[]{ nullptr, nullptr, nullptr };
+	// RHIDevice->GetDeviceContext()->PSSetShaderResources(5, 3, Null );
 
 	if (bClearListAfterDraw)
 		InMeshBatches.Empty();
