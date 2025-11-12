@@ -132,19 +132,28 @@ void UUIManager::Update(float DeltaTime)
 	CurrentDeltaTime = DeltaTime;
 	TotalTime += DeltaTime;
 
-	// 키보드 단축키: Ctrl+Shift+V -> Skeletal Mesh Viewer 열기
+	// 키보드 단축키: Ctrl+Shift+V -> Skeletal Mesh Viewer 토글 (열기/닫기)
 	ImGuiIO& io = ImGui::GetIO();
 	if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_V))
 	{
-		// SkeletalMeshViewer가 이미 열려있는지 확인
+		// SkeletalMeshViewer 찾기
 		bool bViewerExists = false;
 		for (auto* Window : UIWindows)
 		{
 			if (Window && Window->GetWindowTitle() == "Skeletal Mesh Viewer")
 			{
 				bViewerExists = true;
-				// 이미 있으면 보이게만 설정
-				Window->SetWindowState(EUIWindowState::Visible);
+				// 토글: 보이면 숨기고, 숨겨져 있으면 보이게
+				if (Window->IsVisible())
+				{
+					Window->SetWindowState(EUIWindowState::Hidden);
+					UE_LOG("UIManager: Skeletal Mesh Viewer closed with Ctrl+Shift+V");
+				}
+				else
+				{
+					Window->SetWindowState(EUIWindowState::Visible);
+					UE_LOG("UIManager: Skeletal Mesh Viewer opened with Ctrl+Shift+V");
+				}
 				break;
 			}
 		}
@@ -154,7 +163,7 @@ void UUIManager::Update(float DeltaTime)
 		{
 			UUIWindow* Viewer = UUIWindowFactory::CreateSkeletalMeshViewerWindow();
 			RegisterUIWindow(Viewer);
-			UE_LOG("UIManager: Skeletal Mesh Viewer opened with Ctrl+Shift+V");
+			UE_LOG("UIManager: Skeletal Mesh Viewer created and opened with Ctrl+Shift+V");
 		}
 	}
 
