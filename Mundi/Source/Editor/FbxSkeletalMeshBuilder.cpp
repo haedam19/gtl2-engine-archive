@@ -157,6 +157,63 @@ namespace
 		}
 	}
 
+	bool AreVerticesEqual(const FSkeletalVertex& A, const FSkeletalVertex& B)
+	{
+		constexpr float Epsilon = 1e-6f;
+
+		// Position comparison
+		if (fabsf(A.Position.X - B.Position.X) > Epsilon) return false;
+		if (fabsf(A.Position.Y - B.Position.Y) > Epsilon) return false;
+		if (fabsf(A.Position.Z - B.Position.Z) > Epsilon) return false;
+
+		// Normal comparison
+		if (fabsf(A.Normal.X - B.Normal.X) > Epsilon) return false;
+		if (fabsf(A.Normal.Y - B.Normal.Y) > Epsilon) return false;
+		if (fabsf(A.Normal.Z - B.Normal.Z) > Epsilon) return false;
+
+		// UV comparison
+		if (fabsf(A.Tex.X - B.Tex.X) > Epsilon) return false;
+		if (fabsf(A.Tex.Y - B.Tex.Y) > Epsilon) return false;
+
+		// Tangent comparison
+		if (fabsf(A.Tangent.X - B.Tangent.X) > Epsilon) return false;
+		if (fabsf(A.Tangent.Y - B.Tangent.Y) > Epsilon) return false;
+		if (fabsf(A.Tangent.Z - B.Tangent.Z) > Epsilon) return false;
+		if (fabsf(A.Tangent.W - B.Tangent.W) > Epsilon) return false;
+
+		// Color comparison
+		if (fabsf(A.Color.X - B.Color.X) > Epsilon) return false;
+		if (fabsf(A.Color.Y - B.Color.Y) > Epsilon) return false;
+		if (fabsf(A.Color.Z - B.Color.Z) > Epsilon) return false;
+		if (fabsf(A.Color.W - B.Color.W) > Epsilon) return false;
+
+		// Skin weights comparison
+		for (int32 i = 0; i < 4; ++i)
+		{
+			if (fabsf(A.Skin.Weight[i] - B.Skin.Weight[i]) > Epsilon) return false;
+			if (A.Skin.BoneIndex[i] != B.Skin.BoneIndex[i]) return false;
+		}
+
+		return true;
+	}
+
+	uint32 FindOrAddVertex(TArray<FSkeletalVertex>& Vertices, const FSkeletalVertex& Vertex)
+	{
+		// Search for existing vertex
+		for (size_t i = 0; i < Vertices.size(); ++i)
+		{
+			if (AreVerticesEqual(Vertices[i], Vertex))
+			{
+				return static_cast<uint32>(i);
+			}
+		}
+
+		// Add new vertex
+		const uint32 NewIndex = static_cast<uint32>(Vertices.size());
+		Vertices.push_back(Vertex);
+		return NewIndex;
+	}
+
 	void BuildSkinWeights(FbxMesh* Mesh, const FBoneIndexMap& NodeToBone, TArray<FSkinWeight4>& OutWeights)
 	{
 		const int32 ControlPointCount = Mesh->GetControlPointsCount();
@@ -500,8 +557,11 @@ namespace
 		const size_t InitialVertexCount = OutMesh.Vertices.size();
 		const size_t InitialIndexCount = OutMesh.Indices.size();
 
-		OutMesh.Vertices.reserve(InitialVertexCount + static_cast<size_t>(PolygonCount) * 3);
-		OutMesh.Indices.reserve(InitialIndexCount + static_cast<size_t>(PolygonCount) * 3);
+		// Use local arrays for deduplication within this mesh
+		TArray<FSkeletalVertex> LocalVertices;
+		TArray<uint32> LocalIndices;
+		LocalVertices.reserve(PolygonCount * 3);
+		LocalIndices.reserve(PolygonCount * 3);
 
 		FbxStringList UVSets;
 		Mesh->GetUVSetNames(UVSets);
@@ -536,10 +596,22 @@ namespace
 					Vertex.Skin = SkinWeights[ControlPointIndex];
 				}
 
-				OutMesh.Indices.push_back(static_cast<uint32>(OutMesh.Vertices.size()));
-				OutMesh.Vertices.push_back(Vertex);
+				// Use deduplication: find existing or add new vertex
+				const uint32 LocalVertexIndex = FindOrAddVertex(LocalVertices, Vertex);
+				LocalIndices.push_back(LocalVertexIndex);
 				++VertexCounter;
 			}
+		}
+
+		// Add local deduplicated vertices and indices to the output mesh
+		const uint32 BaseVertexIndex = static_cast<uint32>(OutMesh.Vertices.size());
+		for (uint32 LocalIndex : LocalIndices)
+		{
+			OutMesh.Indices.push_back(BaseVertexIndex + LocalIndex);
+		}
+		for (const FSkeletalVertex& LocalVertex : LocalVertices)
+		{
+			OutMesh.Vertices.push_back(LocalVertex);
 		}
 
 		const uint32 MeshStartIndex = static_cast<uint32>(InitialIndexCount);
