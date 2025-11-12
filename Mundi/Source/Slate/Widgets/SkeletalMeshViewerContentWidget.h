@@ -40,6 +40,9 @@ public:
     void SetSelectedBone(int32 BoneIndex);
     void OnBoneSelectedFromHierarchy(int32 BoneIndex);
 
+    // External Mesh Loading (from Detail Panel)
+    void LoadAndDisplayMesh(class USkeletalMesh* Mesh);
+
 private:
     // Rendering methods
     void RenderToolbar();

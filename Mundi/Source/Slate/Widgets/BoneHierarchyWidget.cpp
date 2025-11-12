@@ -120,9 +120,10 @@ void UBoneHierarchyWidget::RenderBoneNode(FBoneTreeNode* Node, int32 Depth)
     {
         ImGui::SetNextItemOpen(true, ImGuiCond_Always);
     }
-    else if (Node->bIsExpanded)
+    else
     {
-        ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+        // bIsExpanded 값을 항상 반영 (ExpandAll/CollapseAll이 작동하도록)
+        ImGui::SetNextItemOpen(Node->bIsExpanded);
     }
 
     // 트리 노드 렌더링 (매칭되는 노드는 하이라이트)

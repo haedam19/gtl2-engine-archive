@@ -16,6 +16,10 @@
 #include "LightComponentBase.h"
 #include "AudioManager.h"
 #include "AudioComponent.h"
+#include "UIManager.h"
+#include "Windows/SSkeletalMeshViewerWindow.h"
+#include "Widgets/SkeletalMeshViewerContentWidget.h"
+#include "Factory/UIWindowFactory.h"
 
 // 정적 멤버 변수 초기화
 TArray<FString> UPropertyRenderer::CachedStaticMeshPaths;
@@ -625,6 +629,86 @@ bool UPropertyRenderer::RenderSkeletalMeshProperty(const FProperty& Prop, void* 
 		}
 
 		ImGui::EndTooltip();
+	}
+
+	// "뷰어에서 보기" 버튼 (메시가 None이면 비활성화)
+	ImGui::SameLine();
+	bool bHasMesh = (*MeshPtr != nullptr);
+
+	// Disable button if no mesh is selected
+	if (!bHasMesh)
+	{
+		ImGui::BeginDisabled();
+	}
+
+	if (ImGui::Button("뷰어에서 보기"))
+	{
+		if (*MeshPtr)
+		{
+			// Get or create Skeletal Mesh Viewer window
+			UUIManager& UIMgr = UUIManager::GetInstance();
+			SSkeletalMeshViewerWindow* ViewerWindow = nullptr;
+
+			// Try to find existing viewer window
+			UUIWindow* ExistingWindow = UIMgr.FindUIWindow("Skeletal Mesh Viewer");
+			if (ExistingWindow)
+			{
+				ViewerWindow = Cast<SSkeletalMeshViewerWindow>(ExistingWindow);
+			}
+
+			// If not found, create a new one
+			if (!ViewerWindow)
+			{
+				UUIWindow* NewWindow = UUIWindowFactory::CreateSkeletalMeshViewerWindow();
+				if (NewWindow)
+				{
+					UIMgr.RegisterUIWindow(NewWindow);
+					ViewerWindow = Cast<SSkeletalMeshViewerWindow>(NewWindow);
+					UE_LOG("PropertyRenderer: Created new Skeletal Mesh Viewer");
+				}
+			}
+
+			// Load the mesh into the viewer
+			if (ViewerWindow)
+			{
+				// Make sure the window is visible
+				ViewerWindow->SetWindowState(EUIWindowState::Visible);
+
+				// Load and display the mesh
+				USkeletalMeshViewerContentWidget* ContentWidget = ViewerWindow->GetContentWidget();
+				if (ContentWidget)
+				{
+					ContentWidget->LoadAndDisplayMesh(*MeshPtr);
+					UE_LOG("PropertyRenderer: Loaded mesh '%s' into viewer", (*MeshPtr)->GetFilePath().c_str());
+				}
+				else
+				{
+					UE_LOG("PropertyRenderer: ERROR - Viewer ContentWidget is null");
+				}
+			}
+			else
+			{
+				UE_LOG("PropertyRenderer: ERROR - Failed to get or create Skeletal Mesh Viewer");
+			}
+		}
+	}
+
+	// Show tooltip when hovering over the button
+	if (ImGui::IsItemHovered())
+	{
+		if (bHasMesh)
+		{
+			ImGui::SetTooltip("현재 선택된 스켈레탈 메시를 뷰어에서 엽니다");
+		}
+		else
+		{
+			ImGui::SetTooltip("스켈레탈 메시가 선택되지 않았습니다");
+		}
+	}
+
+	if (!bHasMesh)
+	{
+		ImGui::EndDisabled();
 	}
 
 	return false;

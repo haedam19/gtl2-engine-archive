@@ -21,6 +21,9 @@ public:
 
     void Initialize() override;
 
+    // Content widget accessor
+    USkeletalMeshViewerContentWidget* GetContentWidget() const { return ContentWidget; }
+
     // SkeletalMesh 관리 (TODO: SkeletalMesh 클래스 구현 후 활성화)
     // void LoadSkeletalMesh(const FString& FilePath);
     // void UnloadSkeletalMesh(USkeletalMesh* Mesh);

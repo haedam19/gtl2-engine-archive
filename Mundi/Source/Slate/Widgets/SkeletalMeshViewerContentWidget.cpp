@@ -130,11 +130,13 @@ void USkeletalMeshViewerContentWidget::Initialize()
 {
     UWidget::Initialize();
 
-    // Create Bone Hierarchy Widget (CreateDummySkeleton 전에 생성)
+    // Create Bone Hierarchy Widget (빈 상태로 초기화)
     BoneHierarchyWidget = NewObject<UBoneHierarchyWidget>();
     if (BoneHierarchyWidget)
     {
         BoneHierarchyWidget->Initialize();
+        // 빈 스켈레톤으로 시작 (아무것도 표시하지 않음)
+        BoneHierarchyWidget->BuildBoneTreeFromSkeleton(TArray<FBone>());
     }
 
     // ========================================
@@ -330,15 +332,10 @@ void USkeletalMeshViewerContentWidget::Initialize()
         UE_LOG("SkeletalMeshViewerContentWidget: Grid Actor present (used for rendering)");
 
         // ========================================
-        // Create Dummy Skeleton
+        // Initialize BoneHierarchyWidget callbacks (without dummy skeleton)
         // ========================================
-        CreateDummySkeleton();
-
-        // BoneHierarchyWidget에 DummySkeleton 전달
         if (BoneHierarchyWidget)
         {
-            BoneHierarchyWidget->BuildBoneTreeFromSkeleton(SkeletonEditor.GetSkeleton().Bones);
-
             // 본 선택 콜백 설정
             BoneHierarchyWidget->OnBoneSelectedCallback = [this](int32 BoneIndex)
             {
@@ -791,8 +788,8 @@ void USkeletalMeshViewerContentWidget::RenderSidebar()
 
 void USkeletalMeshViewerContentWidget::RenderMeshList()
 {
-    // Fixed width for sliders to prevent stretching
-    float FixedWidth = 280.0f;
+    // Fixed width for sliders to prevent stretching (75% of original 280)
+    float FixedWidth = 210.0f;
     ImGui::PushItemWidth(FixedWidth);
 
     ImGui::BeginChild("MeshListArea", ImVec2(0, 250), true);
@@ -2364,4 +2361,41 @@ void USkeletalMeshViewerContentWidget::RenderBoneNames(const ImVec2& ViewportTop
             DrawList->AddText(TextPos, TextColor, Bones[i].Name.c_str());
         }
     }
+}
+
+// ========================================
+// External Mesh Loading (from Detail Panel)
+// ========================================
+void USkeletalMeshViewerContentWidget::LoadAndDisplayMesh(USkeletalMesh* Mesh)
+{
+    if (!Mesh)
+    {
+        UE_LOG("SkeletalMeshViewerContentWidget::LoadAndDisplayMesh - Mesh is null");
+        return;
+    }
+
+    // Check if mesh is already in LoadedMeshes
+    int32 ExistingIndex = -1;
+    for (int32 i = 0; i < LoadedMeshes.Num(); ++i)
+    {
+        if (LoadedMeshes[i] == Mesh)
+        {
+            ExistingIndex = i;
+            break;
+        }
+    }
+
+    // If already loaded, just switch to it
+    if (ExistingIndex >= 0)
+    {
+        UE_LOG("SkeletalMeshViewerContentWidget::LoadAndDisplayMesh - Mesh already loaded at index %d, switching to it", ExistingIndex);
+        SetCurrentMesh(ExistingIndex);
+        return;
+    }
+
+    // Otherwise, add to LoadedMeshes and display it
+    LoadedMeshes.Add(Mesh);
+    int32 NewIndex = LoadedMeshes.Num() - 1;
+    UE_LOG("SkeletalMeshViewerContentWidget::LoadAndDisplayMesh - Added new mesh at index %d: %s", NewIndex, Mesh->GetFilePath().c_str());
+    SetCurrentMesh(NewIndex);
 }
