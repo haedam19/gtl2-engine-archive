@@ -14,6 +14,7 @@
 #include "Manager/Config/Public/ConfigManager.h"
 #include "Manager/Time/Public/TimeManager.h"
 #include "Component/Public/PrimitiveComponent.h"
+#include "Component/Mesh/Public/StaticMeshComponent.h"
 #include "Level/Public/Level.h"
 #include "Global/Quaternion.h"
 #include "Utility/Public/ScopeCycleCounter.h"
@@ -74,16 +75,18 @@ void UEditor::Update()
 		}
 	}
 
+	ULevel* CurrentLevel = GWorld->GetLevel();
+	const uint64 ShowFlags = CurrentLevel ? CurrentLevel->GetShowFlags() : 0;
+
 	if (AActor* SelectedActor = GetSelectedActor())
 	{
+		bool bUpdatedBVH = false;
 		for (const auto& Component : SelectedActor->GetOwnedComponents())
 		{
 			if (auto PrimitiveComponent = Cast<UPrimitiveComponent>(Component))
 			{
 				FVector WorldMin, WorldMax;
 				PrimitiveComponent->GetWorldAABB(WorldMin, WorldMax);
-
-				uint64 ShowFlags = GWorld->GetLevel()->GetShowFlags();
 
 				if ((ShowFlags & EEngineShowFlags::SF_Primitives) && (ShowFlags & EEngineShowFlags::SF_Bounds))
 				{
@@ -94,11 +97,27 @@ void UEditor::Update()
 					BatchLines.UpdateBoundingBoxVertices({ { 0.0f,0.0f,0.0f }, { 0.0f, 0.0f, 0.0f } });
 				}
 			}
+
+			// 피킹된 StaticMesh에 한해 BVH 시각화 갱신
+			if (auto StaticMeshComponent = Cast<UStaticMeshComponent>(Component))
+			{
+				if (ShowFlags & EEngineShowFlags::SF_BVH)
+				{
+					BVHLines.Update(StaticMeshComponent);
+					bUpdatedBVH = true;
+				}
+			}
+		}
+
+		if (!bUpdatedBVH)
+		{
+			BVHLines.Clear();
 		}
 	}
 	else
 	{
 		BatchLines.DisableRenderBoundingBox();
+		BVHLines.Clear();
 	}
 
 	BatchLines.UpdateVertexBuffer();
@@ -113,6 +132,7 @@ void UEditor::RenderEditor(UCamera* InCamera)
 	if (GEditor->IsPIESessionActive()) { return; }
 	// Grid, Axis 등 에디터 요소를 렌더링합니다.
 	BatchLines.Render();
+	BVHLines.Render();
 	Axis.Render();
 
 	// Gizmo 렌더링 시, 현재 활성화된 카메라의 위치를 전달해야 합니다.

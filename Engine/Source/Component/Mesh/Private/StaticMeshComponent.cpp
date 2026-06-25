@@ -20,7 +20,7 @@ UStaticMeshComponent::UStaticMeshComponent()
 {
 	Type = EPrimitiveType::StaticMesh;
 
-	FName DefaultObjPath = "Data/Cube.obj";
+	FName DefaultObjPath = "Data/apple_mid.obj";
 	SetStaticMesh(DefaultObjPath);
 }
 

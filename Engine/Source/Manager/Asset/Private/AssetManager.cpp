@@ -120,6 +120,23 @@ void UAssetManager::Initialize()
 	ID3D11PixelShader* PixelShader;
 	URenderer::GetInstance().CreatePixelShader(L"Asset/Shader/BatchLinePS.hlsl", &PixelShader);
 	PixelShaders.emplace(EShaderType::BatchLine, PixelShader);
+
+	// BVH 시각화용 셰이더 (POSITION + COLOR)
+	ID3D11VertexShader* bvhVertexShader;
+	ID3D11InputLayout* bvhInputLayout;
+	TArray<D3D11_INPUT_ELEMENT_DESC> bvhLayoutDesc =
+	{
+		{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
+	};
+	URenderer::GetInstance().CreateVertexShaderAndInputLayout(L"Asset/Shader/BVHLineVS.hlsl", bvhLayoutDesc,
+		&bvhVertexShader, &bvhInputLayout);
+	VertexShaders.emplace(EShaderType::BVHLine, bvhVertexShader);
+	InputLayouts.emplace(EShaderType::BVHLine, bvhInputLayout);
+
+	ID3D11PixelShader* bvhPixelShader;
+	URenderer::GetInstance().CreatePixelShader(L"Asset/Shader/BVHLinePS.hlsl", &bvhPixelShader);
+	PixelShaders.emplace(EShaderType::BVHLine, bvhPixelShader);
 }
 
 void UAssetManager::Release()

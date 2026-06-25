@@ -131,6 +131,9 @@
     <ClCompile Include="Source\Editor\Private\BatchLines.cpp">
       <Filter>Source\Editor\Private</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Private\BVHLines.cpp">
+      <Filter>Source\Editor\Private</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Editor\Private\BoundingBoxLines.cpp">
       <Filter>Source\Editor\Private</Filter>
     </ClCompile>
@@ -512,6 +515,9 @@
       <Filter>Source\Editor\Public</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Public\BatchLines.h">
+      <Filter>Source\Editor\Public</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Public\BVHLines.h">
       <Filter>Source\Editor\Public</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Public\BoundingBoxLines.h">

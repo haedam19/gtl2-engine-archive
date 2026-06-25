@@ -311,6 +311,23 @@ void UMainBarWidget::RenderShowFlagsMenu()
 			CurrentLevel->SetShowFlags(ShowFlags);
 		}
 
+		// BVH 표시 옵션 (피킹된 오브젝트에 한해 표시됨)
+		bool bShowBVH = (ShowFlags & EEngineShowFlags::SF_BVH) != 0;
+		if (ImGui::MenuItem("BVH 표시", nullptr, bShowBVH))
+		{
+			if (bShowBVH)
+			{
+				ShowFlags &= ~static_cast<uint64>(EEngineShowFlags::SF_BVH);
+				UE_LOG("MainBarWidget: BVH 비표시");
+			}
+			else
+			{
+				ShowFlags |= static_cast<uint64>(EEngineShowFlags::SF_BVH);
+				UE_LOG("MainBarWidget: BVH 표시");
+			}
+			CurrentLevel->SetShowFlags(ShowFlags);
+		}
+
 		ImGui::EndMenu();
 	}
 }

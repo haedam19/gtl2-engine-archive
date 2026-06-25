@@ -5,6 +5,7 @@
 #include "Editor/public/Axis.h"
 #include "Editor/Public/ObjectPicker.h"
 #include "Editor/Public/BatchLines.h"
+#include "Editor/Public/BVHLines.h"
 #include "Editor/Public/SplitterWindow.h"
 
 class UPrimitiveComponent;
@@ -77,6 +78,7 @@ private:
 	UGizmo Gizmo;
 	UAxis Axis;
 	UBatchLines BatchLines;
+	UBVHLines BVHLines;
 
 	SSplitterV RootSplitter;
 	SSplitterH LeftSplitter;

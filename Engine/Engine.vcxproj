@@ -374,6 +374,7 @@
     <ClInclude Include="Source\Core\Public\resource.h" />
     <ClInclude Include="Source\Editor\Public\Axis.h" />
     <ClInclude Include="Source\Editor\Public\BatchLines.h" />
+    <ClInclude Include="Source\Editor\Public\BVHLines.h" />
     <ClInclude Include="Source\Editor\Public\BoundingBoxLines.h" />
     <ClInclude Include="Source\Editor\Public\Camera.h" />
     <ClInclude Include="Source\Editor\Public\Editor.h" />
@@ -530,6 +531,7 @@
     <ClCompile Include="Source\Core\Private\Object.cpp" />
     <ClCompile Include="Source\Editor\Private\Axis.cpp" />
     <ClCompile Include="Source\Editor\Private\BatchLines.cpp" />
+    <ClCompile Include="Source\Editor\Private\BVHLines.cpp" />
     <ClCompile Include="Source\Editor\Private\BoundingBoxLines.cpp" />
     <ClCompile Include="Source\Editor\Private\Camera.cpp" />
     <ClCompile Include="Source\Editor\Private\Editor.cpp" />
