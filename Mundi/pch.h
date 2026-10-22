@@ -13,7 +13,11 @@
 #pragma comment(lib, "d3dcompiler")
 
 // DirectXTK
+#ifdef _DEBUG
+#pragma comment(lib, "DirectXTK_debug.lib")
+#else
 #pragma comment(lib, "DirectXTK.lib")
+#endif
 
 // Standard Library (MUST come before UEContainer.h)
 #include <vector>

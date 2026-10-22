@@ -1028,25 +1028,25 @@
     <ClCompile Include="Generated\UParticleModuleSpawnPerUnit.generated.cpp">
       <Filter>Generated</Filter>
     </ClCompile>
-    <ClCompile Include="ThirdParty\ImGui\imgui.cpp">
+    <ClCompile Include="ThirdParty\Include\ImGui\imgui.cpp">
       <Filter>ThirdParty\ImGui</Filter>
     </ClCompile>
-    <ClCompile Include="ThirdParty\ImGui\imgui_demo.cpp">
+    <ClCompile Include="ThirdParty\Include\ImGui\imgui_demo.cpp">
       <Filter>ThirdParty\ImGui</Filter>
     </ClCompile>
-    <ClCompile Include="ThirdParty\ImGui\imgui_draw.cpp">
+    <ClCompile Include="ThirdParty\Include\ImGui\imgui_draw.cpp">
       <Filter>ThirdParty\ImGui</Filter>
     </ClCompile>
-    <ClCompile Include="ThirdParty\ImGui\imgui_impl_dx11.cpp">
+    <ClCompile Include="ThirdParty\Include\ImGui\imgui_impl_dx11.cpp">
       <Filter>ThirdParty\ImGui</Filter>
     </ClCompile>
-    <ClCompile Include="ThirdParty\ImGui\imgui_impl_win32.cpp">
+    <ClCompile Include="ThirdParty\Include\ImGui\imgui_impl_win32.cpp">
       <Filter>ThirdParty\ImGui</Filter>
     </ClCompile>
-    <ClCompile Include="ThirdParty\ImGui\imgui_tables.cpp">
+    <ClCompile Include="ThirdParty\Include\ImGui\imgui_tables.cpp">
       <Filter>ThirdParty\ImGui</Filter>
     </ClCompile>
-    <ClCompile Include="ThirdParty\ImGui\imgui_widgets.cpp">
+    <ClCompile Include="ThirdParty\Include\ImGui\imgui_widgets.cpp">
       <Filter>ThirdParty\ImGui</Filter>
     </ClCompile>
     <ClCompile Include="Generated\UParticleModuleRotation.generated.cpp">
@@ -2102,109 +2102,109 @@
     <ClInclude Include="Generated\UParticleModuleSpawnPerUnit.generated.h">
       <Filter>Generated</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\ImGui\imconfig.h">
+    <ClInclude Include="ThirdParty\Include\ImGui\imconfig.h">
       <Filter>ThirdParty\ImGui</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\ImGui\imgui.h">
+    <ClInclude Include="ThirdParty\Include\ImGui\imgui.h">
       <Filter>ThirdParty\ImGui</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\ImGui\imgui_curve.hpp">
+    <ClInclude Include="ThirdParty\Include\ImGui\imgui_curve.hpp">
       <Filter>ThirdParty\ImGui</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\ImGui\imgui_impl_dx11.h">
+    <ClInclude Include="ThirdParty\Include\ImGui\imgui_impl_dx11.h">
       <Filter>ThirdParty\ImGui</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\ImGui\imgui_impl_win32.h">
+    <ClInclude Include="ThirdParty\Include\ImGui\imgui_impl_win32.h">
       <Filter>ThirdParty\ImGui</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\ImGui\imgui_internal.h">
+    <ClInclude Include="ThirdParty\Include\ImGui\imgui_internal.h">
       <Filter>ThirdParty\ImGui</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\ImGui\imstb_rectpack.h">
+    <ClInclude Include="ThirdParty\Include\ImGui\imstb_rectpack.h">
       <Filter>ThirdParty\ImGui</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\ImGui\imstb_textedit.h">
+    <ClInclude Include="ThirdParty\Include\ImGui\imstb_textedit.h">
       <Filter>ThirdParty\ImGui</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\ImGui\imstb_truetype.h">
+    <ClInclude Include="ThirdParty\Include\ImGui\imstb_truetype.h">
       <Filter>ThirdParty\ImGui</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\Audio.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\Audio.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\BufferHelpers.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\BufferHelpers.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\CommonStates.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\CommonStates.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\DDSTextureLoader.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\DDSTextureLoader.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\DirectXHelpers.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\DirectXHelpers.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\Effects.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\Effects.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\GamePad.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\GamePad.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\GeometricPrimitive.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\GeometricPrimitive.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\GraphicsMemory.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\GraphicsMemory.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\Keyboard.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\Keyboard.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\Model.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\Model.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\Mouse.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\Mouse.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\PostProcess.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\PostProcess.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\PrimitiveBatch.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\PrimitiveBatch.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\ScreenGrab.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\ScreenGrab.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\SimpleMath.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\SimpleMath.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\SpriteBatch.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\SpriteBatch.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\SpriteFont.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\SpriteFont.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\VertexTypes.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\VertexTypes.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\WICTextureLoader.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\WICTextureLoader.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\DirectXTK\include\XboxDDSTextureLoader.h">
+    <ClInclude Include="ThirdParty\Include\DirectXTK\XboxDDSTextureLoader.h">
       <Filter>ThirdParty\DirectXTK\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\Lua\include\lauxlib.h">
+    <ClInclude Include="ThirdParty\Include\Lua\lauxlib.h">
       <Filter>ThirdParty\Lua\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\Lua\include\lua.h">
+    <ClInclude Include="ThirdParty\Include\Lua\lua.h">
       <Filter>ThirdParty\Lua\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\Lua\include\lua.hpp">
+    <ClInclude Include="ThirdParty\Include\Lua\lua.hpp">
       <Filter>ThirdParty\Lua\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\Lua\include\luaconf.h">
+    <ClInclude Include="ThirdParty\Include\Lua\luaconf.h">
       <Filter>ThirdParty\Lua\include</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\Lua\include\lualib.h">
+    <ClInclude Include="ThirdParty\Include\Lua\lualib.h">
       <Filter>ThirdParty\Lua\include</Filter>
     </ClInclude>
     <ClInclude Include="Generated\UParticleModuleRotation.generated.h">

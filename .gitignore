@@ -455,8 +455,6 @@ SetupSymbolServer.bat
 /Mundi/DerivedDataCache/**
 /Mundi/Docs/Untracked/**
 
-# Third-party libraries
-/Mundi/ThirdParty/
 
 # Python Embedded (임베디드 Python을 포함하여 팀원들이 바로 사용 가능)
 # Python 캐시 파일만 제외
@@ -493,3 +491,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+
+# ThirdParty libraries are distributed through GitHub Releases.
+/Mundi/ThirdParty/*
+!/Mundi/ThirdParty/README.md

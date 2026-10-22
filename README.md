@@ -1,5 +1,18 @@
 # Mundi 엔진
 
+## ThirdParty 설치
+
+week 10의 FBX 정적 라이브러리로 보강한 **week 11의 `Mundi/ThirdParty` 폴더 전체**를 이 주차의 `Mundi/ThirdParty`로 복사합니다. 별도의 파일 재배치는 필요하지 않습니다.
+
+- 헤더와 ImGui 소스: `ThirdParty/Include`
+- 라이브러리: `ThirdParty/Library` (DirectXTK를 제외하고 Debug/Release 하위 폴더 사용)
+- Lua DLL: `ThirdParty/Bin/Debug/lua.dll`, `ThirdParty/Bin/Release/lua.dll`
+- FBX는 정적 링크를 유지합니다. `ThirdParty/Library/FBX/Debug`와 `Release` 각각에 `libfbxsdk-md.lib`, `alembic-md.lib`, `libxml2-md.lib`, `zlib-md.lib`가 필요합니다. `FBXSDK_SHARED`는 정의하지 않으며 FBX DLL을 실행 폴더에 복사하지 않습니다.
+
+`Debug_StandAlone`은 Debug 라이브러리와 DLL을, `Release_StandAlone`은 Release 라이브러리와 DLL을 사용합니다. Lua는 week 11의 5.4.8 구성을 사용하므로 스크립트 호환성은 별도로 확인해야 합니다.
+
+---
+
 > 🚫 **경고: 이 내용은 Mundi 엔진 렌더링 기준의 근본입니다.**  
 > 삭제하거나 수정하면 엔진 전반의 좌표계 및 버텍스 연산이 깨집니다.  
 > **반드시 유지하십시오.**
