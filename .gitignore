@@ -451,9 +451,6 @@ GEMINI.md
 /Mundi/DerivedDataCache/**
 /Mundi/Docs/Untracked/**
 
-# ThirdParty
-!/Mundi/ThirdParty/include/**
-/Mundi/ThirdParty/lib/**
 
 # BuildTools
 # Python 캐시와 임시 파일 제외
@@ -475,3 +472,7 @@ __pycache__/
 
 # Untracked
 /untracked/**
+
+# ThirdParty libraries are distributed through GitHub Releases.
+/Mundi/ThirdParty/*
+!/Mundi/ThirdParty/README.md

@@ -1,5 +1,19 @@
 # Mundi 엔진
 
+## ThirdParty 설치 및 실행 확인
+
+이 주차는 **week 14의 `Mundi/ThirdParty` 폴더 전체**를 그대로 사용합니다. 기존 week 13의 ThirdParty에 병합하지 말고 폴더를 교체하세요. 이전 `PhysX/foundation`과 NvCloth 헤더가 남으면 새 헤더와 섞일 수 있습니다.
+
+- PhysX 4.1.2는 DLL 방식으로 링크합니다. `PX_PHYSX_STATIC_LIB`를 정의하지 않습니다.
+- 헤더 검색 경로에는 `include/physx`, `include/pxshared`, `include/NVCloth`가 포함됩니다.
+- PhysX 라이브러리와 DLL은 `lib/physx/Debug` 또는 `Release`를 사용합니다.
+- NvCloth는 `lib/Cloth/Debug/NvClothDEBUG_x64.lib` 또는 `lib/Cloth/Release/NvCloth_x64.lib`를 사용합니다.
+- 빌드 후 PhysX와 NvCloth DLL을 실행 폴더로 복사합니다. StandAlone 구성도 대응하는 Debug/Release 파일을 사용합니다.
+
+빌드 후에는 Cloth가 있는 씬에서 천의 움직임·고정점·충돌을 확인하고, 일반 물체의 물리 시뮬레이션과 충돌도 확인하세요. 이 실행 확인은 라이브러리 교체 후의 동작 검증을 위한 것입니다.
+
+---
+
 > 🚫 **경고: 이 내용은 Mundi 엔진 렌더링 기준의 근본입니다.**  
 > 삭제하거나 수정하면 엔진 전반의 좌표계 및 버텍스 연산이 깨집니다.  
 > **반드시 유지하십시오.**
@@ -48,4 +62,4 @@ FObjImporter::LoadObjModel(... , bIsRightHanded = true) // 기본값
 ### [데모 씬용 FBX 파일](https://drive.google.com/file/d/14UviD0dfo2LsvJltEeCxywRB8f0m156E/view?usp=sharing)
 - ```..\Mundi\Data```에 FBX 파일을 넣어주세요. 폴더 통째로 넣어도 됩니다.
 ### [라이브러리 파일](https://drive.google.com/file/d/1KntcGe_4ONi1wb1dOnqjbUYr-G-mIC8h/view?usp=sharing)
-- ```..\Mundi\ThirdParty```에 라이브러리 파일인 lib.zip 압축을 풀어 lib폴더를 넣어주세요.
+- 현재 공용 구성은 위의 ThirdParty 설치 안내를 따르세요. 과거 배포된 lib.zip만으로는 새 PhysX·NvCloth 헤더와 바이너리 구성이 맞는지 보장할 수 없습니다.
