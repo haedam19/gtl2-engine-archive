@@ -475,3 +475,6 @@ Document/*
 # ThirdParty libraries are distributed through GitHub Releases.
 /Mundi/ThirdParty/*
 !/Mundi/ThirdParty/README.md
+
+# Textures extracted from embedded FBX media
+/Mundi/Data/**/*.fbm/
