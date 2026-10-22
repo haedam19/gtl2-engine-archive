@@ -450,9 +450,6 @@ GEMINI.md
 /Mundi/Data/untracked/**
 /Mundi/DerivedDataCache/**
 
-# ThirdParty
-!/Mundi/ThirdParty/include/**
-/Mundi/ThirdParty/lib/**
 
 # BuildTools
 # Python 캐시와 임시 파일 제외
@@ -460,7 +457,6 @@ GEMINI.md
 /Mundi/BuildTools/**/*.pyc
 /Mundi/BuildTools/**/*.pyo
 /Mundi/BuildTools/**/nul
-/Mundi/ThirdParty/Python/
 
 # Auto-Generated Reflection Files
 # Generated 폴더는 빌드 시 자동 생성되므로 git에서 제외
@@ -472,3 +468,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+
+# ThirdParty libraries are distributed through GitHub Releases.
+/Mundi/ThirdParty/*
+!/Mundi/ThirdParty/README.md
