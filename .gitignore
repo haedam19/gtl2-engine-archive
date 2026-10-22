@@ -449,11 +449,13 @@ GEMINI.md
 /Mundi/DerivedDataCache/**
 **/[Uu]ntracked/**
 
-# Python Embedded
-/Mundi/ThirdParty/Python/
 
 # Generated Files
 /Mundi/Generated/
 
 # 덤프 파일
 *.dmp
+
+# ThirdParty libraries are distributed through GitHub Releases.
+/Mundi/ThirdParty/*
+!/Mundi/ThirdParty/README.md
