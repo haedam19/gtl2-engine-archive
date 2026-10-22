@@ -451,15 +451,7 @@ editor.ini
 Mundi/Scene/*
 !Mundi/Scene/Bus.Scene
 
-!Mundi/ThirdParty/DirectXTK/Bin**
 
-# DirectXTex 라이브러리 예외 처리 (디렉토리부터 먼저 예외)
-!Mundi/ThirdParty/DirectXTex/
-!Mundi/ThirdParty/DirectXTex/Lib/
-!Mundi/ThirdParty/DirectXTex/Lib/x64/
-!Mundi/ThirdParty/DirectXTex/Lib/x64/Debug/
-!Mundi/ThirdParty/DirectXTex/Lib/x64/Release/
-!Mundi/ThirdParty/DirectXTex/**/*.lib
 
 WARP.md
 
@@ -479,3 +471,7 @@ Document/*
 # Untracked Data Files
 /Mundi/Data/untracked/**
 /Mundi/DerivedDataCache/**
+
+# ThirdParty libraries are distributed through GitHub Releases.
+/Mundi/ThirdParty/*
+!/Mundi/ThirdParty/README.md
